@@ -37,6 +37,33 @@ export interface ProviderMesh {
 	readonly strategy: RoutingStrategy
 }
 
+const REASONING_KEYWORDS =
+	/\b(prove|explain why|analyze|compare|contrast|evaluate|critique|debate|reason|deduce|infer|justify|argue|synthesize|hypothesize|derive)\b/i
+
+const CODE_KEYWORDS =
+	/\b(implement|refactor|debug|optimize|architect|design pattern|algorithm|data structure|write code|code review|fix the bug|type system)\b/i
+
+const CREATIVE_KEYWORDS =
+	/\b(write a (story|essay|poem|article|report|paper)|compose|draft|create a (plan|proposal|strategy))\b/i
+
+const MATH_KEYWORDS =
+	/\b(calculate|compute|solve|equation|integral|derivative|matrix|probability|statistical|proof|theorem|formula)\b/i
+
+function extractTextContent(request: CompletionRequest): string {
+	const parts: string[] = []
+	for (const m of request.messages) {
+		if (typeof m.content === 'string') {
+			parts.push(m.content)
+		} else if (Array.isArray(m.content)) {
+			for (const p of m.content) {
+				if (p.type === 'text') parts.push(p.text)
+			}
+		}
+	}
+	if (request.system) parts.push(request.system)
+	return parts.join(' ')
+}
+
 function estimateComplexity(request: CompletionRequest): number {
 	let score = 0
 	const totalChars = request.messages.reduce((sum, m) => {
@@ -50,6 +77,12 @@ function estimateComplexity(request: CompletionRequest): number {
 	if ((request.tools?.length ?? 0) > 3) score += 0.1
 	if (request.system && request.system.length > 500) score += 0.1
 	if (request.messages.length > 10) score += 0.1
+
+	const text = extractTextContent(request)
+	if (REASONING_KEYWORDS.test(text)) score += 0.5
+	if (CODE_KEYWORDS.test(text)) score += 0.5
+	if (CREATIVE_KEYWORDS.test(text)) score += 0.2
+	if (MATH_KEYWORDS.test(text)) score += 0.5
 
 	return Math.min(score, 1)
 }

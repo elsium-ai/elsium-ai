@@ -122,6 +122,96 @@ describe('createProviderMesh', () => {
 		expect(result.model).toBe('claude-sonnet-4-6')
 	})
 
+	it('should route reasoning keywords to complex model', async () => {
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const result = await mesh.complete({
+			messages: [{ role: 'user', content: 'Prove that P ≠ NP' }],
+		})
+
+		expect(result.model).toBe('claude-sonnet-4-6')
+	})
+
+	it('should route math keywords to complex model', async () => {
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const result = await mesh.complete({
+			messages: [{ role: 'user', content: 'Solve this integral for x' }],
+		})
+
+		expect(result.model).toBe('claude-sonnet-4-6')
+	})
+
+	it('should route code keywords to complex model', async () => {
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const result = await mesh.complete({
+			messages: [{ role: 'user', content: 'Refactor this function to use async iterators' }],
+		})
+
+		expect(result.model).toBe('claude-sonnet-4-6')
+	})
+
+	it('should keep simple greetings on simple model', async () => {
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const result = await mesh.complete({
+			messages: [{ role: 'user', content: 'Hello, how are you?' }],
+		})
+
+		expect(result.model).toBe('claude-haiku-4-5-20251001')
+	})
+
+	it('should detect keywords in structured content blocks', async () => {
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const result = await mesh.complete({
+			messages: [
+				{
+					role: 'user',
+					content: [{ type: 'text', text: 'Analyze the performance of this algorithm' }],
+				},
+			],
+		})
+
+		expect(result.model).toBe('claude-sonnet-4-6')
+	})
+
 	it('should use capability-aware strategy', async () => {
 		const mesh = createProviderMesh({
 			providers: [
