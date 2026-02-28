@@ -89,15 +89,29 @@ interface CallRecord {
 }
 
 const MODEL_TIERS: Record<string, { tier: 'low' | 'mid' | 'high'; costPerMToken: number }> = {
-	'claude-haiku-4-5-20251001': { tier: 'low', costPerMToken: 0.8 },
-	'gpt-4o-mini': { tier: 'low', costPerMToken: 0.15 },
-	'gemini-2.0-flash': { tier: 'low', costPerMToken: 0.1 },
+	// Low tier
+	'gpt-5-nano': { tier: 'low', costPerMToken: 0.05 },
 	'gemini-2.0-flash-lite': { tier: 'low', costPerMToken: 0.075 },
-	'claude-sonnet-4-6': { tier: 'mid', costPerMToken: 3 },
-	'gpt-4o': { tier: 'mid', costPerMToken: 2.5 },
+	'gemini-2.0-flash': { tier: 'low', costPerMToken: 0.1 },
+	'gpt-4.1-nano': { tier: 'low', costPerMToken: 0.1 },
+	'gpt-4o-mini': { tier: 'low', costPerMToken: 0.15 },
+	'gpt-5-mini': { tier: 'low', costPerMToken: 0.25 },
+	'gpt-4.1-mini': { tier: 'low', costPerMToken: 0.4 },
+	'claude-haiku-4-5-20251001': { tier: 'low', costPerMToken: 1 },
+	// Mid tier
+	'o3-mini': { tier: 'mid', costPerMToken: 1.1 },
+	'o1-mini': { tier: 'mid', costPerMToken: 1.1 },
+	'o4-mini': { tier: 'mid', costPerMToken: 1.1 },
+	'gpt-5': { tier: 'mid', costPerMToken: 1.25 },
 	'gemini-2.5-pro-preview-05-06': { tier: 'mid', costPerMToken: 1.25 },
+	o3: { tier: 'mid', costPerMToken: 2 },
+	'gpt-4.1': { tier: 'mid', costPerMToken: 2 },
+	'gpt-4o': { tier: 'mid', costPerMToken: 2.5 },
+	'claude-sonnet-4-6': { tier: 'mid', costPerMToken: 3 },
+	// High tier
 	'claude-opus-4-6': { tier: 'high', costPerMToken: 15 },
 	o1: { tier: 'high', costPerMToken: 15 },
+	'o3-pro': { tier: 'high', costPerMToken: 20 },
 }
 
 function createDimension(): CostDimension {
