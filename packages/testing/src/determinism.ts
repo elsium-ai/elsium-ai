@@ -1,3 +1,5 @@
+import { ElsiumError, sleep } from '@elsium-ai/core'
+
 export interface DeterminismResult {
 	deterministic: boolean
 	runs: number
@@ -35,7 +37,7 @@ export async function assertDeterministic(
 	const deterministic = variance <= tolerance
 
 	if (!deterministic && tolerance === 0) {
-		throw new Error(
+		throw ElsiumError.validation(
 			`Non-deterministic output: ${uniqueOutputs} unique outputs across ${runs} runs (variance: ${variance.toFixed(3)})`,
 		)
 	}
@@ -61,7 +63,7 @@ export async function assertStable(
 
 	for (let i = 0; i < runs; i++) {
 		if (i > 0) {
-			await new Promise((r) => setTimeout(r, intervalMs))
+			await sleep(intervalMs)
 		}
 		const output = await fn(seed)
 		outputs.push({ output, timestamp: Date.now() })

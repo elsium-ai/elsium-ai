@@ -369,8 +369,8 @@ function processSSELine(line: string, model: string, emit: (event: StreamEvent) 
 		const event = JSON.parse(data)
 		const mapped = mapSSEEvent(event, model)
 		if (mapped) emit(mapped)
-	} catch {
-		// skip malformed JSON
+	} catch (err) {
+		emit({ type: 'error', error: err instanceof Error ? err : new Error(String(err)) })
 	}
 }
 

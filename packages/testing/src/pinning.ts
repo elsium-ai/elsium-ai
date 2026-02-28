@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { ElsiumError } from '@elsium-ai/core'
 
 export interface Pin {
 	promptHash: string
@@ -101,7 +102,7 @@ export async function pinOutput(
 	}
 
 	if (options?.assert) {
-		throw new Error(
+		throw ElsiumError.validation(
 			`Pin mismatch for "${name}": expected hash ${existing.outputHash}, got ${outputHash}`,
 		)
 	}

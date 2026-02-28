@@ -173,7 +173,7 @@ export function classifyContent(text: string): ClassificationResult {
 	}
 
 	// Check PII (confidential)
-	for (const [type, patterns] of Object.entries(PII_PATTERNS)) {
+	for (const [, patterns] of Object.entries(PII_PATTERNS)) {
 		for (const { pattern, detail } of patterns) {
 			if (new RegExp(pattern.source, pattern.flags).test(text)) {
 				detectedTypes.push(detail)
@@ -226,9 +226,10 @@ function redactPatterns(
 
 	for (const { pattern, detail, replacement } of patterns) {
 		const regex = new RegExp(pattern.source, pattern.flags)
-		if (regex.test(redacted)) {
+		const result = redacted.replace(regex, replacement)
+		if (result !== redacted) {
 			found.push({ type: 'secret_detected', detail, severity: 'medium' })
-			redacted = redacted.replace(new RegExp(pattern.source, pattern.flags), replacement)
+			redacted = result
 		}
 	}
 

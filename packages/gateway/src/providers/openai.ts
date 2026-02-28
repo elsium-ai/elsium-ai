@@ -380,6 +380,26 @@ function processOpenAISSEChunk(
 	}
 }
 
+function processOpenAISSELine(line: string, emit: (event: StreamEvent) => void): void {
+	if (!line.startsWith('data: ')) return
+	const data = line.slice(6).trim()
+	if (data === '[DONE]') {
+		emit({
+			type: 'message_end',
+			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+			stopReason: 'end_turn',
+		})
+		return
+	}
+
+	try {
+		const event = JSON.parse(data)
+		processOpenAISSEChunk(event, emit)
+	} catch (err) {
+		emit({ type: 'error', error: err instanceof Error ? err : new Error(String(err)) })
+	}
+}
+
 async function processOpenAISSEStream(
 	body: ReadableStream<Uint8Array>,
 	emit: (event: StreamEvent) => void,
@@ -397,23 +417,7 @@ async function processOpenAISSEStream(
 		buffer = lines.pop() ?? ''
 
 		for (const line of lines) {
-			if (!line.startsWith('data: ')) continue
-			const data = line.slice(6).trim()
-			if (data === '[DONE]') {
-				emit({
-					type: 'message_end',
-					usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-					stopReason: 'end_turn',
-				})
-				continue
-			}
-
-			try {
-				const event = JSON.parse(data)
-				processOpenAISSEChunk(event, emit)
-			} catch {
-				// skip malformed JSON
-			}
+			processOpenAISSELine(line, emit)
 		}
 	}
 }

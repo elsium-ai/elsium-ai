@@ -417,6 +417,18 @@ function processGeminiSSEEvent(event: GeminiResponse, emit: (event: StreamEvent)
 	emitGeminiFinishEvent(event, emit)
 }
 
+function processGeminiSSELine(line: string, emit: (event: StreamEvent) => void): void {
+	if (!line.startsWith('data: ')) return
+	const data = line.slice(6).trim()
+
+	try {
+		const event = JSON.parse(data) as GeminiResponse
+		processGeminiSSEEvent(event, emit)
+	} catch (err) {
+		emit({ type: 'error', error: err instanceof Error ? err : new Error(String(err)) })
+	}
+}
+
 async function processGeminiSSEStream(
 	body: ReadableStream<Uint8Array>,
 	emit: (event: StreamEvent) => void,
@@ -434,15 +446,7 @@ async function processGeminiSSEStream(
 		buffer = lines.pop() ?? ''
 
 		for (const line of lines) {
-			if (!line.startsWith('data: ')) continue
-			const data = line.slice(6).trim()
-
-			try {
-				const event = JSON.parse(data) as GeminiResponse
-				processGeminiSSEEvent(event, emit)
-			} catch {
-				// skip malformed JSON
-			}
+			processGeminiSSELine(line, emit)
 		}
 	}
 }

@@ -107,8 +107,7 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 
 		get failureCount(): number {
 			const now = Date.now()
-			failureTimestamps = failureTimestamps.filter((t) => now - t < windowMs)
-			return failureTimestamps.length
+			return failureTimestamps.filter((t) => now - t < windowMs).length
 		},
 
 		async execute<T>(fn: () => Promise<T>): Promise<T> {
