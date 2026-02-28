@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { ElsiumError } from './errors'
 import type { Middleware, MiddlewareContext, MiddlewareNext } from './types'
 
 export interface DedupConfig {
@@ -16,6 +17,21 @@ export interface Dedup<T> {
 export function createDedup<T>(config?: DedupConfig): Dedup<T> {
 	const ttlMs = config?.ttlMs ?? 5_000
 	const maxEntries = config?.maxEntries ?? 1_000
+
+	if (ttlMs < 0 || !Number.isFinite(ttlMs)) {
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: 'ttlMs must be >= 0 and finite',
+			retryable: false,
+		})
+	}
+	if (maxEntries < 1 || !Number.isFinite(maxEntries)) {
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: 'maxEntries must be >= 1',
+			retryable: false,
+		})
+	}
 
 	const inFlight = new Map<string, Promise<T>>()
 	const cache = new Map<string, { value: T; expiresAt: number }>()
@@ -68,7 +84,11 @@ export function createDedup<T>(config?: DedupConfig): Dedup<T> {
 		},
 
 		hashRequest(request: unknown): string {
-			const sorted = JSON.stringify(request, Object.keys(request as Record<string, unknown>).sort())
+			const sorted = JSON.stringify(request, (_key, value) =>
+				value && typeof value === 'object' && !Array.isArray(value)
+					? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+					: value,
+			)
 			return createHash('sha256').update(sorted).digest('hex').slice(0, 16)
 		},
 

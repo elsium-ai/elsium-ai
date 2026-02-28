@@ -118,6 +118,9 @@ export function modelAccessPolicy(allowedModels: string[]): PolicyConfig {
 }
 
 export function tokenLimitPolicy(maxTokens: number): PolicyConfig {
+	if (!Number.isFinite(maxTokens) || maxTokens < 0) {
+		throw ElsiumError.validation('tokenLimitPolicy: maxTokens must be >= 0 and finite')
+	}
 	return {
 		name: 'token-limit',
 		description: `Limits requests to ${maxTokens} tokens`,
@@ -144,6 +147,9 @@ export function tokenLimitPolicy(maxTokens: number): PolicyConfig {
 }
 
 export function costLimitPolicy(maxCost: number): PolicyConfig {
+	if (!Number.isFinite(maxCost) || maxCost < 0) {
+		throw ElsiumError.validation('costLimitPolicy: maxCost must be >= 0 and finite')
+	}
 	return {
 		name: 'cost-limit',
 		description: `Limits requests to $${maxCost}`,
@@ -179,6 +185,7 @@ export function contentPolicy(blockedPatterns: RegExp[]): PolicyConfig {
 					return { decision: 'allow', reason: 'No content to check', policyName: 'content-policy' }
 				}
 				for (const pattern of blockedPatterns) {
+					pattern.lastIndex = 0
 					if (pattern.test(ctx.requestContent)) {
 						return {
 							decision: 'deny',

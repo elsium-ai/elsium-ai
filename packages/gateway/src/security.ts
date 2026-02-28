@@ -270,6 +270,7 @@ export function redactSecrets(
 export function checkBlockedPatterns(text: string, patterns: RegExp[]): SecurityViolation[] {
 	const violations: SecurityViolation[] = []
 	for (const pattern of patterns) {
+		pattern.lastIndex = 0
 		if (pattern.test(text)) {
 			violations.push({
 				type: 'blocked_pattern',

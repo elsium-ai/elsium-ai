@@ -19,6 +19,14 @@ export function createShutdownManager(config?: ShutdownConfig): ShutdownManager 
 	const drainTimeoutMs = config?.drainTimeoutMs ?? 30_000
 	const signals = config?.signals ?? ['SIGTERM', 'SIGINT']
 
+	if (drainTimeoutMs < 0 || !Number.isFinite(drainTimeoutMs)) {
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: 'drainTimeoutMs must be >= 0 and finite',
+			retryable: false,
+		})
+	}
+
 	let shuttingDown = false
 	let inFlightCount = 0
 	let drainResolve: (() => void) | null = null

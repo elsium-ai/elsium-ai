@@ -185,11 +185,15 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		const traceId = generateTraceId()
 		const choice = raw.choices[0]
 
-		const toolCalls: ToolCall[] = (choice?.message.tool_calls ?? []).map((tc) => ({
-			id: tc.id,
-			name: tc.function.name,
-			arguments: JSON.parse(tc.function.arguments),
-		}))
+		const toolCalls: ToolCall[] = (choice?.message.tool_calls ?? []).map((tc) => {
+			let args: Record<string, unknown> = {}
+			try {
+				args = JSON.parse(tc.function.arguments)
+			} catch {
+				args = { _raw: tc.function.arguments }
+			}
+			return { id: tc.id, name: tc.function.name, arguments: args }
+		})
 
 		const usage: TokenUsage = {
 			inputTokens: raw.usage.prompt_tokens,

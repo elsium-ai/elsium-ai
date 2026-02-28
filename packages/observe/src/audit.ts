@@ -50,6 +50,7 @@ export interface AuditIntegrityResult {
 export interface AuditTrailConfig {
 	storage?: AuditStorageAdapter | 'memory'
 	hashChain?: boolean
+	maxEvents?: number
 }
 
 export interface AuditTrail {
@@ -79,9 +80,17 @@ function computeEventHash(event: Omit<AuditEvent, 'hash'>, previousHash: string)
 
 class InMemoryAuditStorage implements AuditStorageAdapter {
 	private events: AuditEvent[] = []
+	private readonly maxEvents: number
+
+	constructor(maxEvents?: number) {
+		this.maxEvents = maxEvents ?? 10_000
+	}
 
 	append(event: AuditEvent): void {
 		this.events.push(event)
+		if (this.events.length > this.maxEvents) {
+			this.events = this.events.slice(-this.maxEvents)
+		}
 	}
 
 	query(filter: AuditQueryFilter): AuditEvent[] {
@@ -141,7 +150,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	const storage: AuditStorageAdapter =
 		config?.storage && typeof config.storage !== 'string'
 			? config.storage
-			: new InMemoryAuditStorage()
+			: new InMemoryAuditStorage(config?.maxEvents)
 
 	let sequenceId = 0
 	let idCounter = 0

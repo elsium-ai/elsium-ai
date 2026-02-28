@@ -31,6 +31,35 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 	const resetTimeoutMs = config?.resetTimeoutMs ?? 30_000
 	const halfOpenMaxAttempts = config?.halfOpenMaxAttempts ?? 3
 	const windowMs = config?.windowMs ?? 60_000
+
+	if (failureThreshold < 1 || !Number.isFinite(failureThreshold)) {
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: 'failureThreshold must be >= 1',
+			retryable: false,
+		})
+	}
+	if (resetTimeoutMs < 0 || !Number.isFinite(resetTimeoutMs)) {
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: 'resetTimeoutMs must be >= 0 and finite',
+			retryable: false,
+		})
+	}
+	if (halfOpenMaxAttempts < 1 || !Number.isFinite(halfOpenMaxAttempts)) {
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: 'halfOpenMaxAttempts must be >= 1',
+			retryable: false,
+		})
+	}
+	if (windowMs < 0 || !Number.isFinite(windowMs)) {
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: 'windowMs must be >= 0 and finite',
+			retryable: false,
+		})
+	}
 	const onStateChange = config?.onStateChange
 	const shouldCount = config?.shouldCount ?? defaultShouldCount
 
