@@ -223,6 +223,17 @@ const result = await mesh.complete({
 })
 ```
 
+The `cost-optimized` strategy uses keyword-based complexity estimation to route requests. Short prompts that contain reasoning, code, math, or creative keywords are automatically routed to the powerful model — no extra API call required.
+
+| Category | Example keywords | Weight |
+|---|---|---|
+| Reasoning | prove, analyze, compare, evaluate, critique, deduce, synthesize | +0.5 |
+| Code | implement, refactor, debug, optimize, architect, algorithm | +0.5 |
+| Math | calculate, solve, equation, integral, derivative, proof, theorem | +0.5 |
+| Creative | write a story/essay/poem, compose, draft, create a plan | +0.2 |
+
+Structural signals (prompt length, tool count, system prompt size, conversation depth) are also factored in. This means `"Prove P ≠ NP"` routes to Sonnet while `"Hello"` routes to Haiku — without needing a classifier LLM.
+
 ### Cost Intelligence Engine
 
 Not just tracking — intelligence. Per-user, per-agent, and per-feature budgets with loop detection, projected spend, and cost-saving recommendations.
@@ -534,7 +545,7 @@ const prompt = registry.render('classifier', { categories: 'spam,ham', input: 'B
 | Poor error messages from LLMs | Structured `Result<T, E>` pattern with retry strategies |
 | No cost visibility | Cost Intelligence Engine — budgets, projections, recommendations, loop detection |
 | Hard to test AI code | Mock providers, fixtures, evals, LLM-as-judge, regression suites, replay mode |
-| Vendor lock-in | Provider Mesh — Anthropic, OpenAI, Google with intelligent routing and fallback |
+| Vendor lock-in | Provider Mesh — Anthropic, OpenAI, Google with keyword-aware routing and fallback |
 | No observability standard | OpenTelemetry compatible — export to Jaeger, Datadog, Grafana |
 | No MCP support | Native bidirectional MCP — use any MCP server, expose tools as MCP server |
 | Hallucination blindness | Semantic guardrails — hallucination detection, grounding checks, auto-retry |
@@ -626,7 +637,7 @@ console.log(result.message.content)
 | Bundle Size | 77 KB | ~2 MB | ~150 KB | ~3 MB |
 | Cold Start | < 3ms | ~500ms | ~50ms | ~800ms |
 | X-Ray Mode (DevTools) | Yes | No | No | No |
-| Multi-Provider Mesh | Yes (Anthropic, OpenAI, Google) | Yes | Yes | Yes |
+| Multi-Provider Mesh | Yes (Anthropic, OpenAI, Google + keyword-aware routing) | Yes | Yes | Yes |
 | Cost Intelligence | Yes (budgets, projections, loop detection) | No | No | No |
 | MCP Support | Yes (bidirectional) | Partial | No | No |
 | Semantic Guardrails | Yes (hallucination, grounding, relevance) | No | No | No |
