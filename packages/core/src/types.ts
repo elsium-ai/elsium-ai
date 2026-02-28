@@ -108,6 +108,7 @@ export interface CompletionRequest {
 	schema?: z.ZodType
 	stream?: boolean
 	metadata?: Record<string, unknown>
+	signal?: AbortSignal
 }
 
 export interface ToolDefinition {
