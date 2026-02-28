@@ -179,7 +179,7 @@ const result = await runSupervisor(
 
 ### X-Ray Mode (DevTools for AI)
 
-See the exact request, response, tokens, timing, and cost for every LLM call. Think browser DevTools for AI — no other framework does this.
+Inspect the exact request, response, tokens, timing, and cost for every LLM call.
 
 ```typescript
 import { gateway } from '@elsium-ai/gateway'
