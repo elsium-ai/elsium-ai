@@ -1,0 +1,30 @@
+{
+  "name": "@elsium-ai/testing",
+  "version": "0.1.0",
+  "description": "Testing utilities, mock providers, fixtures, and eval framework for ElsiumAI",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun x tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "dev": "bun --watch src/index.ts"
+  },
+  "dependencies": {
+    "@elsium-ai/core": "workspace:*",
+    "@elsium-ai/gateway": "workspace:*",
+    "@elsium-ai/agents": "workspace:*",
+    "@elsium-ai/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.0",
+    "typescript": "^5.7.0"
+  }
+}

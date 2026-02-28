@@ -1,0 +1,49 @@
+{
+  "name": "elsium-ai",
+  "private": true,
+  "version": "0.0.0",
+  "description": "A high-performance, TypeScript-first AI framework built on Bun",
+  "license": "MIT",
+  "author": "ElsiumAI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/elsium-ai/elsium-ai"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "dev": "bun run --filter '*' dev",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "bun run build && changeset publish",
+    "bench": "bun benchmarks/run-all.ts",
+    "test:coverage": "vitest run --coverage",
+    "metrics": "bun scripts/metrics.ts",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "biome format --write"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@changesets/cli": "^2.27.0",
+    "@commitlint/cli": "^20.4.2",
+    "@commitlint/config-conventional": "^20.4.2",
+    "@vitest/coverage-v8": "^3.2.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.0",
+    "typescript": "^5.7.0",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^3.0.0",
+    "zod": "^4.3.6"
+  }
+}

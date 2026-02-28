@@ -1,0 +1,5 @@
+export { initCommand } from './commands/init'
+export { devCommand } from './commands/dev'
+export { evalCommand } from './commands/eval'
+export { costCommand } from './commands/cost'
+export { traceCommand } from './commands/trace'
