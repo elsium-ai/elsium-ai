@@ -44,9 +44,10 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 
 	const toolMap = new Map((config.tools ?? []).map((t) => [t.name, t]))
 
-	const guardrails: Required<Omit<GuardrailConfig, 'semantic' | 'security'>> & {
+	const guardrails: Required<Omit<GuardrailConfig, 'semantic' | 'security' | 'approval'>> & {
 		semantic?: GuardrailConfig['semantic']
 		security?: GuardrailConfig['security']
+		approval?: GuardrailConfig['approval']
 	} = {
 		maxIterations: config.guardrails?.maxIterations ?? 10,
 		maxTokenBudget: config.guardrails?.maxTokenBudget ?? 500_000,
