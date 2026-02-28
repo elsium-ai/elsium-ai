@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 
 const TRACES_DIR = '.elsium/traces'
 
@@ -17,14 +17,18 @@ interface SpanData {
 	events: Array<{ name: string; timestamp: number; data?: Record<string, unknown> }>
 }
 
-export async function traceCommand(args: string[]) {
-	const traceId = args[0]
-	const tracesPath = join(process.cwd(), TRACES_DIR)
+function formatStatus(status: string): string {
+	if (status === 'ok') return 'OK'
+	if (status === 'error') return 'ERR'
+	return '...'
+}
 
-	if (!traceId) {
-		// List recent traces
-		if (!existsSync(tracesPath)) {
-			console.log(`
+function formatDuration(durationMs: number | undefined): string {
+	return durationMs ? `${durationMs}ms` : '?'
+}
+
+function showNoTracesHelp() {
+	console.log(`
   No traces found.
 
   Traces are recorded when you run your app with tracing enabled:
@@ -39,50 +43,46 @@ export async function traceCommand(args: string[]) {
     elsium trace           List recent traces
     elsium trace <id>      Inspect a specific trace
 `)
-			return
-		}
+}
 
-		try {
-			const files = readdirSync(tracesPath)
-				.filter((f) => f.endsWith('.json'))
-				.sort()
-				.reverse()
-				.slice(0, 20)
-
-			if (files.length === 0) {
-				console.log('\n  No traces recorded yet.\n')
-				return
-			}
-
-			console.log(`\n  Recent Traces (${files.length})`)
-			console.log(`  ${'─'.repeat(60)}`)
-
-			for (const file of files) {
-				const data = JSON.parse(readFileSync(join(tracesPath, file), 'utf-8')) as SpanData[]
-
-				const root = data.find((s) => !s.parentId) ?? data[0]
-				if (root) {
-					const status = root.status === 'ok' ? 'OK' : root.status === 'error' ? 'ERR' : '...'
-					const duration = root.durationMs ? `${root.durationMs}ms` : '?'
-					console.log(`  [${status}] ${root.traceId}  ${root.name}  ${duration}`)
-				}
-			}
-
-			console.log()
-		} catch (err) {
-			console.error('Failed to read traces:', err instanceof Error ? err.message : err)
-		}
-
+function listTraces(tracesPath: string) {
+	if (!existsSync(tracesPath)) {
+		showNoTracesHelp()
 		return
 	}
 
-	// H8 fix: Validate traceId to prevent path traversal
-	if (!/^[a-zA-Z0-9_-]+$/.test(traceId)) {
-		console.error('Invalid trace ID format')
-		process.exit(1)
-	}
+	try {
+		const files = readdirSync(tracesPath)
+			.filter((f) => f.endsWith('.json'))
+			.sort()
+			.reverse()
+			.slice(0, 20)
 
-	// Show specific trace
+		if (files.length === 0) {
+			console.log('\n  No traces recorded yet.\n')
+			return
+		}
+
+		console.log(`\n  Recent Traces (${files.length})`)
+		console.log(`  ${'─'.repeat(60)}`)
+
+		for (const file of files) {
+			const data = JSON.parse(readFileSync(join(tracesPath, file), 'utf-8')) as SpanData[]
+			const root = data.find((s) => !s.parentId) ?? data[0]
+			if (root) {
+				const status = formatStatus(root.status)
+				const duration = formatDuration(root.durationMs)
+				console.log(`  [${status}] ${root.traceId}  ${root.name}  ${duration}`)
+			}
+		}
+
+		console.log()
+	} catch (err) {
+		console.error('Failed to read traces:', err instanceof Error ? err.message : err)
+	}
+}
+
+function showTrace(tracesPath: string, traceId: string) {
 	const traceFile = join(tracesPath, `${traceId}.json`)
 
 	if (!existsSync(traceFile)) {
@@ -97,7 +97,6 @@ export async function traceCommand(args: string[]) {
 		console.log(`  Spans: ${spans.length}`)
 		console.log(`  ${'─'.repeat(60)}`)
 
-		// Build tree
 		const roots = spans.filter((s) => !s.parentId)
 		for (const root of roots) {
 			printSpanTree(root, spans, 0)
@@ -110,9 +109,27 @@ export async function traceCommand(args: string[]) {
 	}
 }
 
+export async function traceCommand(args: string[]) {
+	const traceId = args[0]
+	const tracesPath = join(process.cwd(), TRACES_DIR)
+
+	if (!traceId) {
+		listTraces(tracesPath)
+		return
+	}
+
+	// H8 fix: Validate traceId to prevent path traversal
+	if (!/^[a-zA-Z0-9_-]+$/.test(traceId)) {
+		console.error('Invalid trace ID format')
+		process.exit(1)
+	}
+
+	showTrace(tracesPath, traceId)
+}
+
 function printSpanTree(span: SpanData, allSpans: SpanData[], depth: number) {
 	const indent = `  ${'  '.repeat(depth)}`
-	const status = span.status === 'ok' ? 'OK' : span.status === 'error' ? 'ERR' : '...'
+	const status = formatStatus(span.status)
 	const duration = span.durationMs ? `${span.durationMs}ms` : ''
 	const kind = span.kind ? `[${span.kind}]` : ''
 

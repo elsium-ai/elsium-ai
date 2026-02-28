@@ -8,7 +8,7 @@ export async function devCommand(args: string[]) {
 	const fullPath = resolve(cwd, entryFile)
 
 	// H8 fix: Prevent path traversal outside project root
-	if (!fullPath.startsWith(cwd + '/') && fullPath !== cwd) {
+	if (!fullPath.startsWith(`${cwd}/`) && fullPath !== cwd) {
 		console.error('Error: entry file must be within the project directory')
 		process.exit(1)
 	}

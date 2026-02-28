@@ -92,6 +92,37 @@ interface Token {
 	value: string
 }
 
+function readNumber(expr: string, start: number): { token: Token; next: number } {
+	let num = ''
+	let i = start
+	while (i < expr.length && /[0-9.eE]/.test(expr[i])) {
+		num += expr[i++]
+	}
+	return { token: { type: 'number', value: num }, next: i }
+}
+
+function readIdentifier(expr: string, start: number): { token: Token; next: number } {
+	let name = ''
+	let i = start
+	while (i < expr.length && /[a-zA-Z0-9_]/.test(expr[i])) {
+		name += expr[i++]
+	}
+	if (name in MATH_FUNCTIONS) {
+		return { token: { type: 'func', value: name }, next: i }
+	}
+	if (name in MATH_CONSTANTS) {
+		return { token: { type: 'const', value: name }, next: i }
+	}
+	throw new Error(`Unknown identifier: ${name}`)
+}
+
+function readOperator(expr: string, start: number): { token: Token; next: number } {
+	if (expr[start] === '*' && expr[start + 1] === '*') {
+		return { token: { type: 'op', value: '**' }, next: start + 2 }
+	}
+	return { token: { type: 'op', value: expr[start] }, next: start + 1 }
+}
+
 function tokenize(expr: string): Token[] {
 	const tokens: Token[] = []
 	let i = 0
@@ -101,35 +132,21 @@ function tokenize(expr: string): Token[] {
 			continue
 		}
 		if (/[0-9.]/.test(expr[i])) {
-			let num = ''
-			while (i < expr.length && /[0-9.eE]/.test(expr[i])) {
-				num += expr[i++]
-			}
-			tokens.push({ type: 'number', value: num })
+			const result = readNumber(expr, i)
+			tokens.push(result.token)
+			i = result.next
 			continue
 		}
 		if (/[a-zA-Z_]/.test(expr[i])) {
-			let name = ''
-			while (i < expr.length && /[a-zA-Z0-9_]/.test(expr[i])) {
-				name += expr[i++]
-			}
-			if (name in MATH_FUNCTIONS) {
-				tokens.push({ type: 'func', value: name })
-			} else if (name in MATH_CONSTANTS) {
-				tokens.push({ type: 'const', value: name })
-			} else {
-				throw new Error(`Unknown identifier: ${name}`)
-			}
+			const result = readIdentifier(expr, i)
+			tokens.push(result.token)
+			i = result.next
 			continue
 		}
 		if ('+-*/%'.includes(expr[i])) {
-			// Handle ** (exponentiation)
-			if (expr[i] === '*' && expr[i + 1] === '*') {
-				tokens.push({ type: 'op', value: '**' })
-				i += 2
-				continue
-			}
-			tokens.push({ type: 'op', value: expr[i++] })
+			const result = readOperator(expr, i)
+			tokens.push(result.token)
+			i = result.next
 			continue
 		}
 		if (expr[i] === '(') {
@@ -204,48 +221,53 @@ function parseUnary(tokens: Token[], pos: { i: number }): number {
 	return parseAtom(tokens, pos)
 }
 
+function parseNumberAtom(token: Token, pos: { i: number }): number {
+	pos.i++
+	const val = Number(token.value)
+	if (!Number.isFinite(val)) throw new Error(`Invalid number: ${token.value}`)
+	return val
+}
+
+function parseFuncCall(token: Token, tokens: Token[], pos: { i: number }): number {
+	const fn = MATH_FUNCTIONS[token.value]
+	pos.i++
+	if (tokens[pos.i]?.type !== 'lparen') throw new Error(`Expected ( after ${token.value}`)
+	pos.i++ // skip (
+	const args: number[] = []
+	if (tokens[pos.i]?.type !== 'rparen') {
+		args.push(parseExpression(tokens, pos))
+		while (tokens[pos.i]?.type === 'comma') {
+			pos.i++
+			args.push(parseExpression(tokens, pos))
+		}
+	}
+	if (tokens[pos.i]?.type !== 'rparen') throw new Error(`Expected ) after ${token.value} arguments`)
+	pos.i++ // skip )
+	return fn(...args)
+}
+
+function parseParenExpr(tokens: Token[], pos: { i: number }): number {
+	pos.i++
+	const val = parseExpression(tokens, pos)
+	if (tokens[pos.i]?.type !== 'rparen') throw new Error('Mismatched parentheses')
+	pos.i++
+	return val
+}
+
 function parseAtom(tokens: Token[], pos: { i: number }): number {
 	const token = tokens[pos.i]
 	if (!token) throw new Error('Unexpected end of expression')
 
-	if (token.type === 'number') {
-		pos.i++
-		const val = Number(token.value)
-		if (!Number.isFinite(val)) throw new Error(`Invalid number: ${token.value}`)
-		return val
-	}
+	if (token.type === 'number') return parseNumberAtom(token, pos)
 
 	if (token.type === 'const') {
 		pos.i++
 		return MATH_CONSTANTS[token.value]
 	}
 
-	if (token.type === 'func') {
-		const fn = MATH_FUNCTIONS[token.value]
-		pos.i++
-		if (tokens[pos.i]?.type !== 'lparen') throw new Error(`Expected ( after ${token.value}`)
-		pos.i++ // skip (
-		const args: number[] = []
-		if (tokens[pos.i]?.type !== 'rparen') {
-			args.push(parseExpression(tokens, pos))
-			while (tokens[pos.i]?.type === 'comma') {
-				pos.i++
-				args.push(parseExpression(tokens, pos))
-			}
-		}
-		if (tokens[pos.i]?.type !== 'rparen')
-			throw new Error(`Expected ) after ${token.value} arguments`)
-		pos.i++ // skip )
-		return fn(...args)
-	}
+	if (token.type === 'func') return parseFuncCall(token, tokens, pos)
 
-	if (token.type === 'lparen') {
-		pos.i++
-		const val = parseExpression(tokens, pos)
-		if (tokens[pos.i]?.type !== 'rparen') throw new Error('Mismatched parentheses')
-		pos.i++
-		return val
-	}
+	if (token.type === 'lparen') return parseParenExpr(tokens, pos)
 
 	throw new Error(`Unexpected token: ${token.value}`)
 }

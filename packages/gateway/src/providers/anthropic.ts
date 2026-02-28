@@ -101,6 +101,69 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		return response
 	}
 
+	function extractSystemText(msg: Message): string {
+		if (typeof msg.content === 'string') return msg.content
+		return msg.content
+			.filter((p) => p.type === 'text')
+			.map((p) => (p as { text: string }).text)
+			.join('\n')
+	}
+
+	function formatToolResultMessage(msg: Message): AnthropicMessage {
+		const blocks: AnthropicContentBlock[] = (msg.toolResults ?? []).map((tr) => ({
+			type: 'tool_result' as const,
+			tool_use_id: tr.toolCallId,
+			content: tr.content,
+		}))
+		return { role: 'user', content: blocks }
+	}
+
+	function formatStringContent(msg: Message, role: 'user' | 'assistant'): AnthropicMessage {
+		const blocks: AnthropicContentBlock[] = [{ type: 'text', text: msg.content as string }]
+
+		if (msg.toolCalls?.length) {
+			for (const tc of msg.toolCalls) {
+				blocks.push({
+					type: 'tool_use',
+					id: tc.id,
+					name: tc.name,
+					input: tc.arguments,
+				})
+			}
+		}
+
+		return { role, content: blocks }
+	}
+
+	function convertContentPart(part: {
+		type: string
+		text?: string
+		source?: { type: string; mediaType: string; data: string }
+	}): AnthropicContentBlock {
+		if (part.type === 'text') return { type: 'text', text: part.text }
+		if (part.type === 'image' && part.source?.type === 'base64') {
+			return {
+				type: 'image',
+				source: {
+					type: 'base64',
+					media_type: part.source.mediaType,
+					data: part.source.data,
+				},
+			}
+		}
+		return { type: 'text', text: '[unsupported content]' }
+	}
+
+	function formatMultipartContent(msg: Message, role: 'user' | 'assistant'): AnthropicMessage {
+		const content = msg.content as Array<{
+			type: string
+			text?: string
+			source?: { type: string; mediaType: string; data: string }
+		}>
+		const blocks: AnthropicContentBlock[] = content.map(convertContentPart)
+		return { role, content: blocks }
+	}
+
 	function formatMessages(messages: Message[]): {
 		system?: string
 		messages: AnthropicMessage[]
@@ -110,59 +173,21 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 
 		for (const msg of messages) {
 			if (msg.role === 'system') {
-				system =
-					typeof msg.content === 'string'
-						? msg.content
-						: msg.content
-								.filter((p) => p.type === 'text')
-								.map((p) => (p as { text: string }).text)
-								.join('\n')
+				system = extractSystemText(msg)
 				continue
 			}
 
 			if (msg.role === 'tool') {
-				const blocks: AnthropicContentBlock[] = (msg.toolResults ?? []).map((tr) => ({
-					type: 'tool_result' as const,
-					tool_use_id: tr.toolCallId,
-					content: tr.content,
-				}))
-				formatted.push({ role: 'user', content: blocks })
+				formatted.push(formatToolResultMessage(msg))
 				continue
 			}
 
 			const role = msg.role === 'assistant' ? 'assistant' : 'user'
 
 			if (typeof msg.content === 'string') {
-				const blocks: AnthropicContentBlock[] = [{ type: 'text', text: msg.content }]
-
-				if (msg.toolCalls?.length) {
-					for (const tc of msg.toolCalls) {
-						blocks.push({
-							type: 'tool_use',
-							id: tc.id,
-							name: tc.name,
-							input: tc.arguments,
-						})
-					}
-				}
-
-				formatted.push({ role, content: blocks })
+				formatted.push(formatStringContent(msg, role))
 			} else {
-				const blocks: AnthropicContentBlock[] = msg.content.map((part) => {
-					if (part.type === 'text') return { type: 'text', text: part.text }
-					if (part.type === 'image' && part.source.type === 'base64') {
-						return {
-							type: 'image',
-							source: {
-								type: 'base64',
-								media_type: part.source.mediaType,
-								data: part.source.data,
-							},
-						}
-					}
-					return { type: 'text', text: '[unsupported content]' }
-				})
-				formatted.push({ role, content: blocks })
+				formatted.push(formatMultipartContent(msg, role))
 			}
 		}
 
@@ -178,13 +203,14 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		}))
 	}
 
-	function parseResponse(raw: AnthropicResponse, latencyMs: number): LLMResponse {
-		const traceId = generateTraceId()
-
+	function extractContentBlocks(content: AnthropicContentBlock[]): {
+		textParts: string[]
+		toolCalls: ToolCall[]
+	} {
 		const toolCalls: ToolCall[] = []
 		const textParts: string[] = []
 
-		for (const block of raw.content) {
+		for (const block of content) {
 			if (block.type === 'text' && block.text) {
 				textParts.push(block.text)
 			} else if (block.type === 'tool_use' && block.id && block.name) {
@@ -196,6 +222,13 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 			}
 		}
 
+		return { textParts, toolCalls }
+	}
+
+	function parseResponse(raw: AnthropicResponse, latencyMs: number): LLMResponse {
+		const traceId = generateTraceId()
+		const { textParts, toolCalls } = extractContentBlocks(raw.content)
+
 		const usage: TokenUsage = {
 			inputTokens: raw.usage.input_tokens,
 			outputTokens: raw.usage.output_tokens,
@@ -203,15 +236,6 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 			cacheReadTokens: raw.usage.cache_read_input_tokens,
 			cacheWriteTokens: raw.usage.cache_creation_input_tokens,
 		}
-
-		const stopReason =
-			raw.stop_reason === 'end_turn'
-				? 'end_turn'
-				: raw.stop_reason === 'max_tokens'
-					? 'max_tokens'
-					: raw.stop_reason === 'tool_use'
-						? 'tool_use'
-						: 'end_turn'
 
 		return {
 			id: raw.id,
@@ -224,7 +248,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 			cost: calculateCost(raw.model, usage),
 			model: raw.model,
 			provider: 'anthropic',
-			stopReason: stopReason as LLMResponse['stopReason'],
+			stopReason: mapAnthropicStopReason(raw.stop_reason),
 			latencyMs,
 			traceId,
 		}
@@ -309,32 +333,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 							retryable: false,
 						})
 
-					const reader = resp.body.getReader()
-					const decoder = new TextDecoder()
-					let buffer = ''
-
-					while (true) {
-						const { done, value } = await reader.read()
-						if (done) break
-
-						buffer += decoder.decode(value, { stream: true })
-						const lines = buffer.split('\n')
-						buffer = lines.pop() ?? ''
-
-						for (const line of lines) {
-							if (!line.startsWith('data: ')) continue
-							const data = line.slice(6).trim()
-							if (data === '[DONE]') continue
-
-							try {
-								const event = JSON.parse(data)
-								const mapped = mapSSEEvent(event, model)
-								if (mapped) emit(mapped)
-							} catch {
-								// skip malformed JSON
-							}
-						}
-					}
+					await processAnthropicSSEStream(resp.body, model, emit)
 				} finally {
 					clearTimeout(timer)
 				}
@@ -347,69 +346,119 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 	}
 }
 
+function mapAnthropicStopReason(reason: string): LLMResponse['stopReason'] {
+	if (reason === 'end_turn') return 'end_turn'
+	if (reason === 'max_tokens') return 'max_tokens'
+	if (reason === 'tool_use') return 'tool_use'
+	return 'end_turn'
+}
+
+function processSSELine(line: string, model: string, emit: (event: StreamEvent) => void): void {
+	if (!line.startsWith('data: ')) return
+	const data = line.slice(6).trim()
+	if (data === '[DONE]') return
+
+	try {
+		const event = JSON.parse(data)
+		const mapped = mapSSEEvent(event, model)
+		if (mapped) emit(mapped)
+	} catch {
+		// skip malformed JSON
+	}
+}
+
+async function processAnthropicSSEStream(
+	body: ReadableStream<Uint8Array>,
+	model: string,
+	emit: (event: StreamEvent) => void,
+): Promise<void> {
+	const reader = body.getReader()
+	const decoder = new TextDecoder()
+	let buffer = ''
+
+	while (true) {
+		const { done, value } = await reader.read()
+		if (done) break
+
+		buffer += decoder.decode(value, { stream: true })
+		const lines = buffer.split('\n')
+		buffer = lines.pop() ?? ''
+
+		for (const line of lines) {
+			processSSELine(line, model, emit)
+		}
+	}
+}
+
+function mapSSEEventMessageStart(event: Record<string, unknown>, model: string): StreamEvent {
+	const msg = event.message as { id: string } | undefined
+	return {
+		type: 'message_start',
+		id: msg?.id ?? generateId('msg'),
+		model,
+	}
+}
+
+function mapSSEEventContentBlockStart(event: Record<string, unknown>): StreamEvent | null {
+	const block = event.content_block as { type: string; id?: string; name?: string }
+	if (block?.type === 'tool_use') {
+		return {
+			type: 'tool_call_start',
+			toolCall: { id: block.id ?? '', name: block.name ?? '' },
+		}
+	}
+	return null
+}
+
+function mapSSEEventContentBlockDelta(event: Record<string, unknown>): StreamEvent | null {
+	const delta = event.delta as { type: string; text?: string; partial_json?: string }
+	if (delta?.type === 'text_delta' && delta.text) {
+		return { type: 'text_delta', text: delta.text }
+	}
+	if (delta?.type === 'input_json_delta' && delta.partial_json) {
+		return {
+			type: 'tool_call_delta',
+			toolCallId: '',
+			arguments: delta.partial_json,
+		}
+	}
+	return null
+}
+
+function mapSSEEventMessageDelta(event: Record<string, unknown>): StreamEvent | null {
+	const delta = event.delta as { stop_reason?: string }
+	const usage = event.usage as { output_tokens?: number } | undefined
+	if (!delta?.stop_reason) return null
+
+	return {
+		type: 'message_end',
+		usage: {
+			inputTokens: 0,
+			outputTokens: usage?.output_tokens ?? 0,
+			totalTokens: usage?.output_tokens ?? 0,
+		},
+		stopReason: mapAnthropicStopReason(delta.stop_reason) as StreamEvent & {
+			type: 'message_end'
+		} extends {
+			stopReason: infer R
+		}
+			? R
+			: never,
+	}
+}
+
 function mapSSEEvent(event: Record<string, unknown>, model: string): StreamEvent | null {
 	switch (event.type) {
-		case 'message_start': {
-			const msg = event.message as { id: string } | undefined
-			return {
-				type: 'message_start',
-				id: msg?.id ?? generateId('msg'),
-				model,
-			}
-		}
-		case 'content_block_start': {
-			const block = event.content_block as { type: string; id?: string; name?: string }
-			if (block?.type === 'tool_use') {
-				return {
-					type: 'tool_call_start',
-					toolCall: { id: block.id ?? '', name: block.name ?? '' },
-				}
-			}
+		case 'message_start':
+			return mapSSEEventMessageStart(event, model)
+		case 'content_block_start':
+			return mapSSEEventContentBlockStart(event)
+		case 'content_block_delta':
+			return mapSSEEventContentBlockDelta(event)
+		case 'content_block_stop':
 			return null
-		}
-		case 'content_block_delta': {
-			const delta = event.delta as { type: string; text?: string; partial_json?: string }
-			if (delta?.type === 'text_delta' && delta.text) {
-				return { type: 'text_delta', text: delta.text }
-			}
-			if (delta?.type === 'input_json_delta' && delta.partial_json) {
-				return {
-					type: 'tool_call_delta',
-					toolCallId: '',
-					arguments: delta.partial_json,
-				}
-			}
-			return null
-		}
-		case 'content_block_stop': {
-			return null
-		}
-		case 'message_delta': {
-			const delta = event.delta as { stop_reason?: string }
-			const usage = event.usage as { output_tokens?: number } | undefined
-			if (delta?.stop_reason) {
-				return {
-					type: 'message_end',
-					usage: {
-						inputTokens: 0,
-						outputTokens: usage?.output_tokens ?? 0,
-						totalTokens: usage?.output_tokens ?? 0,
-					},
-					stopReason: (delta.stop_reason === 'end_turn'
-						? 'end_turn'
-						: delta.stop_reason === 'max_tokens'
-							? 'max_tokens'
-							: delta.stop_reason === 'tool_use'
-								? 'tool_use'
-								: 'end_turn') as StreamEvent & { type: 'message_end' } extends {
-						stopReason: infer R
-					}
-						? R
-						: never,
-				}
-			}
-			return null
-		}
+		case 'message_delta':
+			return mapSSEEventMessageDelta(event)
 		default:
 			return null
 	}

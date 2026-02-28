@@ -5,6 +5,7 @@ import {
 	type LLMResponse,
 	type Message,
 	type ProviderConfig,
+	type StreamEvent,
 	type TokenUsage,
 	type ToolCall,
 	type ToolDefinition,
@@ -52,6 +53,53 @@ interface GeminiResponse {
 export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 	const { apiKey, baseUrl = DEFAULT_BASE_URL, timeout = 60_000, maxRetries = 2 } = config
 
+	function extractGeminiSystemText(msg: Message): string {
+		if (typeof msg.content === 'string') return msg.content
+		return msg.content
+			.filter((p) => p.type === 'text')
+			.map((p) => (p as { text: string }).text)
+			.join('\n')
+	}
+
+	function formatToolResultContents(msg: Message): GeminiContent[] {
+		const results: GeminiContent[] = []
+		for (const tr of msg.toolResults ?? []) {
+			results.push({
+				role: 'model',
+				parts: [
+					{
+						functionResponse: {
+							name: tr.toolCallId,
+							response: { content: tr.content },
+						},
+					},
+				],
+			})
+		}
+		return results
+	}
+
+	function formatGeminiStringContent(msg: Message, role: 'user' | 'model'): GeminiContent {
+		const parts: GeminiPart[] = [{ text: msg.content as string }]
+
+		if (msg.toolCalls?.length) {
+			for (const tc of msg.toolCalls) {
+				parts.push({
+					functionCall: { name: tc.name, args: tc.arguments },
+				})
+			}
+		}
+
+		return { role, parts }
+	}
+
+	function formatGeminiMultipartContent(msg: Message, role: 'user' | 'model'): GeminiContent {
+		const parts: GeminiPart[] = (msg.content as Array<{ type: string; text?: string }>)
+			.filter((p) => p.type === 'text')
+			.map((p) => ({ text: (p as { text: string }).text }))
+		return { role, parts }
+	}
+
 	function formatMessages(messages: Message[]): {
 		systemInstruction?: { parts: GeminiPart[] }
 		contents: GeminiContent[]
@@ -61,53 +109,21 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 
 		for (const msg of messages) {
 			if (msg.role === 'system') {
-				const text =
-					typeof msg.content === 'string'
-						? msg.content
-						: msg.content
-								.filter((p) => p.type === 'text')
-								.map((p) => (p as { text: string }).text)
-								.join('\n')
-				systemInstruction = { parts: [{ text }] }
+				systemInstruction = { parts: [{ text: extractGeminiSystemText(msg) }] }
 				continue
 			}
 
 			if (msg.role === 'tool') {
-				for (const tr of msg.toolResults ?? []) {
-					contents.push({
-						role: 'model',
-						parts: [
-							{
-								functionResponse: {
-									name: tr.toolCallId,
-									response: { content: tr.content },
-								},
-							},
-						],
-					})
-				}
+				contents.push(...formatToolResultContents(msg))
 				continue
 			}
 
 			const role = msg.role === 'assistant' ? 'model' : 'user'
 
 			if (typeof msg.content === 'string') {
-				const parts: GeminiPart[] = [{ text: msg.content }]
-
-				if (msg.toolCalls?.length) {
-					for (const tc of msg.toolCalls) {
-						parts.push({
-							functionCall: { name: tc.name, args: tc.arguments },
-						})
-					}
-				}
-
-				contents.push({ role, parts })
+				contents.push(formatGeminiStringContent(msg, role))
 			} else {
-				const parts: GeminiPart[] = msg.content
-					.filter((p) => p.type === 'text')
-					.map((p) => ({ text: (p as { text: string }).text }))
-				contents.push({ role, parts })
+				contents.push(formatGeminiMultipartContent(msg, role))
 			}
 		}
 
@@ -127,11 +143,10 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 		]
 	}
 
-	function parseResponse(raw: GeminiResponse, model: string, latencyMs: number): LLMResponse {
-		const traceId = generateTraceId()
-		const candidate = raw.candidates?.[0]
-		const parts = candidate?.content?.parts ?? []
-
+	function extractGeminiParts(parts: GeminiPart[]): {
+		textParts: string[]
+		toolCalls: ToolCall[]
+	} {
 		const toolCalls: ToolCall[] = []
 		const textParts: string[] = []
 
@@ -148,21 +163,30 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 			}
 		}
 
+		return { textParts, toolCalls }
+	}
+
+	function mapGeminiStopReason(
+		finishReason: string | undefined,
+		hasToolCalls: boolean,
+	): LLMResponse['stopReason'] {
+		if (finishReason === 'STOP') return 'end_turn'
+		if (finishReason === 'MAX_TOKENS') return 'max_tokens'
+		if (finishReason === 'TOOL_CALLS' || hasToolCalls) return 'tool_use'
+		return 'end_turn'
+	}
+
+	function parseResponse(raw: GeminiResponse, model: string, latencyMs: number): LLMResponse {
+		const traceId = generateTraceId()
+		const candidate = raw.candidates?.[0]
+		const parts = candidate?.content?.parts ?? []
+		const { textParts, toolCalls } = extractGeminiParts(parts)
+
 		const usage: TokenUsage = {
 			inputTokens: raw.usageMetadata?.promptTokenCount ?? 0,
 			outputTokens: raw.usageMetadata?.candidatesTokenCount ?? 0,
 			totalTokens: raw.usageMetadata?.totalTokenCount ?? 0,
 		}
-
-		const finishReason = candidate?.finishReason
-		const stopReason =
-			finishReason === 'STOP'
-				? 'end_turn'
-				: finishReason === 'MAX_TOKENS'
-					? 'max_tokens'
-					: finishReason === 'TOOL_CALLS' || toolCalls.length > 0
-						? 'tool_use'
-						: 'end_turn'
 
 		return {
 			id: generateId('msg'),
@@ -175,10 +199,44 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 			cost: calculateCost(model, usage),
 			model,
 			provider: 'google',
-			stopReason: stopReason as LLMResponse['stopReason'],
+			stopReason: mapGeminiStopReason(candidate?.finishReason, toolCalls.length > 0),
 			latencyMs,
 			traceId,
 		}
+	}
+
+	function resolveSystemInstruction(
+		reqSystem: string | undefined,
+		parsed: { parts: GeminiPart[] } | undefined,
+	): { parts: GeminiPart[] } | undefined {
+		if (reqSystem) return { parts: [{ text: reqSystem }] }
+		return parsed
+	}
+
+	function buildGenerationConfig(req: CompletionRequest): Record<string, unknown> {
+		const config: Record<string, unknown> = {
+			maxOutputTokens: req.maxTokens ?? 4096,
+		}
+		if (req.temperature !== undefined) config.temperature = req.temperature
+		if (req.topP !== undefined) config.topP = req.topP
+		if (req.stopSequences?.length) config.stopSequences = req.stopSequences
+		return config
+	}
+
+	function buildRequestBody(req: CompletionRequest): Record<string, unknown> {
+		const { systemInstruction, contents } = formatMessages(req.messages)
+		const resolved = resolveSystemInstruction(req.system, systemInstruction)
+
+		const body: Record<string, unknown> = {
+			contents,
+			generationConfig: buildGenerationConfig(req),
+		}
+		if (resolved) body.systemInstruction = resolved
+
+		const tools = formatTools(req.tools)
+		if (tools) body.tools = tools
+
+		return body
 	}
 
 	return {
@@ -187,70 +245,15 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 
 		async complete(req: CompletionRequest): Promise<LLMResponse> {
 			const model = req.model ?? 'gemini-2.0-flash'
-			const { systemInstruction, contents } = formatMessages(req.messages)
-
-			const body: Record<string, unknown> = {
-				contents,
-				...(systemInstruction || req.system
-					? {
-							systemInstruction: req.system ? { parts: [{ text: req.system }] } : systemInstruction,
-						}
-					: {}),
-				generationConfig: {
-					maxOutputTokens: req.maxTokens ?? 4096,
-					...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-					...(req.topP !== undefined ? { topP: req.topP } : {}),
-					...(req.stopSequences?.length ? { stopSequences: req.stopSequences } : {}),
-				},
-			}
-
-			const tools = formatTools(req.tools)
-			if (tools) body.tools = tools
+			const body = buildRequestBody(req)
 
 			const startTime = performance.now()
 
-			const raw = await retry(
-				async () => {
-					const controller = new AbortController()
-					const timer = setTimeout(() => controller.abort(), timeout)
-
-					try {
-						const url = `${baseUrl}/v1beta/models/${model}:generateContent`
-						const response = await fetch(url, {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-							body: JSON.stringify(body),
-							signal: controller.signal,
-						})
-
-						if (!response.ok) {
-							const errorBody = await response.text().catch(() => 'Unknown error')
-
-							if (response.status === 401 || response.status === 403) {
-								throw ElsiumError.authError('google')
-							}
-							if (response.status === 429) {
-								throw ElsiumError.rateLimit('google')
-							}
-
-							throw ElsiumError.providerError(`Google API error ${response.status}: ${errorBody}`, {
-								provider: 'google',
-								statusCode: response.status,
-								retryable: response.status >= 500,
-							})
-						}
-
-						return (await response.json()) as GeminiResponse
-					} finally {
-						clearTimeout(timer)
-					}
-				},
-				{
-					maxRetries,
-					baseDelayMs: 1000,
-					shouldRetry: (e) => e instanceof ElsiumError && e.retryable,
-				},
-			)
+			const raw = await retry(() => googleRequest(baseUrl, model, apiKey, body, timeout), {
+				maxRetries,
+				baseDelayMs: 1000,
+				shouldRetry: (e) => e instanceof ElsiumError && e.retryable,
+			})
 
 			const latencyMs = Math.round(performance.now() - startTime)
 			return parseResponse(raw, model, latencyMs)
@@ -258,118 +261,18 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 
 		stream(req: CompletionRequest): ElsiumStream {
 			const model = req.model ?? 'gemini-2.0-flash'
-			const { systemInstruction, contents } = formatMessages(req.messages)
-
-			const body: Record<string, unknown> = {
-				contents,
-				...(systemInstruction || req.system
-					? {
-							systemInstruction: req.system ? { parts: [{ text: req.system }] } : systemInstruction,
-						}
-					: {}),
-				generationConfig: {
-					maxOutputTokens: req.maxTokens ?? 4096,
-					...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-					...(req.topP !== undefined ? { topP: req.topP } : {}),
-					...(req.stopSequences?.length ? { stopSequences: req.stopSequences } : {}),
-				},
-			}
-
-			const tools = formatTools(req.tools)
-			if (tools) body.tools = tools
+			const body = buildRequestBody(req)
 
 			return createStream(async (emit) => {
 				const controller = new AbortController()
 				const timer = setTimeout(() => controller.abort(), timeout)
 
 				try {
-					const url = `${baseUrl}/v1beta/models/${model}:streamGenerateContent?alt=sse`
-					const response = await fetch(url, {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-						body: JSON.stringify(body),
-						signal: controller.signal,
-					})
-
-					if (!response.ok) {
-						const errorBody = await response.text().catch(() => 'Unknown error')
-						throw ElsiumError.providerError(`Google API error ${response.status}: ${errorBody}`, {
-							provider: 'google',
-							retryable: response.status >= 500,
-						})
-					}
-
-					if (!response.body) {
-						throw new ElsiumError({
-							code: 'STREAM_ERROR',
-							message: 'Response body is null',
-							provider: 'google',
-							retryable: false,
-						})
-					}
-
-					const reader = response.body.getReader()
-					const decoder = new TextDecoder()
-					let buffer = ''
+					const response = await fetchGoogleStream(baseUrl, model, apiKey, body, controller.signal)
 
 					emit({ type: 'message_start', id: generateId('msg'), model })
 
-					while (true) {
-						const { done, value } = await reader.read()
-						if (done) break
-
-						buffer += decoder.decode(value, { stream: true })
-						const lines = buffer.split('\n')
-						buffer = lines.pop() ?? ''
-
-						for (const line of lines) {
-							if (!line.startsWith('data: ')) continue
-							const data = line.slice(6).trim()
-
-							try {
-								const event = JSON.parse(data) as GeminiResponse
-								const parts = event.candidates?.[0]?.content?.parts ?? []
-
-								for (const part of parts) {
-									if (part.text) {
-										emit({ type: 'text_delta', text: part.text })
-									}
-									if (part.functionCall) {
-										const toolCallId = generateId('tc')
-										emit({
-											type: 'tool_call_start',
-											toolCall: {
-												id: toolCallId,
-												name: part.functionCall.name,
-											},
-										})
-										emit({
-											type: 'tool_call_delta',
-											toolCallId,
-											arguments: JSON.stringify(part.functionCall.args),
-										})
-										emit({ type: 'tool_call_end', toolCallId })
-									}
-								}
-
-								const finishReason = event.candidates?.[0]?.finishReason
-								if (finishReason) {
-									const usage: TokenUsage = {
-										inputTokens: event.usageMetadata?.promptTokenCount ?? 0,
-										outputTokens: event.usageMetadata?.candidatesTokenCount ?? 0,
-										totalTokens: event.usageMetadata?.totalTokenCount ?? 0,
-									}
-									emit({
-										type: 'message_end',
-										usage,
-										stopReason: finishReason === 'STOP' ? 'end_turn' : 'end_turn',
-									})
-								}
-							} catch {
-								// skip malformed JSON
-							}
-						}
-					}
+					await processGeminiSSEStream(response.body as ReadableStream<Uint8Array>, emit)
 				} finally {
 					clearTimeout(timer)
 				}
@@ -384,5 +287,161 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 				'gemini-2.5-flash-preview-04-17',
 			]
 		},
+	}
+}
+
+async function handleGoogleErrorResponse(response: Response): Promise<never> {
+	const errorBody = await response.text().catch(() => 'Unknown error')
+
+	if (response.status === 401 || response.status === 403) {
+		throw ElsiumError.authError('google')
+	}
+	if (response.status === 429) {
+		throw ElsiumError.rateLimit('google')
+	}
+
+	throw ElsiumError.providerError(`Google API error ${response.status}: ${errorBody}`, {
+		provider: 'google',
+		statusCode: response.status,
+		retryable: response.status >= 500,
+	})
+}
+
+async function googleRequest(
+	baseUrl: string,
+	model: string,
+	apiKey: string,
+	body: Record<string, unknown>,
+	timeout: number,
+): Promise<GeminiResponse> {
+	const controller = new AbortController()
+	const timer = setTimeout(() => controller.abort(), timeout)
+
+	try {
+		const url = `${baseUrl}/v1beta/models/${model}:generateContent`
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+			body: JSON.stringify(body),
+			signal: controller.signal,
+		})
+
+		if (!response.ok) {
+			await handleGoogleErrorResponse(response)
+		}
+
+		return (await response.json()) as GeminiResponse
+	} finally {
+		clearTimeout(timer)
+	}
+}
+
+async function fetchGoogleStream(
+	baseUrl: string,
+	model: string,
+	apiKey: string,
+	body: Record<string, unknown>,
+	signal: AbortSignal,
+): Promise<Response> {
+	const url = `${baseUrl}/v1beta/models/${model}:streamGenerateContent?alt=sse`
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+		body: JSON.stringify(body),
+		signal,
+	})
+
+	if (!response.ok) {
+		const errorBody = await response.text().catch(() => 'Unknown error')
+		throw ElsiumError.providerError(`Google API error ${response.status}: ${errorBody}`, {
+			provider: 'google',
+			retryable: response.status >= 500,
+		})
+	}
+
+	if (!response.body) {
+		throw new ElsiumError({
+			code: 'STREAM_ERROR',
+			message: 'Response body is null',
+			provider: 'google',
+			retryable: false,
+		})
+	}
+
+	return response
+}
+
+function emitGeminiPartEvents(part: GeminiPart, emit: (event: StreamEvent) => void): void {
+	if (part.text) {
+		emit({ type: 'text_delta', text: part.text })
+	}
+	if (part.functionCall) {
+		const toolCallId = generateId('tc')
+		emit({
+			type: 'tool_call_start',
+			toolCall: { id: toolCallId, name: part.functionCall.name },
+		})
+		emit({
+			type: 'tool_call_delta',
+			toolCallId,
+			arguments: JSON.stringify(part.functionCall.args),
+		})
+		emit({ type: 'tool_call_end', toolCallId })
+	}
+}
+
+function emitGeminiFinishEvent(event: GeminiResponse, emit: (event: StreamEvent) => void): void {
+	const finishReason = event.candidates?.[0]?.finishReason
+	if (!finishReason) return
+
+	const usage: TokenUsage = {
+		inputTokens: event.usageMetadata?.promptTokenCount ?? 0,
+		outputTokens: event.usageMetadata?.candidatesTokenCount ?? 0,
+		totalTokens: event.usageMetadata?.totalTokenCount ?? 0,
+	}
+	emit({
+		type: 'message_end',
+		usage,
+		stopReason: finishReason === 'STOP' ? 'end_turn' : 'end_turn',
+	})
+}
+
+function processGeminiSSEEvent(event: GeminiResponse, emit: (event: StreamEvent) => void): void {
+	const parts = event.candidates?.[0]?.content?.parts ?? []
+
+	for (const part of parts) {
+		emitGeminiPartEvents(part, emit)
+	}
+
+	emitGeminiFinishEvent(event, emit)
+}
+
+async function processGeminiSSEStream(
+	body: ReadableStream<Uint8Array>,
+	emit: (event: StreamEvent) => void,
+): Promise<void> {
+	const reader = body.getReader()
+	const decoder = new TextDecoder()
+	let buffer = ''
+
+	while (true) {
+		const { done, value } = await reader.read()
+		if (done) break
+
+		buffer += decoder.decode(value, { stream: true })
+		const lines = buffer.split('\n')
+		buffer = lines.pop() ?? ''
+
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue
+			const data = line.slice(6).trim()
+
+			try {
+				const event = JSON.parse(data) as GeminiResponse
+				processGeminiSSEEvent(event, emit)
+			} catch {
+				// skip malformed JSON
+			}
+		}
 	}
 }

@@ -52,24 +52,39 @@ export interface SemanticValidator {
 	checkGrounding(output: string, sources: string[]): Promise<SemanticCheckResult>
 }
 
+/** Parse the first JSON object from an LLM response text, or return null on failure. */
+function parseJsonFromResponse(response: LLMResponse): Record<string, unknown> | null {
+	try {
+		const text = extractText(response.message.content)
+		const jsonMatch = text.match(/\{[\s\S]*\}/)
+		if (!jsonMatch) {
+			return null
+		}
+		return JSON.parse(jsonMatch[0])
+	} catch {
+		return null
+	}
+}
+
 export function createSemanticValidator(
 	config: SemanticGuardrailConfig,
 	llmComplete?: LLMComplete,
 ): SemanticValidator {
-	async function checkHallucination(
+	// --- Hallucination ---
+
+	async function checkHallucinationWithLLM(
 		output: string,
 		context: string[],
-	): Promise<SemanticCheckResult> {
-		if (!context.length) {
-			return { passed: true, score: 1, reason: 'No context provided for hallucination check' }
+	): Promise<SemanticCheckResult | null> {
+		if (!llmComplete) {
+			return null
 		}
 
-		if (llmComplete) {
-			const response = await llmComplete({
-				messages: [
-					{
-						role: 'user',
-						content: `You are a hallucination detector. Given the following context and output, determine if the output contains claims not supported by the context.
+		const response = await llmComplete({
+			messages: [
+				{
+					role: 'user',
+					content: `You are a hallucination detector. Given the following context and output, determine if the output contains claims not supported by the context.
 
 Context:
 ${context.join('\n---\n')}
@@ -79,33 +94,30 @@ ${output}
 
 Respond with a JSON object: {"score": <0-1 where 1 means no hallucination>, "hallucinated_claims": [<list of unsupported claims>]}
 Only respond with JSON, nothing else.`,
-					},
-				],
-				temperature: 0,
-			})
+				},
+			],
+			temperature: 0,
+		})
 
-			try {
-				const text = extractText(response.message.content)
-				const jsonMatch = text.match(/\{[\s\S]*\}/)
-				if (jsonMatch) {
-					const parsed = JSON.parse(jsonMatch[0])
-					const score = parsed.score ?? 0.5
-					const threshold = config.hallucination?.threshold ?? 0.7
-					const claims = parsed.hallucinated_claims ?? []
-					return {
-						passed: score >= threshold,
-						score,
-						reason:
-							claims.length > 0
-								? `Hallucinated claims: ${claims.join('; ')}`
-								: 'No hallucinations detected',
-					}
-				}
-			} catch {
-				// fallback to heuristic
-			}
+		const parsed = parseJsonFromResponse(response)
+		if (!parsed) {
+			return null
 		}
 
+		const score = (parsed.score as number) ?? 0.5
+		const threshold = config.hallucination?.threshold ?? 0.7
+		const claims = (parsed.hallucinated_claims as string[]) ?? []
+		return {
+			passed: score >= threshold,
+			score,
+			reason:
+				claims.length > 0
+					? `Hallucinated claims: ${claims.join('; ')}`
+					: 'No hallucinations detected',
+		}
+	}
+
+	function checkHallucinationHeuristic(output: string, context: string[]): SemanticCheckResult {
 		// Heuristic fallback (word-overlap based — NOT semantic analysis)
 		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const contextText = context.join(' ').toLowerCase()
@@ -136,44 +148,65 @@ Only respond with JSON, nothing else.`,
 		}
 	}
 
-	async function checkRelevance(input: string, output: string): Promise<SemanticCheckResult> {
-		if (llmComplete) {
-			const response = await llmComplete({
-				messages: [
-					{
-						role: 'user',
-						content: `Rate the relevance of this output to the input on a scale of 0 to 1.
+	async function checkHallucination(
+		output: string,
+		context: string[],
+	): Promise<SemanticCheckResult> {
+		if (!context.length) {
+			return { passed: true, score: 1, reason: 'No context provided for hallucination check' }
+		}
+
+		const llmResult = await checkHallucinationWithLLM(output, context)
+		if (llmResult) {
+			return llmResult
+		}
+
+		return checkHallucinationHeuristic(output, context)
+	}
+
+	// --- Relevance ---
+
+	async function checkRelevanceWithLLM(
+		input: string,
+		output: string,
+	): Promise<SemanticCheckResult | null> {
+		if (!llmComplete) {
+			return null
+		}
+
+		const response = await llmComplete({
+			messages: [
+				{
+					role: 'user',
+					content: `Rate the relevance of this output to the input on a scale of 0 to 1.
 
 Input: ${input}
 Output: ${output}
 
 Respond with a JSON object: {"score": <0-1>, "reason": "<brief explanation>"}
 Only respond with JSON, nothing else.`,
-					},
-				],
-				temperature: 0,
-			})
+				},
+			],
+			temperature: 0,
+		})
 
-			try {
-				const text = extractText(response.message.content)
-				const jsonMatch = text.match(/\{[\s\S]*\}/)
-				if (jsonMatch) {
-					const parsed = JSON.parse(jsonMatch[0])
-					const score = parsed.score ?? 0.5
-					const threshold = config.relevance?.threshold ?? 0.5
-					return {
-						passed: score >= threshold,
-						score,
-						reason:
-							parsed.reason ??
-							(score >= threshold ? 'Output is relevant' : 'Output lacks relevance'),
-					}
-				}
-			} catch {
-				// fallback to heuristic
-			}
+		const parsed = parseJsonFromResponse(response)
+		if (!parsed) {
+			return null
 		}
 
+		const score = (parsed.score as number) ?? 0.5
+		const threshold = config.relevance?.threshold ?? 0.5
+		return {
+			passed: score >= threshold,
+			score,
+			reason:
+				(parsed.reason as string) ??
+				(score >= threshold ? 'Output is relevant' : 'Output lacks relevance'),
+		}
+	}
+
+	function checkRelevanceHeuristic(input: string, output: string): SemanticCheckResult {
 		// Heuristic fallback (word-overlap based — NOT semantic analysis)
 		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const inputWords = new Set(
@@ -201,17 +234,30 @@ Only respond with JSON, nothing else.`,
 		}
 	}
 
-	async function checkGrounding(output: string, sources: string[]): Promise<SemanticCheckResult> {
-		if (!sources.length) {
-			return { passed: true, score: 1, reason: 'No sources provided for grounding check' }
+	async function checkRelevance(input: string, output: string): Promise<SemanticCheckResult> {
+		const llmResult = await checkRelevanceWithLLM(input, output)
+		if (llmResult) {
+			return llmResult
 		}
 
-		if (llmComplete) {
-			const response = await llmComplete({
-				messages: [
-					{
-						role: 'user',
-						content: `You are a fact checker. Check if the claims in the output are supported by the provided sources.
+		return checkRelevanceHeuristic(input, output)
+	}
+
+	// --- Grounding ---
+
+	async function checkGroundingWithLLM(
+		output: string,
+		sources: string[],
+	): Promise<SemanticCheckResult | null> {
+		if (!llmComplete) {
+			return null
+		}
+
+		const response = await llmComplete({
+			messages: [
+				{
+					role: 'user',
+					content: `You are a fact checker. Check if the claims in the output are supported by the provided sources.
 
 Sources:
 ${sources.join('\n---\n')}
@@ -221,32 +267,29 @@ ${output}
 
 Respond with a JSON object: {"score": <0-1 where 1 means fully grounded>, "ungrounded_claims": [<list of claims not in sources>]}
 Only respond with JSON, nothing else.`,
-					},
-				],
-				temperature: 0,
-			})
+				},
+			],
+			temperature: 0,
+		})
 
-			try {
-				const text = extractText(response.message.content)
-				const jsonMatch = text.match(/\{[\s\S]*\}/)
-				if (jsonMatch) {
-					const parsed = JSON.parse(jsonMatch[0])
-					const score = parsed.score ?? 0.5
-					const claims = parsed.ungrounded_claims ?? []
-					return {
-						passed: score >= 0.7,
-						score,
-						reason:
-							claims.length > 0
-								? `Ungrounded claims: ${claims.join('; ')}`
-								: 'All claims are grounded in sources',
-					}
-				}
-			} catch {
-				// fallback to heuristic
-			}
+		const parsed = parseJsonFromResponse(response)
+		if (!parsed) {
+			return null
 		}
 
+		const score = (parsed.score as number) ?? 0.5
+		const claims = (parsed.ungrounded_claims as string[]) ?? []
+		return {
+			passed: score >= 0.7,
+			score,
+			reason:
+				claims.length > 0
+					? `Ungrounded claims: ${claims.join('; ')}`
+					: 'All claims are grounded in sources',
+		}
+	}
+
+	function checkGroundingHeuristic(output: string, sources: string[]): SemanticCheckResult {
 		// Heuristic fallback (word-overlap based — NOT semantic analysis)
 		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const sourceText = sources.join(' ').toLowerCase()
@@ -265,6 +308,19 @@ Only respond with JSON, nothing else.`,
 					? 'Output appears grounded in sources (heuristic)'
 					: 'Output contains claims not found in sources (heuristic — provide llmComplete for production-grade checks)',
 		}
+	}
+
+	async function checkGrounding(output: string, sources: string[]): Promise<SemanticCheckResult> {
+		if (!sources.length) {
+			return { passed: true, score: 1, reason: 'No sources provided for grounding check' }
+		}
+
+		const llmResult = await checkGroundingWithLLM(output, sources)
+		if (llmResult) {
+			return llmResult
+		}
+
+		return checkGroundingHeuristic(output, sources)
 	}
 
 	return {

@@ -8,6 +8,48 @@ export interface ResilientStreamOptions {
 	onPartialRecovery?: (text: string, error: Error) => void
 }
 
+function shouldEmitCheckpoint(
+	lastCheckpointTime: number,
+	intervalMs: number,
+	textLength: number,
+): boolean {
+	const elapsed = Date.now() - lastCheckpointTime
+	return elapsed >= intervalMs && textLength > 0
+}
+
+function createCheckpoint(
+	textAccumulator: string,
+	eventIndex: number,
+	now: number,
+): StreamCheckpoint {
+	return {
+		id: generateId('ckpt'),
+		timestamp: now,
+		text: textAccumulator,
+		// L2 fix: use conservative 1.5:1 ratio instead of 4:1
+		tokensSoFar: Math.ceil(textAccumulator.length / 1.5),
+		eventIndex,
+	}
+}
+
+function toError(err: unknown): Error {
+	return err instanceof Error ? err : new Error(String(err))
+}
+
+function* emitErrorEvent(
+	err: unknown,
+	textAccumulator: string,
+	onPartialRecovery?: (text: string, error: Error) => void,
+) {
+	const error = toError(err)
+	if (textAccumulator.length > 0) {
+		onPartialRecovery?.(textAccumulator, error)
+		yield { type: 'recovery' as const, partialText: textAccumulator, error }
+	} else {
+		yield { type: 'error' as const, error }
+	}
+}
+
 export class ElsiumStream implements AsyncIterable<StreamEvent> {
 	private readonly source: AsyncIterable<StreamEvent>
 
@@ -118,29 +160,18 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 
 						yield event
 
-						const now = Date.now()
-						if (now - lastCheckpointTime >= checkpointIntervalMs && textAccumulator.length > 0) {
-							const checkpoint: StreamCheckpoint = {
-								id: generateId('ckpt'),
-								timestamp: now,
-								text: textAccumulator,
-								// L2 fix: use conservative 1.5:1 ratio instead of 4:1
-								tokensSoFar: Math.ceil(textAccumulator.length / 1.5),
-								eventIndex,
-							}
+						if (
+							shouldEmitCheckpoint(lastCheckpointTime, checkpointIntervalMs, textAccumulator.length)
+						) {
+							const now = Date.now()
+							const checkpoint = createCheckpoint(textAccumulator, eventIndex, now)
 							onCheckpoint?.(checkpoint)
 							yield { type: 'checkpoint' as const, checkpoint }
 							lastCheckpointTime = now
 						}
 					}
 				} catch (err) {
-					const error = err instanceof Error ? err : new Error(String(err))
-					if (textAccumulator.length > 0) {
-						onPartialRecovery?.(textAccumulator, error)
-						yield { type: 'recovery' as const, partialText: textAccumulator, error }
-					} else {
-						yield { type: 'error' as const, error }
-					}
+					yield* emitErrorEvent(err, textAccumulator, onPartialRecovery)
 				}
 			},
 		}

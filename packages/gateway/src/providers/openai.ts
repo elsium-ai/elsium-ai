@@ -105,68 +105,65 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		return response
 	}
 
+	function extractTextContent(msg: Message): string {
+		if (typeof msg.content === 'string') return msg.content
+		return msg.content
+			.filter((p) => p.type === 'text')
+			.map((p) => (p as { text: string }).text)
+			.join('\n')
+	}
+
+	function formatSystemMessage(msg: Message): OpenAIMessage {
+		return { role: 'system', content: extractTextContent(msg) }
+	}
+
+	function formatToolMessages(msg: Message): OpenAIMessage[] {
+		return (msg.toolResults ?? []).map((tr) => ({
+			role: 'tool' as const,
+			content: tr.content,
+			tool_call_id: tr.toolCallId,
+		}))
+	}
+
+	function formatAssistantMessage(msg: Message): OpenAIMessage {
+		const content = extractTextContent(msg)
+		const openaiMsg: OpenAIMessage = { role: 'assistant', content: content || null }
+
+		if (msg.toolCalls?.length) {
+			openaiMsg.tool_calls = msg.toolCalls.map((tc) => ({
+				id: tc.id,
+				type: 'function' as const,
+				function: {
+					name: tc.name,
+					arguments: JSON.stringify(tc.arguments),
+				},
+			}))
+		}
+
+		return openaiMsg
+	}
+
 	function formatMessages(messages: Message[]): OpenAIMessage[] {
 		const formatted: OpenAIMessage[] = []
 
 		for (const msg of messages) {
 			if (msg.role === 'system') {
-				const content =
-					typeof msg.content === 'string'
-						? msg.content
-						: msg.content
-								.filter((p) => p.type === 'text')
-								.map((p) => (p as { text: string }).text)
-								.join('\n')
-				formatted.push({ role: 'system', content })
+				formatted.push(formatSystemMessage(msg))
 				continue
 			}
 
 			if (msg.role === 'tool') {
-				for (const tr of msg.toolResults ?? []) {
-					formatted.push({
-						role: 'tool',
-						content: tr.content,
-						tool_call_id: tr.toolCallId,
-					})
-				}
+				formatted.push(...formatToolMessages(msg))
 				continue
 			}
 
 			if (msg.role === 'assistant') {
-				const content =
-					typeof msg.content === 'string'
-						? msg.content
-						: msg.content
-								.filter((p) => p.type === 'text')
-								.map((p) => (p as { text: string }).text)
-								.join('\n')
-
-				const openaiMsg: OpenAIMessage = { role: 'assistant', content: content || null }
-
-				if (msg.toolCalls?.length) {
-					openaiMsg.tool_calls = msg.toolCalls.map((tc) => ({
-						id: tc.id,
-						type: 'function' as const,
-						function: {
-							name: tc.name,
-							arguments: JSON.stringify(tc.arguments),
-						},
-					}))
-				}
-
-				formatted.push(openaiMsg)
+				formatted.push(formatAssistantMessage(msg))
 				continue
 			}
 
 			// User message
-			const content =
-				typeof msg.content === 'string'
-					? msg.content
-					: msg.content
-							.filter((p) => p.type === 'text')
-							.map((p) => (p as { text: string }).text)
-							.join('\n')
-			formatted.push({ role: 'user', content })
+			formatted.push({ role: 'user', content: extractTextContent(msg) })
 		}
 
 		return formatted
@@ -312,70 +309,9 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 							retryable: false,
 						})
 
-					const reader = resp.body.getReader()
-					const decoder = new TextDecoder()
-					let buffer = ''
-
 					emit({ type: 'message_start', id: generateId('msg'), model })
 
-					while (true) {
-						const { done, value } = await reader.read()
-						if (done) break
-
-						buffer += decoder.decode(value, { stream: true })
-						const lines = buffer.split('\n')
-						buffer = lines.pop() ?? ''
-
-						for (const line of lines) {
-							if (!line.startsWith('data: ')) continue
-							const data = line.slice(6).trim()
-							if (data === '[DONE]') {
-								emit({
-									type: 'message_end',
-									usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-									stopReason: 'end_turn',
-								})
-								continue
-							}
-
-							try {
-								const event = JSON.parse(data)
-								const delta = event.choices?.[0]?.delta
-
-								if (delta?.content) {
-									emit({ type: 'text_delta', text: delta.content })
-								}
-
-								if (delta?.tool_calls) {
-									for (const tc of delta.tool_calls) {
-										if (tc.function?.name) {
-											emit({
-												type: 'tool_call_start',
-												toolCall: { id: tc.id ?? '', name: tc.function.name },
-											})
-										}
-										if (tc.function?.arguments) {
-											emit({
-												type: 'tool_call_delta',
-												toolCallId: tc.id ?? '',
-												arguments: tc.function.arguments,
-											})
-										}
-									}
-								}
-
-								if (event.choices?.[0]?.finish_reason === 'tool_calls') {
-									emit({
-										type: 'message_end',
-										usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-										stopReason: 'tool_use',
-									})
-								}
-							} catch {
-								// skip malformed JSON
-							}
-						}
-					}
+					await processOpenAISSEStream(resp.body, emit)
 				} finally {
 					clearTimeout(timer)
 				}
@@ -385,5 +321,93 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		async listModels(): Promise<string[]> {
 			return ['gpt-4o', 'gpt-4o-mini', 'o1', 'o1-mini', 'o3-mini']
 		},
+	}
+}
+
+function emitOpenAIToolCallEvents(
+	toolCalls: Array<{ id?: string; function?: { name?: string; arguments?: string } }>,
+	emit: (event: StreamEvent) => void,
+): void {
+	for (const tc of toolCalls) {
+		if (tc.function?.name) {
+			emit({
+				type: 'tool_call_start',
+				toolCall: { id: tc.id ?? '', name: tc.function.name },
+			})
+		}
+		if (tc.function?.arguments) {
+			emit({
+				type: 'tool_call_delta',
+				toolCallId: tc.id ?? '',
+				arguments: tc.function.arguments,
+			})
+		}
+	}
+}
+
+function processOpenAISSEChunk(
+	event: Record<string, unknown>,
+	emit: (event: StreamEvent) => void,
+): void {
+	const delta = (
+		event.choices as Array<{ delta?: Record<string, unknown>; finish_reason?: string }>
+	)?.[0]?.delta
+
+	if (delta?.content) {
+		emit({ type: 'text_delta', text: delta.content as string })
+	}
+
+	if (delta?.tool_calls) {
+		emitOpenAIToolCallEvents(
+			delta.tool_calls as Array<{ id?: string; function?: { name?: string; arguments?: string } }>,
+			emit,
+		)
+	}
+
+	const finishReason = (event.choices as Array<{ finish_reason?: string }>)?.[0]?.finish_reason
+	if (finishReason === 'tool_calls') {
+		emit({
+			type: 'message_end',
+			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+			stopReason: 'tool_use',
+		})
+	}
+}
+
+async function processOpenAISSEStream(
+	body: ReadableStream<Uint8Array>,
+	emit: (event: StreamEvent) => void,
+): Promise<void> {
+	const reader = body.getReader()
+	const decoder = new TextDecoder()
+	let buffer = ''
+
+	while (true) {
+		const { done, value } = await reader.read()
+		if (done) break
+
+		buffer += decoder.decode(value, { stream: true })
+		const lines = buffer.split('\n')
+		buffer = lines.pop() ?? ''
+
+		for (const line of lines) {
+			if (!line.startsWith('data: ')) continue
+			const data = line.slice(6).trim()
+			if (data === '[DONE]') {
+				emit({
+					type: 'message_end',
+					usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+					stopReason: 'end_turn',
+				})
+				continue
+			}
+
+			try {
+				const event = JSON.parse(data)
+				processOpenAISSEChunk(event, emit)
+			} catch {
+				// skip malformed JSON
+			}
+		}
 	}
 }

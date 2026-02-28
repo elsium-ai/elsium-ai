@@ -57,159 +57,197 @@ export interface EvalSuiteResult {
 
 // ─── Criterion Evaluation ────────────────────────────────────────
 
+function evaluateContains(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'contains' }>,
+): CriterionResult {
+	const target = criterion.caseSensitive ? criterion.value : criterion.value.toLowerCase()
+	const haystack = criterion.caseSensitive ? output : output.toLowerCase()
+	const passed = haystack.includes(target)
+	return {
+		type: 'contains',
+		passed,
+		message: passed ? `Contains "${criterion.value}"` : `Does not contain "${criterion.value}"`,
+	}
+}
+
+function evaluateNotContains(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'not_contains' }>,
+): CriterionResult {
+	const target = criterion.caseSensitive ? criterion.value : criterion.value.toLowerCase()
+	const haystack = criterion.caseSensitive ? output : output.toLowerCase()
+	const passed = !haystack.includes(target)
+	return {
+		type: 'not_contains',
+		passed,
+		message: passed
+			? `Does not contain "${criterion.value}"`
+			: `Contains "${criterion.value}" (should not)`,
+	}
+}
+
+function evaluateMatches(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'matches' }>,
+): CriterionResult {
+	const regex = new RegExp(criterion.pattern, criterion.flags)
+	const passed = regex.test(output)
+	return {
+		type: 'matches',
+		passed,
+		message: passed ? `Matches /${criterion.pattern}/` : `Does not match /${criterion.pattern}/`,
+	}
+}
+
+function evaluateLengthMin(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'length_min' }>,
+): CriterionResult {
+	const passed = output.length >= criterion.value
+	return {
+		type: 'length_min',
+		passed,
+		message: passed
+			? `Length ${output.length} >= ${criterion.value}`
+			: `Length ${output.length} < ${criterion.value}`,
+	}
+}
+
+function evaluateLengthMax(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'length_max' }>,
+): CriterionResult {
+	const passed = output.length <= criterion.value
+	return {
+		type: 'length_max',
+		passed,
+		message: passed
+			? `Length ${output.length} <= ${criterion.value}`
+			: `Length ${output.length} > ${criterion.value}`,
+	}
+}
+
+function evaluateJsonValid(output: string): CriterionResult {
+	try {
+		JSON.parse(output)
+		return { type: 'json_valid', passed: true, message: 'Valid JSON' }
+	} catch {
+		return { type: 'json_valid', passed: false, message: 'Invalid JSON' }
+	}
+}
+
+function evaluateJsonMatches(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'json_matches' }>,
+): CriterionResult {
+	try {
+		const parsed = JSON.parse(output)
+		const passed = matchesSchema(parsed, criterion.schema)
+		return {
+			type: 'json_matches',
+			passed,
+			message: passed ? 'JSON matches schema' : 'JSON does not match schema',
+		}
+	} catch {
+		return { type: 'json_matches', passed: false, message: 'Invalid JSON' }
+	}
+}
+
+function evaluateCustom(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'custom' }>,
+): CriterionResult {
+	const passed = criterion.fn(output)
+	return {
+		type: `custom:${criterion.name}`,
+		passed,
+		message: passed
+			? `Custom check "${criterion.name}" passed`
+			: `Custom check "${criterion.name}" failed`,
+	}
+}
+
+function evaluateSemanticSimilarity(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'semantic_similarity' }>,
+): CriterionResult {
+	const refWords = new Set(
+		criterion.reference
+			.toLowerCase()
+			.split(/\s+/)
+			.filter((w) => w.length > 3),
+	)
+	const outWords = output
+		.toLowerCase()
+		.split(/\s+/)
+		.filter((w) => w.length > 3)
+	const overlap = outWords.filter((w) => refWords.has(w)).length
+	const score = refWords.size > 0 ? overlap / refWords.size : 0
+	const threshold = criterion.threshold ?? 0.7
+	const passed = score >= threshold
+	return {
+		type: 'semantic_similarity',
+		passed,
+		message: passed
+			? `Semantic similarity ${(score * 100).toFixed(0)}% >= ${(threshold * 100).toFixed(0)}%`
+			: `Semantic similarity ${(score * 100).toFixed(0)}% < ${(threshold * 100).toFixed(0)}%`,
+	}
+}
+
+function evaluateFactualAccuracy(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'factual_accuracy' }>,
+): CriterionResult {
+	const facts = criterion.facts
+	let matchedFacts = 0
+	const outputLower = output.toLowerCase()
+	for (const fact of facts) {
+		const factWords = fact
+			.toLowerCase()
+			.split(/\s+/)
+			.filter((w) => w.length > 3)
+		const matches = factWords.filter((w) => outputLower.includes(w)).length
+		if (matches / Math.max(factWords.length, 1) > 0.5) {
+			matchedFacts++
+		}
+	}
+	const score = facts.length > 0 ? matchedFacts / facts.length : 1
+	const threshold = criterion.threshold ?? 0.7
+	const passed = score >= threshold
+	return {
+		type: 'factual_accuracy',
+		passed,
+		message: passed
+			? `Factual accuracy: ${matchedFacts}/${facts.length} facts verified`
+			: `Factual accuracy: only ${matchedFacts}/${facts.length} facts found`,
+	}
+}
+
 function evaluateCriterion(output: string, criterion: EvalCriterion): CriterionResult {
 	switch (criterion.type) {
-		case 'contains': {
-			const target = criterion.caseSensitive ? criterion.value : criterion.value.toLowerCase()
-			const haystack = criterion.caseSensitive ? output : output.toLowerCase()
-			const passed = haystack.includes(target)
-			return {
-				type: 'contains',
-				passed,
-				message: passed ? `Contains "${criterion.value}"` : `Does not contain "${criterion.value}"`,
-			}
-		}
-
-		case 'not_contains': {
-			const target = criterion.caseSensitive ? criterion.value : criterion.value.toLowerCase()
-			const haystack = criterion.caseSensitive ? output : output.toLowerCase()
-			const passed = !haystack.includes(target)
-			return {
-				type: 'not_contains',
-				passed,
-				message: passed
-					? `Does not contain "${criterion.value}"`
-					: `Contains "${criterion.value}" (should not)`,
-			}
-		}
-
-		case 'matches': {
-			const regex = new RegExp(criterion.pattern, criterion.flags)
-			const passed = regex.test(output)
-			return {
-				type: 'matches',
-				passed,
-				message: passed
-					? `Matches /${criterion.pattern}/`
-					: `Does not match /${criterion.pattern}/`,
-			}
-		}
-
-		case 'length_min': {
-			const passed = output.length >= criterion.value
-			return {
-				type: 'length_min',
-				passed,
-				message: passed
-					? `Length ${output.length} >= ${criterion.value}`
-					: `Length ${output.length} < ${criterion.value}`,
-			}
-		}
-
-		case 'length_max': {
-			const passed = output.length <= criterion.value
-			return {
-				type: 'length_max',
-				passed,
-				message: passed
-					? `Length ${output.length} <= ${criterion.value}`
-					: `Length ${output.length} > ${criterion.value}`,
-			}
-		}
-
-		case 'json_valid': {
-			try {
-				JSON.parse(output)
-				return { type: 'json_valid', passed: true, message: 'Valid JSON' }
-			} catch {
-				return { type: 'json_valid', passed: false, message: 'Invalid JSON' }
-			}
-		}
-
-		case 'json_matches': {
-			try {
-				const parsed = JSON.parse(output)
-				const passed = matchesSchema(parsed, criterion.schema)
-				return {
-					type: 'json_matches',
-					passed,
-					message: passed ? 'JSON matches schema' : 'JSON does not match schema',
-				}
-			} catch {
-				return { type: 'json_matches', passed: false, message: 'Invalid JSON' }
-			}
-		}
-
-		case 'custom': {
-			const passed = criterion.fn(output)
-			return {
-				type: `custom:${criterion.name}`,
-				passed,
-				message: passed
-					? `Custom check "${criterion.name}" passed`
-					: `Custom check "${criterion.name}" failed`,
-			}
-		}
-
-		case 'llm_judge': {
-			// This is handled in the async version
-			return {
-				type: 'llm_judge',
-				passed: false,
-				message: 'LLM judge requires async evaluation',
-			}
-		}
-
-		case 'semantic_similarity': {
-			// Heuristic: word overlap similarity
-			const refWords = new Set(
-				criterion.reference
-					.toLowerCase()
-					.split(/\s+/)
-					.filter((w) => w.length > 3),
-			)
-			const outWords = output
-				.toLowerCase()
-				.split(/\s+/)
-				.filter((w) => w.length > 3)
-			const overlap = outWords.filter((w) => refWords.has(w)).length
-			const score = refWords.size > 0 ? overlap / refWords.size : 0
-			const threshold = criterion.threshold ?? 0.7
-			const passed = score >= threshold
-			return {
-				type: 'semantic_similarity',
-				passed,
-				message: passed
-					? `Semantic similarity ${(score * 100).toFixed(0)}% >= ${(threshold * 100).toFixed(0)}%`
-					: `Semantic similarity ${(score * 100).toFixed(0)}% < ${(threshold * 100).toFixed(0)}%`,
-			}
-		}
-
-		case 'factual_accuracy': {
-			const facts = criterion.facts
-			let matchedFacts = 0
-			const outputLower = output.toLowerCase()
-			for (const fact of facts) {
-				const factWords = fact
-					.toLowerCase()
-					.split(/\s+/)
-					.filter((w) => w.length > 3)
-				const matches = factWords.filter((w) => outputLower.includes(w)).length
-				if (matches / Math.max(factWords.length, 1) > 0.5) {
-					matchedFacts++
-				}
-			}
-			const score = facts.length > 0 ? matchedFacts / facts.length : 1
-			const threshold = criterion.threshold ?? 0.7
-			const passed = score >= threshold
-			return {
-				type: 'factual_accuracy',
-				passed,
-				message: passed
-					? `Factual accuracy: ${matchedFacts}/${facts.length} facts verified`
-					: `Factual accuracy: only ${matchedFacts}/${facts.length} facts found`,
-			}
-		}
+		case 'contains':
+			return evaluateContains(output, criterion)
+		case 'not_contains':
+			return evaluateNotContains(output, criterion)
+		case 'matches':
+			return evaluateMatches(output, criterion)
+		case 'length_min':
+			return evaluateLengthMin(output, criterion)
+		case 'length_max':
+			return evaluateLengthMax(output, criterion)
+		case 'json_valid':
+			return evaluateJsonValid(output)
+		case 'json_matches':
+			return evaluateJsonMatches(output, criterion)
+		case 'custom':
+			return evaluateCustom(output, criterion)
+		case 'llm_judge':
+			return { type: 'llm_judge', passed: false, message: 'LLM judge requires async evaluation' }
+		case 'semantic_similarity':
+			return evaluateSemanticSimilarity(output, criterion)
+		case 'factual_accuracy':
+			return evaluateFactualAccuracy(output, criterion)
 	}
 }
 
@@ -232,6 +270,79 @@ function matchesSchema(value: unknown, schema: Record<string, unknown>): boolean
 
 // ─── Eval Runner ─────────────────────────────────────────────────
 
+function makeRunnerErrorResult(evalCase: EvalCase, error: unknown, startTime: number): EvalResult {
+	return {
+		name: evalCase.name,
+		passed: false,
+		score: 0,
+		criteria: [
+			{
+				type: 'error',
+				passed: false,
+				message: `Runner error: ${error instanceof Error ? error.message : String(error)}`,
+			},
+		],
+		input: evalCase.input,
+		output: '',
+		durationMs: Math.round(performance.now() - startTime),
+		tags: evalCase.tags ?? [],
+	}
+}
+
+function checkExpected(output: string, expected: string): CriterionResult {
+	const passed = output.includes(expected)
+	return {
+		type: 'expected',
+		passed,
+		message: passed
+			? 'Output contains expected text'
+			: `Output does not contain expected "${expected}"`,
+	}
+}
+
+async function evaluateLlmJudge(
+	output: string,
+	criterion: Extract<EvalCriterion, { type: 'llm_judge' }>,
+): Promise<CriterionResult> {
+	try {
+		const fullPrompt = `${criterion.prompt}\n\nOutput to evaluate:\n${output}`
+		const result = await criterion.judge(fullPrompt)
+		const threshold = criterion.threshold ?? 0.7
+		const passed = result.score >= threshold
+		return {
+			type: 'llm_judge',
+			passed,
+			message: passed
+				? `LLM judge score: ${result.score.toFixed(2)} (${result.reasoning})`
+				: `LLM judge score: ${result.score.toFixed(2)} < ${threshold} (${result.reasoning})`,
+		}
+	} catch (error) {
+		return {
+			type: 'llm_judge',
+			passed: false,
+			message: `LLM judge error: ${error instanceof Error ? error.message : String(error)}`,
+		}
+	}
+}
+
+async function evaluateAllCriteria(output: string, evalCase: EvalCase): Promise<CriterionResult[]> {
+	const criteriaResults: CriterionResult[] = []
+
+	if (evalCase.expected !== undefined) {
+		criteriaResults.push(checkExpected(output, evalCase.expected))
+	}
+
+	for (const criterion of evalCase.criteria ?? []) {
+		if (criterion.type === 'llm_judge') {
+			criteriaResults.push(await evaluateLlmJudge(output, criterion))
+		} else {
+			criteriaResults.push(evaluateCriterion(output, criterion))
+		}
+	}
+
+	return criteriaResults
+}
+
 async function runCase(
 	evalCase: EvalCase,
 	runner: (input: string) => Promise<string>,
@@ -242,64 +353,10 @@ async function runCase(
 	try {
 		output = await runner(evalCase.input)
 	} catch (error) {
-		return {
-			name: evalCase.name,
-			passed: false,
-			score: 0,
-			criteria: [
-				{
-					type: 'error',
-					passed: false,
-					message: `Runner error: ${error instanceof Error ? error.message : String(error)}`,
-				},
-			],
-			input: evalCase.input,
-			output: '',
-			durationMs: Math.round(performance.now() - startTime),
-			tags: evalCase.tags ?? [],
-		}
+		return makeRunnerErrorResult(evalCase, error, startTime)
 	}
 
-	const criteriaResults: CriterionResult[] = []
-
-	// Check expected exact match
-	if (evalCase.expected !== undefined) {
-		const passed = output.includes(evalCase.expected)
-		criteriaResults.push({
-			type: 'expected',
-			passed,
-			message: passed
-				? 'Output contains expected text'
-				: `Output does not contain expected "${evalCase.expected}"`,
-		})
-	}
-
-	// Check criteria
-	for (const criterion of evalCase.criteria ?? []) {
-		if (criterion.type === 'llm_judge') {
-			try {
-				const fullPrompt = `${criterion.prompt}\n\nOutput to evaluate:\n${output}`
-				const result = await criterion.judge(fullPrompt)
-				const threshold = criterion.threshold ?? 0.7
-				const passed = result.score >= threshold
-				criteriaResults.push({
-					type: 'llm_judge',
-					passed,
-					message: passed
-						? `LLM judge score: ${result.score.toFixed(2)} (${result.reasoning})`
-						: `LLM judge score: ${result.score.toFixed(2)} < ${threshold} (${result.reasoning})`,
-				})
-			} catch (error) {
-				criteriaResults.push({
-					type: 'llm_judge',
-					passed: false,
-					message: `LLM judge error: ${error instanceof Error ? error.message : String(error)}`,
-				})
-			}
-		} else {
-			criteriaResults.push(evaluateCriterion(output, criterion))
-		}
-	}
+	const criteriaResults = await evaluateAllCriteria(output, evalCase)
 
 	const passedCount = criteriaResults.filter((c) => c.passed).length
 	const totalCount = criteriaResults.length

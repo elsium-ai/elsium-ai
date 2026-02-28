@@ -40,6 +40,39 @@ export function mockProvider(options: MockProviderOptions = {}): MockProvider {
 		return { content: '' }
 	}
 
+	async function emitStreamEvents(
+		emit: (event: import('@elsium-ai/core').StreamEvent) => void,
+		config: MockResponseConfig,
+	) {
+		if (config.delay) {
+			await new Promise((r) => setTimeout(r, config.delay))
+		}
+
+		emit({
+			type: 'message_start',
+			id: generateId('msg'),
+			model: config.model ?? 'mock-model',
+		})
+
+		const content = config.content ?? ''
+		if (content) {
+			const words = content.split(' ')
+			for (const word of words) {
+				emit({ type: 'text_delta', text: `${word} ` })
+			}
+		}
+
+		emit({
+			type: 'message_end',
+			usage: {
+				inputTokens: config.usage?.inputTokens ?? 10,
+				outputTokens: config.usage?.outputTokens ?? 5,
+				totalTokens: config.usage?.totalTokens ?? 15,
+			},
+			stopReason: config.stopReason ?? 'end_turn',
+		})
+	}
+
 	function buildResponse(config: MockResponseConfig, request: CompletionRequest): LLMResponse {
 		const model = config.model ?? request.model ?? 'mock-model'
 		const content = config.content ?? ''
@@ -107,36 +140,7 @@ export function mockProvider(options: MockProviderOptions = {}): MockProvider {
 
 			const config = getNextResponse()
 
-			return createStream(async (emit) => {
-				if (config.delay) {
-					await new Promise((r) => setTimeout(r, config.delay))
-				}
-
-				emit({
-					type: 'message_start',
-					id: generateId('msg'),
-					model: config.model ?? 'mock-model',
-				})
-
-				const content = config.content ?? ''
-				if (content) {
-					// Stream word by word
-					const words = content.split(' ')
-					for (const word of words) {
-						emit({ type: 'text_delta', text: `${word} ` })
-					}
-				}
-
-				emit({
-					type: 'message_end',
-					usage: {
-						inputTokens: config.usage?.inputTokens ?? 10,
-						outputTokens: config.usage?.outputTokens ?? 5,
-						totalTokens: config.usage?.totalTokens ?? 15,
-					},
-					stopReason: config.stopReason ?? 'end_turn',
-				})
-			})
+			return createStream((emit) => emitStreamEvents(emit, config))
 		},
 
 		async listModels(): Promise<string[]> {

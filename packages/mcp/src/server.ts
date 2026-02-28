@@ -140,6 +140,28 @@ export function createMCPServer(config: MCPServerConfig): MCPServer {
 		process.stdout.write(`${JSON.stringify(data)}\n`)
 	}
 
+	async function processRequestLine(line: string) {
+		if (!line.trim()) return
+
+		let request: JSONRPCRequest
+		try {
+			request = JSON.parse(line) as JSONRPCRequest
+		} catch {
+			return // skip malformed input
+		}
+
+		if (request.method === 'tools/call') {
+			const response = await handleToolCall(request)
+			writeLine(response)
+			return
+		}
+
+		const response = handleRequest(request)
+		if (response) {
+			writeLine(response)
+		}
+	}
+
 	return {
 		get running() {
 			return running
@@ -158,23 +180,7 @@ export function createMCPServer(config: MCPServerConfig): MCPServer {
 				buffer = lines.pop() ?? ''
 
 				for (const line of lines) {
-					if (!line.trim()) continue
-
-					try {
-						const request = JSON.parse(line) as JSONRPCRequest
-
-						if (request.method === 'tools/call') {
-							const response = await handleToolCall(request)
-							writeLine(response)
-						} else {
-							const response = handleRequest(request)
-							if (response) {
-								writeLine(response)
-							}
-						}
-					} catch {
-						// skip malformed input
-					}
+					await processRequestLine(line)
 				}
 			})
 

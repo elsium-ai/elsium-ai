@@ -171,6 +171,58 @@ export function checkBlockedPatterns(text: string, patterns: RegExp[]): Security
 
 // ─── Middleware ──────────────────────────────────────────────────
 
+function scanMessageForViolations(
+	text: string,
+	config: SecurityMiddlewareConfig,
+): SecurityViolation[] {
+	const violations: SecurityViolation[] = []
+
+	if (config.promptInjection !== false) {
+		violations.push(...detectPromptInjection(text))
+	}
+
+	if (config.jailbreakDetection) {
+		violations.push(...detectJailbreak(text))
+	}
+
+	if (config.blockedPatterns?.length) {
+		violations.push(...checkBlockedPatterns(text, config.blockedPatterns))
+	}
+
+	return violations
+}
+
+function reportAndThrow(violations: SecurityViolation[], config: SecurityMiddlewareConfig): never {
+	for (const v of violations) {
+		config.onViolation?.(v)
+	}
+	throw ElsiumError.validation(
+		`Security violation detected: ${violations.map((v) => v.detail).join('; ')}`,
+	)
+}
+
+function redactResponseSecrets(
+	response: LLMResponse,
+	config: SecurityMiddlewareConfig,
+): LLMResponse {
+	const responseText = extractText(response.message.content)
+	if (!responseText) return response
+
+	const { redacted, found } = redactSecrets(responseText)
+	if (found.length === 0) return response
+
+	for (const v of found) {
+		config.onViolation?.(v)
+	}
+	return {
+		...response,
+		message: {
+			...response.message,
+			content: redacted,
+		},
+	}
+}
+
 export function securityMiddleware(config: SecurityMiddlewareConfig): Middleware {
 	return async (ctx: MiddlewareContext, next: MiddlewareNext): Promise<LLMResponse> => {
 		// Pre-processing: scan input messages
@@ -178,27 +230,9 @@ export function securityMiddleware(config: SecurityMiddlewareConfig): Middleware
 			const text = extractText(message.content)
 			if (!text) continue
 
-			const violations: SecurityViolation[] = []
-
-			if (config.promptInjection !== false) {
-				violations.push(...detectPromptInjection(text))
-			}
-
-			if (config.jailbreakDetection) {
-				violations.push(...detectJailbreak(text))
-			}
-
-			if (config.blockedPatterns?.length) {
-				violations.push(...checkBlockedPatterns(text, config.blockedPatterns))
-			}
-
+			const violations = scanMessageForViolations(text, config)
 			if (violations.length > 0) {
-				for (const v of violations) {
-					config.onViolation?.(v)
-				}
-				throw ElsiumError.validation(
-					`Security violation detected: ${violations.map((v) => v.detail).join('; ')}`,
-				)
+				reportAndThrow(violations, config)
 			}
 		}
 
@@ -207,22 +241,7 @@ export function securityMiddleware(config: SecurityMiddlewareConfig): Middleware
 
 		// Post-processing: redact secrets in response
 		if (config.secretRedaction !== false) {
-			const responseText = extractText(response.message.content)
-			if (responseText) {
-				const { redacted, found } = redactSecrets(responseText)
-				if (found.length > 0) {
-					for (const v of found) {
-						config.onViolation?.(v)
-					}
-					return {
-						...response,
-						message: {
-							...response.message,
-							content: redacted,
-						},
-					}
-				}
-			}
+			return redactResponseSecrets(response, config)
 		}
 
 		return response

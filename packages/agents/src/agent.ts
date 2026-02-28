@@ -72,6 +72,75 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			.join('; ')
 	}
 
+	function validateOutput(outputText: string): void {
+		const validation = guardrails.outputValidator(outputText)
+		if (validation !== true) {
+			const errorMsg = typeof validation === 'string' ? validation : 'Output validation failed'
+			throw ElsiumError.validation(errorMsg)
+		}
+	}
+
+	function sanitizeOutputText(
+		outputText: string,
+		message: Message,
+	): { outputText: string; message: Message } {
+		if (!agentSecurity) {
+			return { outputText, message }
+		}
+		const securityResult = agentSecurity.sanitizeOutput(outputText)
+		if (!securityResult.safe && securityResult.redactedOutput) {
+			return {
+				outputText: securityResult.redactedOutput,
+				message: { ...message, content: securityResult.redactedOutput },
+			}
+		}
+		return { outputText, message }
+	}
+
+	async function runSemanticValidation(
+		inputMessages: Message[],
+		outputText: string,
+		iterations: number,
+	): Promise<
+		| { action: 'retry'; feedbackMessage: string }
+		| { action: 'continue'; result: SemanticValidationResult | null }
+	> {
+		if (!semanticValidator) {
+			return { action: 'continue', result: null }
+		}
+
+		const inputText = inputMessages.map((m) => extractText(m.content)).join('\n')
+		const semanticResult = await semanticValidator.validate(inputText, outputText)
+
+		if (semanticResult.valid) {
+			return { action: 'continue', result: semanticResult }
+		}
+
+		const autoRetry = guardrails.semantic?.autoRetry
+		if (autoRetry?.enabled && iterations < (autoRetry.maxRetries ?? 2) + 1) {
+			return {
+				action: 'retry',
+				feedbackMessage: `Your previous response failed semantic validation: ${formatFailedChecks(semanticResult.checks)}. Please correct your response.`,
+			}
+		}
+
+		throw ElsiumError.validation(
+			`Semantic validation failed: ${formatFailedChecks(semanticResult.checks)}`,
+		)
+	}
+
+	async function scoreConfidence(
+		inputMessages: Message[],
+		outputText: string,
+		semanticResult: SemanticValidationResult | null,
+	) {
+		if (!confidenceScorer) {
+			return undefined
+		}
+		const inputText = inputMessages.map((m) => extractText(m.content)).join('\n')
+		return confidenceScorer.score(inputText, outputText, semanticResult ?? undefined)
+	}
+
 	async function processOutput(
 		responseMessage: Message,
 		inputMessages: Message[],
@@ -80,53 +149,29 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		toolCallHistory: AgentResult['toolCalls'],
 		traceId: string,
 	): Promise<OutputProcessResult> {
-		let outputText = extractText(responseMessage.content)
-		let finalMessage = responseMessage
+		const rawText = extractText(responseMessage.content)
 
-		// Output validation
-		const validation = guardrails.outputValidator(outputText)
-		if (validation !== true) {
-			const errorMsg = typeof validation === 'string' ? validation : 'Output validation failed'
-			throw ElsiumError.validation(errorMsg)
+		validateOutput(rawText)
+
+		const sanitized = sanitizeOutputText(rawText, responseMessage)
+
+		const semanticOutcome = await runSemanticValidation(
+			inputMessages,
+			sanitized.outputText,
+			iterations,
+		)
+		if (semanticOutcome.action === 'retry') {
+			return semanticOutcome
 		}
 
-		// Security output sanitization
-		if (agentSecurity) {
-			const securityResult = agentSecurity.sanitizeOutput(outputText)
-			if (!securityResult.safe && securityResult.redactedOutput) {
-				outputText = securityResult.redactedOutput
-				finalMessage = { ...finalMessage, content: outputText }
-			}
-		}
-
-		// Semantic validation
-		let semanticResult: SemanticValidationResult | null = null
-		if (semanticValidator) {
-			const inputText = inputMessages.map((m) => extractText(m.content)).join('\n')
-			semanticResult = await semanticValidator.validate(inputText, outputText)
-
-			if (!semanticResult.valid) {
-				const autoRetry = guardrails.semantic?.autoRetry
-				if (autoRetry?.enabled && iterations < (autoRetry.maxRetries ?? 2) + 1) {
-					return {
-						action: 'retry',
-						feedbackMessage: `Your previous response failed semantic validation: ${formatFailedChecks(semanticResult.checks)}. Please correct your response.`,
-					}
-				}
-				throw ElsiumError.validation(
-					`Semantic validation failed: ${formatFailedChecks(semanticResult.checks)}`,
-				)
-			}
-		}
-
-		// Confidence scoring
-		const inputText = inputMessages.map((m) => extractText(m.content)).join('\n')
-		const confidence = confidenceScorer
-			? await confidenceScorer.score(inputText, outputText, semanticResult ?? undefined)
-			: undefined
+		const confidence = await scoreConfidence(
+			inputMessages,
+			sanitized.outputText,
+			semanticOutcome.result,
+		)
 
 		const agentResult: AgentResult = {
-			message: finalMessage,
+			message: sanitized.message,
 			usage,
 			toolCalls: toolCallHistory,
 			traceId,
@@ -136,6 +181,70 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		await safeHook(() => config.hooks?.onComplete?.(agentResult))
 
 		return { action: 'return', result: agentResult }
+	}
+
+	function checkBudget(totalInputTokens: number, totalOutputTokens: number): void {
+		if (totalInputTokens + totalOutputTokens > guardrails.maxTokenBudget) {
+			throw ElsiumError.budgetExceeded(
+				totalInputTokens + totalOutputTokens,
+				guardrails.maxTokenBudget,
+			)
+		}
+	}
+
+	function checkAborted(options: AgentRunOptions): void {
+		if (options.signal?.aborted) {
+			throw new ElsiumError({
+				code: 'VALIDATION_ERROR',
+				message: `Agent "${config.name}" was aborted`,
+				retryable: false,
+			})
+		}
+	}
+
+	function buildCompletionRequest(conversationMessages: Message[]): CompletionRequest {
+		return {
+			messages: conversationMessages,
+			model: config.model,
+			system: config.system,
+			tools: config.tools?.map((t) => t.toDefinition()),
+		}
+	}
+
+	async function handleNonToolResponse(
+		response: LLMResponse,
+		inputMessages: Message[],
+		iterations: number,
+		totalInputTokens: number,
+		totalOutputTokens: number,
+		totalCost: number,
+		toolCallHistory: AgentResult['toolCalls'],
+		traceId: string,
+		conversationMessages: Message[],
+	): Promise<AgentResult | null> {
+		const usage = {
+			totalInputTokens,
+			totalOutputTokens,
+			totalTokens: totalInputTokens + totalOutputTokens,
+			totalCost,
+			iterations,
+		}
+
+		const processed = await processOutput(
+			response.message,
+			inputMessages,
+			iterations,
+			usage,
+			toolCallHistory,
+			traceId,
+		)
+
+		if (processed.action === 'retry') {
+			conversationMessages.push({ role: 'user', content: processed.feedbackMessage })
+			return null
+		}
+
+		return processed.result
 	}
 
 	async function executeLoop(messages: Message[], options: AgentRunOptions): Promise<AgentResult> {
@@ -155,29 +264,10 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		while (iterations < guardrails.maxIterations) {
 			iterations++
 
-			// H7 fix: Check AbortSignal at each iteration
-			if (options.signal?.aborted) {
-				throw new ElsiumError({
-					code: 'VALIDATION_ERROR',
-					message: `Agent "${config.name}" was aborted`,
-					retryable: false,
-				})
-			}
+			checkAborted(options)
+			checkBudget(totalInputTokens, totalOutputTokens)
 
-			if (totalInputTokens + totalOutputTokens > guardrails.maxTokenBudget) {
-				throw ElsiumError.budgetExceeded(
-					totalInputTokens + totalOutputTokens,
-					guardrails.maxTokenBudget,
-				)
-			}
-
-			const request: CompletionRequest = {
-				messages: conversationMessages,
-				model: config.model,
-				system: config.system,
-				tools: config.tools?.map((t) => t.toDefinition()),
-			}
-
+			const request = buildCompletionRequest(conversationMessages)
 			const response = await deps.complete(request)
 
 			totalInputTokens += response.usage.inputTokens
@@ -190,29 +280,22 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			memory.add(response.message)
 
 			if (!response.message.toolCalls?.length || response.stopReason !== 'tool_use') {
-				const usage = {
-					totalInputTokens,
-					totalOutputTokens,
-					totalTokens: totalInputTokens + totalOutputTokens,
-					totalCost,
-					iterations,
-				}
-
-				const processed = await processOutput(
-					response.message,
+				const result = await handleNonToolResponse(
+					response,
 					messages,
 					iterations,
-					usage,
+					totalInputTokens,
+					totalOutputTokens,
+					totalCost,
 					toolCallHistory,
 					traceId,
+					conversationMessages,
 				)
 
-				if (processed.action === 'retry') {
-					conversationMessages.push({ role: 'user', content: processed.feedbackMessage })
-					continue
+				if (result) {
+					return result
 				}
-
-				return processed.result
+				continue
 			}
 
 			const toolResults = await executeToolCalls(response.message.toolCalls, toolCallHistory)

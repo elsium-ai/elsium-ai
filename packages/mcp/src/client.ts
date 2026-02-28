@@ -106,6 +106,34 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 
 	const MAX_LINE_LENGTH = 1024 * 1024 // 1MB max line length
 
+	function processResponseLine(line: string) {
+		if (!line.trim()) return
+
+		let response: JSONRPCResponse
+		try {
+			response = JSON.parse(line) as JSONRPCResponse
+		} catch {
+			return // skip malformed JSON
+		}
+
+		const pending = pendingRequests.get(response.id)
+		if (!pending) return
+
+		pendingRequests.delete(response.id)
+		if (response.error) {
+			pending.reject(
+				new ElsiumError({
+					code: 'PROVIDER_ERROR',
+					message: `MCP error: ${response.error.message}`,
+					retryable: false,
+					metadata: { code: response.error.code },
+				}),
+			)
+		} else {
+			pending.resolve(response.result)
+		}
+	}
+
 	function handleData(data: string) {
 		buffer += data
 		if (buffer.length > MAX_LINE_LENGTH) {
@@ -116,28 +144,7 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 		buffer = lines.pop() ?? ''
 
 		for (const line of lines) {
-			if (!line.trim()) continue
-			try {
-				const response = JSON.parse(line) as JSONRPCResponse
-				const pending = pendingRequests.get(response.id)
-				if (pending) {
-					pendingRequests.delete(response.id)
-					if (response.error) {
-						pending.reject(
-							new ElsiumError({
-								code: 'PROVIDER_ERROR',
-								message: `MCP error: ${response.error.message}`,
-								retryable: false,
-								metadata: { code: response.error.code },
-							}),
-						)
-					} else {
-						pending.resolve(response.result)
-					}
-				}
-			} catch {
-				// skip malformed JSON
-			}
+			processResponseLine(line)
 		}
 	}
 

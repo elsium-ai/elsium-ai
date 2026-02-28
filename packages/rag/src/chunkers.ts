@@ -64,20 +64,25 @@ export function recursiveChunker(options?: {
 	const overlap = options?.overlap ?? 0
 	const separators = options?.separators ?? DEFAULT_SEPARATORS
 
-	function splitRecursive(text: string, sepIndex: number): string[] {
-		if (text.length <= maxSize) return [text]
-		if (sepIndex >= separators.length) {
-			// fallback to fixed-size split
-			const parts: string[] = []
-			for (let i = 0; i < text.length; i += maxSize - overlap) {
-				parts.push(text.slice(i, i + maxSize))
-			}
-			return parts
+	function fixedSizeSplit(text: string): string[] {
+		const parts: string[] = []
+		for (let i = 0; i < text.length; i += maxSize - overlap) {
+			parts.push(text.slice(i, i + maxSize))
 		}
+		return parts
+	}
 
-		const separator = separators[sepIndex]
-		const splits = separator === '' ? [text] : text.split(separator)
+	function handleOversizedSplit(
+		split: string,
+		sepIndex: number,
+	): { chunks: string[]; remainder: string } {
+		if (split.length > maxSize) {
+			return { chunks: splitRecursive(split, sepIndex + 1), remainder: '' }
+		}
+		return { chunks: [], remainder: split }
+	}
 
+	function mergeSplits(splits: string[], separator: string, sepIndex: number): string[] {
 		const result: string[] = []
 		let current = ''
 
@@ -86,21 +91,27 @@ export function recursiveChunker(options?: {
 
 			if (candidate.length <= maxSize) {
 				current = candidate
-			} else {
-				if (current) result.push(current)
-
-				if (split.length > maxSize) {
-					const subParts = splitRecursive(split, sepIndex + 1)
-					result.push(...subParts)
-					current = ''
-				} else {
-					current = split
-				}
+				continue
 			}
+
+			if (current) result.push(current)
+
+			const { chunks, remainder } = handleOversizedSplit(split, sepIndex)
+			result.push(...chunks)
+			current = remainder
 		}
 
 		if (current) result.push(current)
 		return result
+	}
+
+	function splitRecursive(text: string, sepIndex: number): string[] {
+		if (text.length <= maxSize) return [text]
+		if (sepIndex >= separators.length) return fixedSizeSplit(text)
+
+		const separator = separators[sepIndex]
+		const splits = separator === '' ? [text] : text.split(separator)
+		return mergeSplits(splits, separator, sepIndex)
 	}
 
 	return {
@@ -145,6 +156,64 @@ export function sentenceChunker(options?: {
 			.filter((s) => s.length > 0)
 	}
 
+	function gatherGroup(
+		sentences: string[],
+		startIdx: number,
+	): { group: string[]; nextIdx: number } {
+		const group: string[] = []
+		let length = 0
+		let i = startIdx
+
+		while (i < sentences.length) {
+			const nextLen = length + sentences[i].length + (group.length > 0 ? 1 : 0)
+			if (nextLen > maxSize && group.length > 0) break
+			group.push(sentences[i])
+			length = nextLen
+			i++
+		}
+
+		return { group, nextIdx: i }
+	}
+
+	function applyOverlap(
+		i: number,
+		sentences: string[],
+		group: string[],
+		chunkCount: number,
+	): number {
+		if (overlapSentences <= 0 || i >= sentences.length) return i
+
+		let next = Math.max(i - overlapSentences, chunkCount > 0 ? i - overlapSentences : 0)
+		if (next <= (chunkCount > 1 ? sentences.indexOf(group[0]) : -1)) {
+			next = sentences.indexOf(group[group.length - 1]) + 1
+		}
+		return next
+	}
+
+	function buildSentenceChunk(
+		document: Document,
+		group: string[],
+		index: number,
+		searchStart: number,
+	): Chunk {
+		const content = group.join(' ')
+		const startChar = document.content.indexOf(group[0], searchStart)
+		const actualStart = startChar >= 0 ? startChar : 0
+
+		return {
+			id: generateId('chk'),
+			content,
+			documentId: document.id,
+			index,
+			metadata: {
+				startChar: actualStart,
+				endChar: actualStart + content.length,
+				tokenEstimate: Math.ceil(content.length / 4),
+				sentenceCount: group.length,
+			},
+		}
+	}
+
 	return {
 		chunk(document: Document): Chunk[] {
 			const sentences = splitSentences(document.content)
@@ -155,47 +224,15 @@ export function sentenceChunker(options?: {
 			let index = 0
 
 			while (i < sentences.length) {
-				const group: string[] = []
-				let length = 0
+				const { group, nextIdx } = gatherGroup(sentences, i)
+				i = nextIdx
 
-				while (i < sentences.length) {
-					const nextLen = length + sentences[i].length + (group.length > 0 ? 1 : 0)
-					if (nextLen > maxSize && group.length > 0) break
-
-					group.push(sentences[i])
-					length = nextLen
-					i++
-				}
-
-				const content = group.join(' ')
-				const startChar = document.content.indexOf(
-					group[0],
-					chunks.length > 0 ? (chunks[chunks.length - 1].metadata.endChar as number) : 0,
-				)
-				const actualStart = startChar >= 0 ? startChar : 0
-
-				chunks.push({
-					id: generateId('chk'),
-					content,
-					documentId: document.id,
-					index,
-					metadata: {
-						startChar: actualStart,
-						endChar: actualStart + content.length,
-						tokenEstimate: Math.ceil(content.length / 4),
-						sentenceCount: group.length,
-					},
-				})
-
+				const searchStart =
+					chunks.length > 0 ? (chunks[chunks.length - 1].metadata.endChar as number) : 0
+				chunks.push(buildSentenceChunk(document, group, index, searchStart))
 				index++
 
-				// Apply overlap by stepping back
-				if (overlapSentences > 0 && i < sentences.length) {
-					i = Math.max(i - overlapSentences, chunks.length > 0 ? i - overlapSentences : 0)
-					if (i <= (chunks.length > 1 ? sentences.indexOf(group[0]) : -1)) {
-						i = sentences.indexOf(group[group.length - 1]) + 1
-					}
-				}
+				i = applyOverlap(i, sentences, group, chunks.length)
 			}
 
 			return chunks

@@ -146,72 +146,76 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 		config.onAlert?.(alert)
 	}
 
+	function checkDailyBudget() {
+		if (!config.dailyBudget) return
+
+		const elapsedMs = Date.now() - startedAt
+		const elapsedDays = Math.max(elapsedMs / (24 * 60 * 60 * 1000), 1 / 24)
+		const dailyRate = totalSpend / elapsedDays
+		if (dailyRate <= config.dailyBudget) return
+
+		const key = `daily:${Math.floor(Date.now() / (60 * 60 * 1000))}`
+		if (alertedThresholds.has(key)) return
+
+		alertedThresholds.add(key)
+		emitAlert({
+			type: 'budget_exceeded',
+			dimension: 'daily',
+			currentValue: dailyRate,
+			limit: config.dailyBudget,
+			message: `Daily spend rate $${dailyRate.toFixed(4)} exceeds budget $${config.dailyBudget}`,
+			timestamp: Date.now(),
+		})
+	}
+
+	function checkDimensionBudget(
+		limit: number | undefined,
+		dimensionKey: string | undefined,
+		store: Record<string, CostDimension>,
+	) {
+		if (!limit || !dimensionKey) return
+		const dim = store[dimensionKey]
+		if (dim && dim.totalCost > limit) {
+			throw ElsiumError.budgetExceeded(dim.totalCost, limit)
+		}
+	}
+
+	function emitThresholdAlertIfNew(threshold: number, budget: number) {
+		const thresholdAmount = budget * threshold
+		if (totalSpend < thresholdAmount) return
+
+		const key = `threshold:${threshold}`
+		if (alertedThresholds.has(key)) return
+
+		alertedThresholds.add(key)
+		emitAlert({
+			type: 'threshold',
+			dimension: 'total',
+			currentValue: totalSpend,
+			limit: thresholdAmount,
+			message: `Spend reached ${(threshold * 100).toFixed(0)}% of budget ($${totalSpend.toFixed(4)} / $${budget})`,
+			timestamp: Date.now(),
+		})
+	}
+
+	function checkAlertThresholds() {
+		if (!config.alertThresholds || !config.totalBudget) return
+
+		for (const threshold of config.alertThresholds) {
+			emitThresholdAlertIfNew(threshold, config.totalBudget)
+		}
+	}
+
 	function checkBudgets(dimensions: { agent?: string; user?: string; feature?: string }) {
 		if (config.totalBudget && totalSpend > config.totalBudget) {
 			throw ElsiumError.budgetExceeded(totalSpend, config.totalBudget)
 		}
 
-		if (config.dailyBudget) {
-			const elapsedMs = Date.now() - startedAt
-			const elapsedDays = Math.max(elapsedMs / (24 * 60 * 60 * 1000), 1 / 24)
-			const dailyRate = totalSpend / elapsedDays
-			if (dailyRate > config.dailyBudget) {
-				const key = `daily:${Math.floor(Date.now() / (60 * 60 * 1000))}`
-				if (!alertedThresholds.has(key)) {
-					alertedThresholds.add(key)
-					emitAlert({
-						type: 'budget_exceeded',
-						dimension: 'daily',
-						currentValue: dailyRate,
-						limit: config.dailyBudget,
-						message: `Daily spend rate $${dailyRate.toFixed(4)} exceeds budget $${config.dailyBudget}`,
-						timestamp: Date.now(),
-					})
-				}
-			}
-		}
-
-		if (config.perAgent && dimensions.agent) {
-			const dim = byAgent[dimensions.agent]
-			if (dim && dim.totalCost > config.perAgent) {
-				throw ElsiumError.budgetExceeded(dim.totalCost, config.perAgent)
-			}
-		}
-
-		if (config.perUser && dimensions.user) {
-			const dim = byUser[dimensions.user]
-			if (dim && dim.totalCost > config.perUser) {
-				throw ElsiumError.budgetExceeded(dim.totalCost, config.perUser)
-			}
-		}
-
-		if (config.perFeature && dimensions.feature) {
-			const dim = byFeature[dimensions.feature]
-			if (dim && dim.totalCost > config.perFeature) {
-				throw ElsiumError.budgetExceeded(dim.totalCost, config.perFeature)
-			}
-		}
-
-		// Check alert thresholds
-		if (config.alertThresholds && config.totalBudget) {
-			for (const threshold of config.alertThresholds) {
-				const thresholdAmount = config.totalBudget * threshold
-				if (totalSpend >= thresholdAmount) {
-					const key = `threshold:${threshold}`
-					if (!alertedThresholds.has(key)) {
-						alertedThresholds.add(key)
-						emitAlert({
-							type: 'threshold',
-							dimension: 'total',
-							currentValue: totalSpend,
-							limit: thresholdAmount,
-							message: `Spend reached ${(threshold * 100).toFixed(0)}% of budget ($${totalSpend.toFixed(4)} / $${config.totalBudget})`,
-							timestamp: Date.now(),
-						})
-					}
-				}
-			}
-		}
+		checkDailyBudget()
+		checkDimensionBudget(config.perAgent, dimensions.agent, byAgent)
+		checkDimensionBudget(config.perUser, dimensions.user, byUser)
+		checkDimensionBudget(config.perFeature, dimensions.feature, byFeature)
+		checkAlertThresholds()
 	}
 
 	function checkLoopDetection() {
@@ -254,6 +258,17 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 		}
 	}
 
+	function trackDimension(
+		store: Record<string, CostDimension>,
+		key: string | undefined,
+		cost: number,
+		tokens: number,
+	) {
+		if (!key) return
+		if (!store[key]) store[key] = createDimension()
+		updateDimension(store[key], cost, tokens)
+	}
+
 	function trackCall(
 		response: LLMResponse,
 		dimensions: { agent?: string; user?: string; feature?: string } = {},
@@ -265,23 +280,10 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 		totalTokens += tokens
 		totalCalls++
 
-		// Track by model
-		if (!byModel[response.model]) byModel[response.model] = createDimension()
-		updateDimension(byModel[response.model], cost, tokens)
-
-		// Track by dimensions
-		if (dimensions.agent) {
-			if (!byAgent[dimensions.agent]) byAgent[dimensions.agent] = createDimension()
-			updateDimension(byAgent[dimensions.agent], cost, tokens)
-		}
-		if (dimensions.user) {
-			if (!byUser[dimensions.user]) byUser[dimensions.user] = createDimension()
-			updateDimension(byUser[dimensions.user], cost, tokens)
-		}
-		if (dimensions.feature) {
-			if (!byFeature[dimensions.feature]) byFeature[dimensions.feature] = createDimension()
-			updateDimension(byFeature[dimensions.feature], cost, tokens)
-		}
+		trackDimension(byModel, response.model, cost, tokens)
+		trackDimension(byAgent, dimensions.agent, cost, tokens)
+		trackDimension(byUser, dimensions.user, cost, tokens)
+		trackDimension(byFeature, dimensions.feature, cost, tokens)
 
 		recentCalls.push({ timestamp: Date.now(), cost, model: response.model, tokens })
 

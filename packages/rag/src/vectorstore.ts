@@ -92,6 +92,53 @@ export function createInMemoryStore(): VectorStore {
 
 // ─── MMR (Maximal Marginal Relevance) ────────────────────────────
 
+function getEmbeddingValues(
+	sel: RetrievalResult,
+	results: Array<RetrievalResult & { embedding: EmbeddingVector }>,
+): number[] {
+	const match = results.find((r) => r.chunk.id === sel.chunk.id) as
+		| (RetrievalResult & { embedding: EmbeddingVector })
+		| undefined
+	return match?.embedding.values ?? []
+}
+
+function maxSimilarityToSelected(
+	candidate: RetrievalResult & { embedding: EmbeddingVector },
+	selected: RetrievalResult[],
+	results: Array<RetrievalResult & { embedding: EmbeddingVector }>,
+): number {
+	let maxSim = Number.NEGATIVE_INFINITY
+	for (const sel of selected) {
+		const selValues = getEmbeddingValues(sel, results)
+		const sim = cosineSimilarity(candidate.embedding.values, selValues)
+		if (sim > maxSim) maxSim = sim
+	}
+	return maxSim
+}
+
+function selectBestCandidate(
+	remaining: Array<RetrievalResult & { embedding: EmbeddingVector }>,
+	selected: RetrievalResult[],
+	results: Array<RetrievalResult & { embedding: EmbeddingVector }>,
+	lambda: number,
+): number {
+	let bestIndex = 0
+	let bestMmrScore = Number.NEGATIVE_INFINITY
+
+	for (let i = 0; i < remaining.length; i++) {
+		const relevance = remaining[i].score
+		const maxSim = maxSimilarityToSelected(remaining[i], selected, results)
+		const mmrScore = lambda * relevance - (1 - lambda) * maxSim
+
+		if (mmrScore > bestMmrScore) {
+			bestMmrScore = mmrScore
+			bestIndex = i
+		}
+	}
+
+	return bestIndex
+}
+
 export function mmrRerank(
 	queryEmbedding: EmbeddingVector,
 	results: Array<RetrievalResult & { embedding: EmbeddingVector }>,
@@ -105,42 +152,13 @@ export function mmrRerank(
 	const selected: RetrievalResult[] = []
 	const remaining = [...results]
 
-	// Select the most relevant first
 	remaining.sort((a, b) => b.score - a.score)
 	const first = remaining.shift()
 	if (!first) return []
 	selected.push(first)
 
 	while (selected.length < topK && remaining.length > 0) {
-		let bestIndex = 0
-		let bestMmrScore = Number.NEGATIVE_INFINITY
-
-		for (let i = 0; i < remaining.length; i++) {
-			const relevance = remaining[i].score
-
-			// Max similarity to already selected
-			let maxSimilarity = Number.NEGATIVE_INFINITY
-			for (const sel of selected) {
-				const sim = cosineSimilarity(
-					(remaining[i] as RetrievalResult & { embedding: EmbeddingVector }).embedding.values,
-					(sel as RetrievalResult & { embedding?: EmbeddingVector }).chunk.metadata
-						? ((
-								results.find((r) => r.chunk.id === sel.chunk.id) as RetrievalResult & {
-									embedding: EmbeddingVector
-								}
-							)?.embedding.values ?? [])
-						: [],
-				)
-				if (sim > maxSimilarity) maxSimilarity = sim
-			}
-
-			const mmrScore = lambda * relevance - (1 - lambda) * maxSimilarity
-			if (mmrScore > bestMmrScore) {
-				bestMmrScore = mmrScore
-				bestIndex = i
-			}
-		}
-
+		const bestIndex = selectBestCandidate(remaining, selected, results, lambda)
 		selected.push(remaining[bestIndex])
 		remaining.splice(bestIndex, 1)
 	}

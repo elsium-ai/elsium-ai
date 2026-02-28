@@ -9,6 +9,78 @@ export function step<TInput, TOutput>(
 	return { name, ...config }
 }
 
+function validateInput<TInput>(
+	stepConfig: StepConfig<TInput, unknown>,
+	rawInput: unknown,
+	startTime: number,
+): StepResult<never> | null {
+	if (!stepConfig.input) return null
+
+	const parsed = stepConfig.input.safeParse(rawInput)
+	if (parsed.success) return null
+
+	return {
+		name: stepConfig.name,
+		status: 'failed',
+		error: `Input validation failed: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+		durationMs: Math.round(performance.now() - startTime),
+		retryCount: 0,
+	}
+}
+
+function checkCondition<TInput>(
+	stepConfig: StepConfig<TInput, unknown>,
+	input: TInput,
+	context: StepContext,
+	startTime: number,
+): StepResult<never> | null {
+	if (!stepConfig.condition || stepConfig.condition(input, context)) return null
+
+	return {
+		name: stepConfig.name,
+		status: 'skipped',
+		durationMs: Math.round(performance.now() - startTime),
+		retryCount: 0,
+	}
+}
+
+async function tryFallback<TInput, TOutput>(
+	stepConfig: StepConfig<TInput, TOutput>,
+	err: Error,
+	input: TInput,
+	startTime: number,
+	retryCount: number,
+): Promise<StepResult<TOutput>> {
+	if (!stepConfig.fallback) {
+		return {
+			name: stepConfig.name,
+			status: 'failed',
+			error: err.message,
+			durationMs: Math.round(performance.now() - startTime),
+			retryCount,
+		}
+	}
+
+	try {
+		const fallbackResult = await stepConfig.fallback(err, input)
+		return {
+			name: stepConfig.name,
+			status: 'completed',
+			data: fallbackResult,
+			durationMs: Math.round(performance.now() - startTime),
+			retryCount,
+		}
+	} catch (fallbackError) {
+		return {
+			name: stepConfig.name,
+			status: 'failed',
+			error: `Fallback failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+			durationMs: Math.round(performance.now() - startTime),
+			retryCount,
+		}
+	}
+}
+
 export async function executeStep<TInput, TOutput>(
 	stepConfig: StepConfig<TInput, TOutput>,
 	rawInput: unknown,
@@ -17,31 +89,13 @@ export async function executeStep<TInput, TOutput>(
 	const startTime = performance.now()
 	let retryCount = 0
 
-	// Validate input if schema provided
-	if (stepConfig.input) {
-		const parsed = stepConfig.input.safeParse(rawInput)
-		if (!parsed.success) {
-			return {
-				name: stepConfig.name,
-				status: 'failed',
-				error: `Input validation failed: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
-				durationMs: Math.round(performance.now() - startTime),
-				retryCount: 0,
-			}
-		}
-	}
+	const validationError = validateInput(stepConfig, rawInput, startTime)
+	if (validationError) return validationError
 
 	const input = rawInput as TInput
 
-	// Check condition
-	if (stepConfig.condition && !stepConfig.condition(input, context)) {
-		return {
-			name: stepConfig.name,
-			status: 'skipped',
-			durationMs: Math.round(performance.now() - startTime),
-			retryCount: 0,
-		}
-	}
+	const conditionSkip = checkCondition(stepConfig, input, context, startTime)
+	if (conditionSkip) return conditionSkip
 
 	const retryConfig = stepConfig.retry
 	const maxRetries = retryConfig?.maxRetries ?? 0
@@ -71,35 +125,7 @@ export async function executeStep<TInput, TOutput>(
 				continue
 			}
 
-			// Try fallback
-			if (stepConfig.fallback) {
-				try {
-					const fallbackResult = await stepConfig.fallback(err, input)
-					return {
-						name: stepConfig.name,
-						status: 'completed',
-						data: fallbackResult,
-						durationMs: Math.round(performance.now() - startTime),
-						retryCount,
-					}
-				} catch (fallbackError) {
-					return {
-						name: stepConfig.name,
-						status: 'failed',
-						error: `Fallback failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
-						durationMs: Math.round(performance.now() - startTime),
-						retryCount,
-					}
-				}
-			}
-
-			return {
-				name: stepConfig.name,
-				status: 'failed',
-				error: err.message,
-				durationMs: Math.round(performance.now() - startTime),
-				retryCount,
-			}
+			return tryFallback(stepConfig, err, input, startTime, retryCount)
 		}
 	}
 }

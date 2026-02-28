@@ -86,6 +86,28 @@ function extractHtmlTitle(html: string): string | undefined {
 
 // ─── JSON ────────────────────────────────────────────────────────
 
+function extractItemText(item: unknown, contentField: string): string {
+	if (typeof item === 'string') return item
+	if (typeof item === 'object' && item !== null) {
+		const text = (item as Record<string, unknown>)[contentField]
+		if (typeof text === 'string') return text
+		return JSON.stringify(item, null, 2)
+	}
+	return ''
+}
+
+function extractMetadataFields(parsed: unknown, metadataFields: string[]): Record<string, unknown> {
+	const extra: Record<string, unknown> = {}
+	if (!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null) {
+		for (const field of metadataFields) {
+			if (field in (parsed as Record<string, unknown>)) {
+				extra[field] = (parsed as Record<string, unknown>)[field]
+			}
+		}
+	}
+	return extra
+}
+
 export function jsonLoader(options?: {
 	contentField?: string
 	metadataFields?: string[]
@@ -97,29 +119,8 @@ export function jsonLoader(options?: {
 		load(source: string, content: string): Document {
 			const parsed = JSON.parse(content)
 			const items = Array.isArray(parsed) ? parsed : [parsed]
-			const texts: string[] = []
-
-			for (const item of items) {
-				if (typeof item === 'string') {
-					texts.push(item)
-				} else if (typeof item === 'object' && item !== null) {
-					const text = item[contentField]
-					if (typeof text === 'string') {
-						texts.push(text)
-					} else {
-						texts.push(JSON.stringify(item, null, 2))
-					}
-				}
-			}
-
-			const extra: Record<string, unknown> = {}
-			if (!Array.isArray(parsed) && typeof parsed === 'object') {
-				for (const field of metadataFields) {
-					if (field in parsed) {
-						extra[field] = parsed[field]
-					}
-				}
-			}
+			const texts = items.map((item) => extractItemText(item, contentField)).filter(Boolean)
+			const extra = extractMetadataFields(parsed, metadataFields)
 
 			return createDocument(texts.join('\n\n'), {
 				source,

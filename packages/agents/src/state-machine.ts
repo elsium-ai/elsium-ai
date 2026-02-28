@@ -1,5 +1,5 @@
 import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-ai/core'
-import { ElsiumError, extractText, generateTraceId } from '@elsium-ai/core'
+import { ElsiumError, generateTraceId } from '@elsium-ai/core'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
 import type { AgentDependencies } from './agent'
@@ -16,6 +16,108 @@ export function executeStateMachine(
 	return runStateMachine(baseConfig, stateConfig, deps, input, options ?? {})
 }
 
+function handleToolCallsAndContinue(
+	response: LLMResponse,
+	toolMap: Map<string, Tool>,
+	toolCallHistory: AgentResult['toolCalls'],
+	conversationMessages: Message[],
+): Promise<void> | null {
+	const toolCalls = response.message.toolCalls
+	if (!toolCalls?.length || response.stopReason !== 'tool_use') {
+		return null
+	}
+
+	return (async () => {
+		const toolResults = await executeToolCalls(toolCalls, toolMap, toolCallHistory)
+		const toolMessage: Message = {
+			role: 'tool',
+			content: '',
+			toolResults,
+		}
+		conversationMessages.push(toolMessage)
+	})()
+}
+
+function evaluateTransition(
+	currentState: StateDefinition,
+	currentStateName: string,
+	result: AgentResult,
+	stateConfig: { states: Record<string, StateDefinition>; initialState: string },
+	stateHistory: StateHistoryEntry[],
+	conversationMessages: Message[],
+): { nextStateName: string; nextState: StateDefinition } {
+	const nextStateName = currentState.transition(result)
+	const nextState = stateConfig.states[nextStateName]
+
+	if (!nextState) {
+		throw new ElsiumError({
+			code: 'VALIDATION_ERROR',
+			message: `Transition target state "${nextStateName}" not found`,
+			retryable: false,
+		})
+	}
+
+	stateHistory.push({
+		state: currentStateName,
+		result,
+		transitionedTo: nextStateName,
+	})
+
+	conversationMessages.push({
+		role: 'user',
+		content: `[State transition: ${currentStateName} → ${nextStateName}] Continue based on the previous response.`,
+	})
+
+	return { nextStateName, nextState }
+}
+
+function checkAbortSignal(options: AgentRunOptions, agentName: string) {
+	if (options.signal?.aborted) {
+		throw new ElsiumError({
+			code: 'VALIDATION_ERROR',
+			message: `State machine for "${agentName}" was aborted`,
+			retryable: false,
+		})
+	}
+}
+
+function buildCompletionRequest(
+	conversationMessages: Message[],
+	baseConfig: AgentConfig,
+	stateTools: Tool[],
+	stateSystem: string | undefined,
+): CompletionRequest {
+	return {
+		messages: conversationMessages,
+		model: baseConfig.model,
+		system: stateSystem,
+		tools: stateTools.length > 0 ? stateTools.map((t) => t.toDefinition()) : undefined,
+	}
+}
+
+function buildAgentResult(
+	response: LLMResponse,
+	totalInputTokens: number,
+	totalOutputTokens: number,
+	totalCost: number,
+	iterations: number,
+	toolCallHistory: AgentResult['toolCalls'],
+	traceId: string,
+): AgentResult {
+	return {
+		message: response.message,
+		usage: {
+			totalInputTokens,
+			totalOutputTokens,
+			totalTokens: totalInputTokens + totalOutputTokens,
+			totalCost,
+			iterations,
+		},
+		toolCalls: [...toolCallHistory],
+		traceId,
+	}
+}
+
 async function runStateMachine(
 	baseConfig: AgentConfig,
 	stateConfig: { states: Record<string, StateDefinition>; initialState: string },
@@ -24,7 +126,8 @@ async function runStateMachine(
 	options: AgentRunOptions,
 ): Promise<StateMachineResult> {
 	const traceId = options.traceId ?? generateTraceId()
-	const maxIterations = baseConfig.guardrails?.maxIterations ?? 10
+	const guardrails = baseConfig.guardrails
+	const maxIterations = guardrails?.maxIterations ?? 10
 	let totalInputTokens = 0
 	let totalOutputTokens = 0
 	let totalCost = 0
@@ -43,33 +146,25 @@ async function runStateMachine(
 		})
 	}
 
-	// Single conversation history across all states
 	const conversationMessages: Message[] = [{ role: 'user', content: input }]
 
 	while (iterations < maxIterations) {
 		iterations++
 
 		// M7/H7 fix: Check AbortSignal at each iteration
-		if (options.signal?.aborted) {
-			throw new ElsiumError({
-				code: 'VALIDATION_ERROR',
-				message: `State machine for "${baseConfig.name}" was aborted`,
-				retryable: false,
-			})
-		}
+		checkAbortSignal(options, baseConfig.name)
 
 		// Merge state overrides onto base config
 		const stateTools = currentState.tools ?? baseConfig.tools ?? []
 		const stateSystem = currentState.system ?? baseConfig.system
 		const toolMap = new Map(stateTools.map((t) => [t.name, t]))
 
-		const request: CompletionRequest = {
-			messages: conversationMessages,
-			model: baseConfig.model,
-			system: stateSystem,
-			tools: stateTools.length > 0 ? stateTools.map((t) => t.toDefinition()) : undefined,
-		}
-
+		const request = buildCompletionRequest(
+			conversationMessages,
+			baseConfig,
+			stateTools,
+			stateSystem,
+		)
 		const response = await deps.complete(request)
 
 		totalInputTokens += response.usage.inputTokens
@@ -79,78 +174,45 @@ async function runStateMachine(
 		conversationMessages.push(response.message)
 
 		// Handle tool calls within current state
-		if (response.message.toolCalls?.length && response.stopReason === 'tool_use') {
-			const toolResults = await executeToolCalls(
-				response.message.toolCalls,
-				toolMap,
-				toolCallHistory,
-			)
-			const toolMessage: Message = {
-				role: 'tool',
-				content: '',
-				toolResults,
-			}
-			conversationMessages.push(toolMessage)
+		const toolCallAction = handleToolCallsAndContinue(
+			response,
+			toolMap,
+			toolCallHistory,
+			conversationMessages,
+		)
+		if (toolCallAction) {
+			await toolCallAction
 			continue
 		}
 
 		// Non-tool response: build result and evaluate transition
-		const outputText = extractText(response.message.content)
-
-		const result: AgentResult = {
-			message: response.message,
-			usage: {
-				totalInputTokens,
-				totalOutputTokens,
-				totalTokens: totalInputTokens + totalOutputTokens,
-				totalCost,
-				iterations,
-			},
-			toolCalls: [...toolCallHistory],
+		const result = buildAgentResult(
+			response,
+			totalInputTokens,
+			totalOutputTokens,
+			totalCost,
+			iterations,
+			toolCallHistory,
 			traceId,
-		}
+		)
 
 		// Check for terminal state
 		if (currentState.terminal) {
-			stateHistory.push({
-				state: currentStateName,
-				result,
-				transitionedTo: null,
-			})
-
-			return {
-				...result,
-				stateHistory,
-				finalState: currentStateName,
-			}
+			stateHistory.push({ state: currentStateName, result, transitionedTo: null })
+			return { ...result, stateHistory, finalState: currentStateName }
 		}
 
 		// Evaluate transition
-		const nextStateName = currentState.transition(result)
-		const nextState = stateConfig.states[nextStateName]
-
-		if (!nextState) {
-			throw new ElsiumError({
-				code: 'VALIDATION_ERROR',
-				message: `Transition target state "${nextStateName}" not found`,
-				retryable: false,
-			})
-		}
-
-		stateHistory.push({
-			state: currentStateName,
+		const transition = evaluateTransition(
+			currentState,
+			currentStateName,
 			result,
-			transitionedTo: nextStateName,
-		})
-
-		// Transition: add context message and update state
-		conversationMessages.push({
-			role: 'user',
-			content: `[State transition: ${currentStateName} → ${nextStateName}] Continue based on the previous response.`,
-		})
-
-		currentStateName = nextStateName
-		currentState = nextState
+			stateConfig,
+			stateHistory,
+			conversationMessages,
+		)
+		currentStateName = transition.nextStateName
+		currentState = transition.nextState
 	}
 
 	throw new ElsiumError({

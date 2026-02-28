@@ -33,6 +33,37 @@ export function definePrompt(config: PromptDefinition): PromptDefinition {
 	return { ...config }
 }
 
+function compareLine(
+	fromLine: string | undefined,
+	toLine: string | undefined,
+	lineNumber: number,
+): DiffLine[] {
+	if (fromLine === undefined) {
+		return [{ type: 'added', lineNumber, content: toLine as string }]
+	}
+	if (toLine === undefined) {
+		return [{ type: 'removed', lineNumber, content: fromLine }]
+	}
+	if (fromLine !== toLine) {
+		return [
+			{ type: 'removed', lineNumber, content: fromLine },
+			{ type: 'added', lineNumber, content: toLine },
+		]
+	}
+	return [{ type: 'unchanged', lineNumber, content: fromLine }]
+}
+
+function computeLineChanges(fromLines: string[], toLines: string[]): DiffLine[] {
+	const changes: DiffLine[] = []
+	const maxLen = Math.max(fromLines.length, toLines.length)
+
+	for (let i = 0; i < maxLen; i++) {
+		changes.push(...compareLine(fromLines[i], toLines[i], i + 1))
+	}
+
+	return changes
+}
+
 export function createPromptRegistry(): PromptRegistry {
 	const store = new Map<string, Map<string, PromptDefinition>>()
 
@@ -102,25 +133,7 @@ export function createPromptRegistry(): PromptRegistry {
 
 			const fromLines = from.content.split('\n')
 			const toLines = to.content.split('\n')
-
-			const changes: DiffLine[] = []
-			const maxLen = Math.max(fromLines.length, toLines.length)
-
-			for (let i = 0; i < maxLen; i++) {
-				const fromLine = fromLines[i]
-				const toLine = toLines[i]
-
-				if (fromLine === undefined) {
-					changes.push({ type: 'added', lineNumber: i + 1, content: toLine })
-				} else if (toLine === undefined) {
-					changes.push({ type: 'removed', lineNumber: i + 1, content: fromLine })
-				} else if (fromLine !== toLine) {
-					changes.push({ type: 'removed', lineNumber: i + 1, content: fromLine })
-					changes.push({ type: 'added', lineNumber: i + 1, content: toLine })
-				} else {
-					changes.push({ type: 'unchanged', lineNumber: i + 1, content: fromLine })
-				}
-			}
+			const changes = computeLineChanges(fromLines, toLines)
 
 			return { name, fromVersion, toVersion, changes }
 		},

@@ -192,28 +192,33 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		}
 	}
 
-	async function capabilityAwareComplete(request: CompletionRequest): Promise<LLMResponse> {
-		const needsTools = (request.tools?.length ?? 0) > 0
+	function detectRequiredCapabilities(request: CompletionRequest): string[] {
+		const capabilities: string[] = []
+		if ((request.tools?.length ?? 0) > 0) capabilities.push('tools')
+
 		const needsVision = request.messages.some(
 			(m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image'),
 		)
-
-		const capabilities: string[] = []
-		if (needsTools) capabilities.push('tools')
 		if (needsVision) capabilities.push('vision')
 
-		const capable = sortedProviders.filter((entry) => {
+		return capabilities
+	}
+
+	function filterCapableProviders(capabilities: string[]): ProviderEntry[] {
+		return sortedProviders.filter((entry) => {
 			if (capabilities.length === 0) return true
 			const providerCaps = entry.capabilities ?? defaultCapabilities(entry.name)
 			return capabilities.every((c) => providerCaps.includes(c))
 		})
+	}
 
-		if (capable.length === 0) {
-			return fallbackComplete(request)
-		}
-
+	async function tryProviders(
+		providers: ProviderEntry[],
+		request: CompletionRequest,
+	): Promise<LLMResponse> {
 		let lastError: Error | null = null
-		for (const entry of capable) {
+
+		for (const entry of providers) {
 			try {
 				const gw = getGateway(entry.name)
 				return await gw.complete({ ...request, model: request.model ?? entry.model })
@@ -230,6 +235,17 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 				retryable: false,
 			})
 		)
+	}
+
+	async function capabilityAwareComplete(request: CompletionRequest): Promise<LLMResponse> {
+		const capabilities = detectRequiredCapabilities(request)
+		const capable = filterCapableProviders(capabilities)
+
+		if (capable.length === 0) {
+			return fallbackComplete(request)
+		}
+
+		return tryProviders(capable, request)
 	}
 
 	function defaultCapabilities(provider: string): string[] {

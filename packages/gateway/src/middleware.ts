@@ -111,6 +111,79 @@ export interface XRayStore {
 	clear(): void
 }
 
+const PROVIDER_URLS: Record<string, string> = {
+	anthropic: 'https://api.anthropic.com/v1/messages',
+	openai: 'https://api.openai.com/v1/chat/completions',
+	google: 'https://generativelanguage.googleapis.com/v1beta/models',
+}
+
+function buildProviderHeaders(
+	provider: string,
+	metadata: Record<string, unknown>,
+): Record<string, string> {
+	const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+
+	if (provider === 'anthropic') {
+		headers['x-api-key'] = (metadata._apiKey as string) ?? '***'
+	}
+	if (provider === 'openai' || provider === 'google') {
+		headers.Authorization = (metadata._apiKey as string) ?? '***'
+	}
+
+	return redactHeaders(headers)
+}
+
+function truncateContent(content: string | unknown): string {
+	if (typeof content !== 'string') return '[complex content]'
+	if (content.length > 200) return `${content.slice(0, 200)}...`
+	return content
+}
+
+function buildXRayRequest(ctx: MiddlewareContext): XRayData['request'] {
+	return {
+		url: PROVIDER_URLS[ctx.provider] ?? `https://${ctx.provider}.api/v1/messages`,
+		method: 'POST',
+		headers: buildProviderHeaders(ctx.provider, ctx.metadata),
+		body: {
+			model: ctx.model,
+			messages: ctx.request.messages.map((m) => ({
+				role: m.role,
+				content: truncateContent(m.content),
+			})),
+			max_tokens: ctx.request.maxTokens,
+			...(ctx.request.temperature !== undefined ? { temperature: ctx.request.temperature } : {}),
+			...(ctx.request.tools?.length ? { tools: ctx.request.tools.map((t) => t.name) } : {}),
+		},
+	}
+}
+
+function buildXRayResponse(response: LLMResponse): XRayData['response'] {
+	return {
+		status: 200,
+		headers: { 'content-type': 'application/json' },
+		body: {
+			id: response.id,
+			model: response.model,
+			stop_reason: response.stopReason,
+			content_preview: truncateContent(response.message.content),
+		},
+	}
+}
+
+function buildXRayData(ctx: MiddlewareContext, response: LLMResponse, latencyMs: number): XRayData {
+	return {
+		traceId: ctx.traceId,
+		timestamp: Date.now(),
+		provider: ctx.provider,
+		model: ctx.model,
+		latencyMs,
+		request: buildXRayRequest(ctx),
+		response: buildXRayResponse(response),
+		usage: response.usage,
+		cost: response.cost,
+	}
+}
+
 export function xrayMiddleware(options: { maxHistory?: number } = {}): Middleware & XRayStore {
 	const maxHistory = options.maxHistory ?? 100
 	const history: XRayData[] = []
@@ -120,63 +193,7 @@ export function xrayMiddleware(options: { maxHistory?: number } = {}): Middlewar
 		const response = await next(ctx)
 		const latencyMs = Math.round(performance.now() - startTime)
 
-		const providerUrls: Record<string, string> = {
-			anthropic: 'https://api.anthropic.com/v1/messages',
-			openai: 'https://api.openai.com/v1/chat/completions',
-			google: 'https://generativelanguage.googleapis.com/v1beta/models',
-		}
-
-		const xrayData: XRayData = {
-			traceId: ctx.traceId,
-			timestamp: Date.now(),
-			provider: ctx.provider,
-			model: ctx.model,
-			latencyMs,
-			request: {
-				url: providerUrls[ctx.provider] ?? `https://${ctx.provider}.api/v1/messages`,
-				method: 'POST',
-				headers: redactHeaders({
-					'Content-Type': 'application/json',
-					...(ctx.provider === 'anthropic'
-						? { 'x-api-key': (ctx.metadata._apiKey as string) ?? '***' }
-						: {}),
-					...(ctx.provider === 'openai' || ctx.provider === 'google'
-						? { Authorization: (ctx.metadata._apiKey as string) ?? '***' }
-						: {}),
-				}),
-				body: {
-					model: ctx.model,
-					messages: ctx.request.messages.map((m) => ({
-						role: m.role,
-						content:
-							typeof m.content === 'string'
-								? m.content.slice(0, 200) + (m.content.length > 200 ? '...' : '')
-								: '[complex content]',
-					})),
-					max_tokens: ctx.request.maxTokens,
-					...(ctx.request.temperature !== undefined
-						? { temperature: ctx.request.temperature }
-						: {}),
-					...(ctx.request.tools?.length ? { tools: ctx.request.tools.map((t) => t.name) } : {}),
-				},
-			},
-			response: {
-				status: 200,
-				headers: { 'content-type': 'application/json' },
-				body: {
-					id: response.id,
-					model: response.model,
-					stop_reason: response.stopReason,
-					content_preview:
-						typeof response.message.content === 'string'
-							? response.message.content.slice(0, 200) +
-								(response.message.content.length > 200 ? '...' : '')
-							: '[complex content]',
-				},
-			},
-			usage: response.usage,
-			cost: response.cost,
-		}
+		const xrayData = buildXRayData(ctx, response, latencyMs)
 
 		history.unshift(xrayData)
 		if (history.length > maxHistory) {
