@@ -241,6 +241,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 				messages,
 				max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
 				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+				...(req.seed !== undefined ? { seed: req.seed } : {}),
 				...(req.topP !== undefined ? { top_p: req.topP } : {}),
 				...(req.stopSequences?.length ? { stop: req.stopSequences } : {}),
 			}
@@ -287,6 +288,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 				max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
 				stream: true,
 				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+				...(req.seed !== undefined ? { seed: req.seed } : {}),
 				...(req.topP !== undefined ? { top_p: req.topP } : {}),
 				...(req.stopSequences?.length ? { stop: req.stopSequences } : {}),
 			}

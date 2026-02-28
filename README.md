@@ -1,559 +1,40 @@
 <p align="center">
   <a href="https://github.com/ebutrera9103/elsium-ai" target="blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
 </p>
-<p align="center">A high-performance, TypeScript-first AI framework built on <a href="https://bun.sh" target="blank">Bun</a>.</p>
+<h3 align="center">Reliability. Governance. Deterministic AI.</h3>
+<p align="center">The TypeScript framework for AI systems you can trust in production.</p>
 <p align="center">
   <a href="https://github.com/ebutrera9103/elsium-ai/actions"><img src="https://github.com/ebutrera9103/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/ebutrera9103/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-382%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/coverage-94.56%25-brightgreen" alt="Coverage">
+  <img src="https://img.shields.io/badge/tests-569%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/bundle-77KB%20minified-blue" alt="Bundle Size">
 </p>
 
 ---
 
-## What is ElsiumAI?
-
-ElsiumAI is everything you need to build production AI applications in TypeScript — multi-provider LLM gateway, agents with semantic guardrails, tools, MCP support, RAG, workflows, cost intelligence, and testing — in a single framework with zero magic.
-
-```typescript
-import { gateway, defineAgent, defineTool, rag, observe, createMCPClient } from 'elsium-ai'
-```
-
-One import. Full type safety. Every LLM call is traceable, inspectable with X-Ray mode, and cost-tracked.
+> **AI systems must fail predictably.**
+> **AI systems must be auditable.**
+> **AI systems must be reproducible.**
+> **AI systems must be governed by policy, not hope.**
+>
+> Every feature in ElsiumAI exists to serve one of these principles.
+> If it doesn't, it doesn't ship.
 
 ---
 
-## What You Can Build
+## The Problem
 
-### Conversational AI agents
+Every AI framework helps you call an LLM. None of them help you trust the result.
 
-Build agents that think, use tools, and maintain conversation memory — with guardrails to keep them on track.
+ElsiumAI is built on three pillars that most frameworks ignore entirely:
 
-```typescript
-import { gateway } from '@elsium-ai/gateway'
-import { defineAgent } from '@elsium-ai/agents'
-import { defineTool } from '@elsium-ai/tools'
+| Pillar | The guarantee |
+|--------|--------------|
+| **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown |
+| **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail |
+| **Deterministic AI** | Same input, same output, provably — seed propagation, output pinning, provenance tracking, determinism assertions |
 
-const searchTool = defineTool({
-  name: 'search',
-  description: 'Search the web for information',
-  input: z.object({ query: z.string() }),
-  handler: async ({ query }) => {
-    const results = await fetchSearchResults(query)
-    return { results }
-  },
-})
-
-const agent = defineAgent(
-  {
-    name: 'researcher',
-    system: 'You are a research assistant. Use tools to find information.',
-    model: 'claude-sonnet-4-6',
-    tools: [searchTool],
-    memory: { strategy: 'sliding-window', maxTokens: 8000 },
-    guardrails: {
-      maxIterations: 10,
-      maxTokenBudget: 100_000,
-    },
-  },
-  { complete: (req) => llm.complete(req) },
-)
-
-const result = await agent.run('Find the latest research on RAG architectures')
-console.log(result.message.content)
-// Every call tracked: result.totalCost, result.traceId, result.latencyMs
-```
-
-### RAG pipelines (Retrieval-Augmented Generation)
-
-Load documents, chunk them intelligently, embed them into vectors, and query your knowledge base — all in a few lines.
-
-```typescript
-import { rag } from '@elsium-ai/rag'
-
-const pipeline = rag({
-  loader: 'markdown',
-  chunking: { strategy: 'recursive', maxChunkSize: 512, overlap: 50 },
-  embeddings: { provider: 'openai', model: 'text-embedding-3-small' },
-})
-
-// Ingest your docs
-await pipeline.ingest('product-docs', markdownContent)
-await pipeline.ingest('api-reference', apiDocsContent)
-
-// Query with similarity search
-const results = await pipeline.query('How do I authenticate API requests?', { topK: 5 })
-// results: [{ content: '...', score: 0.94, metadata: { source: 'api-reference' } }, ...]
-```
-
-### Multi-step workflows
-
-Chain operations into typed pipelines with retries, parallel execution, conditional branching, and circuit breakers.
-
-```typescript
-import { defineWorkflow, step } from '@elsium-ai/workflows'
-
-const processDocument = defineWorkflow({
-  name: 'document-processor',
-  steps: [
-    step('extract', {
-      handler: async ({ url }) => {
-        const content = await scrape(url)
-        return { content }
-      },
-    }),
-    step('analyze', {
-      handler: async ({ content }) => {
-        const analysis = await agent.run(`Analyze this: ${content}`)
-        return { analysis: analysis.message.content }
-      },
-      retry: { maxAttempts: 3, backoff: 'exponential' },
-    }),
-    step('store', {
-      handler: async ({ analysis }) => {
-        await db.insert('analyses', { analysis })
-        return { stored: true }
-      },
-    }),
-  ],
-})
-
-const result = await processDocument.run({ url: 'https://example.com/paper' })
-// result.steps — each step's output, duration, and status
-// result.totalDurationMs — end-to-end timing
-```
-
-### AI-powered HTTP APIs
-
-Spin up a production-ready API server with built-in CORS, rate limiting, and authentication.
-
-```typescript
-import { createApp } from '@elsium-ai/app'
-
-const app = createApp({
-  agents: [researcher, writer],
-  server: {
-    port: 3000,
-    cors: true,
-    rateLimit: { windowMs: 60_000, max: 100 },
-    auth: { type: 'bearer', token: env('API_KEY') },
-  },
-})
-
-app.listen()
-// POST /chat    — conversation with agents
-// POST /complete — single LLM completion
-// GET  /health  — health check
-```
-
-### Multi-agent systems
-
-Coordinate multiple specialized agents — sequentially, in parallel, or with a supervisor that delegates tasks.
-
-```typescript
-import { runSequential, runParallel, runSupervisor } from '@elsium-ai/agents'
-
-// Sequential: researcher → writer → editor
-const result = await runSequential(
-  [researcher, writer, editor],
-  'Write a blog post about AI agents',
-  { complete: (req) => llm.complete(req) },
-)
-
-// Parallel: run multiple agents at the same time
-const results = await runParallel(
-  [sentimentAgent, summaryAgent, entityAgent],
-  articleText,
-  { complete: (req) => llm.complete(req) },
-)
-
-// Supervisor: one agent delegates to specialists
-const result = await runSupervisor(
-  managerAgent,
-  [researcher, writer, factChecker],
-  'Create a fact-checked report on quantum computing',
-  { complete: (req) => llm.complete(req) },
-)
-```
-
-### X-Ray Mode (DevTools for AI)
-
-Inspect the exact request, response, tokens, timing, and cost for every LLM call.
-
-```typescript
-import { gateway } from '@elsium-ai/gateway'
-
-const llm = gateway({
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-6',
-  apiKey: env('ANTHROPIC_API_KEY'),
-  xray: true,  // Enable X-Ray
-})
-
-await llm.complete({ messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }] })
-
-// Inspect exactly what happened
-const call = llm.lastCall()
-// { rawRequest, rawResponse, tokens, durationMs, cost, traceId, model, provider }
-
-// Full history
-const history = llm.callHistory()
-```
-
-### Smart Provider Mesh
-
-Route requests across multiple LLM providers with intelligent strategies: fallback chains, cost-optimized routing, latency racing, and capability-aware routing.
-
-```typescript
-import { createProviderMesh } from '@elsium-ai/gateway'
-
-const mesh = createProviderMesh({
-  providers: [
-    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') }, priority: 1 },
-    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') }, priority: 2 },
-    { name: 'google', config: { apiKey: env('GOOGLE_API_KEY') }, priority: 3 },
-  ],
-  strategy: 'cost-optimized', // or 'fallback', 'latency-optimized', 'capability-aware'
-})
-
-// Automatically routes to the best provider
-const result = await mesh.complete({
-  messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
-})
-```
-
-The `cost-optimized` strategy uses keyword-based complexity estimation to route requests. Short prompts that contain reasoning, code, math, or creative keywords are automatically routed to the powerful model — no extra API call required.
-
-| Category | Example keywords | Weight |
-|---|---|---|
-| Reasoning | prove, analyze, compare, evaluate, critique, deduce, synthesize | +0.5 |
-| Code | implement, refactor, debug, optimize, architect, algorithm | +0.5 |
-| Math | calculate, solve, equation, integral, derivative, proof, theorem | +0.5 |
-| Creative | write a story/essay/poem, compose, draft, create a plan | +0.2 |
-
-Structural signals (prompt length, tool count, system prompt size, conversation depth) are also factored in. This means `"Prove P ≠ NP"` routes to Sonnet while `"Hello"` routes to Haiku — without needing a classifier LLM.
-
-### Cost Intelligence Engine
-
-Not just tracking — intelligence. Per-user, per-agent, and per-feature budgets with loop detection, projected spend, and cost-saving recommendations.
-
-```typescript
-import { createCostEngine } from '@elsium-ai/observe'
-
-const costEngine = createCostEngine({
-  dailyBudget: 50,
-  perAgent: 10,
-  loopDetection: { maxCallsPerMinute: 20, maxCostPerMinute: 2 },
-  onAlert: (alert) => console.warn(`Cost alert: ${alert.type}`),
-})
-
-// Use as gateway middleware — enforces budgets automatically
-const llm = gateway({
-  provider: 'anthropic',
-  apiKey: env('ANTHROPIC_API_KEY'),
-  middleware: [costEngine.middleware()],
-})
-
-// Get intelligence report
-const report = costEngine.getReport()
-// { totalSpend, projectedMonthlySpend, topDimensions, recommendations }
-```
-
-### Native MCP Support
-
-First-class Model Context Protocol. Any MCP server becomes an ElsiumAI tool. Any ElsiumAI tool becomes an MCP server.
-
-```typescript
-import { createMCPClient, createMCPServer } from '@elsium-ai/mcp'
-
-// Use any MCP server's tools in your agent
-const mcp = createMCPClient({
-  name: 'github',
-  transport: 'stdio',
-  command: 'npx',
-  args: ['-y', '@modelcontextprotocol/server-github'],
-})
-await mcp.connect()
-const tools = await mcp.toElsiumTools()
-
-const agent = defineAgent(
-  { name: 'dev-agent', system: 'You are a developer assistant.', tools },
-  { complete: (req) => llm.complete(req) },
-)
-
-// Or expose your tools as an MCP server
-const server = createMCPServer({ name: 'my-tools', tools: [myTool1, myTool2] })
-await server.start()
-```
-
-### Semantic Guardrails
-
-Go beyond schema validation. Detect hallucinations, check factual grounding, and validate response relevance — with auto-retry on failure.
-
-```typescript
-const agent = defineAgent(
-  {
-    name: 'research-agent',
-    system: 'Answer questions based on provided context.',
-    guardrails: {
-      maxIterations: 10,
-      semantic: {
-        hallucination: { enabled: true, ragContext: docs, threshold: 0.7 },
-        relevance: { enabled: true, threshold: 0.5 },
-        grounding: { enabled: true, sources: facts },
-        autoRetry: { enabled: true, maxRetries: 2 },
-      },
-    },
-  },
-  { complete: (req) => llm.complete(req) },
-)
-```
-
-### AI Security Layer
-
-Protect against prompt injection, jailbreak attempts, and secret leakage — at both gateway and agent level.
-
-```typescript
-import { gateway, securityMiddleware } from '@elsium-ai/gateway'
-
-// Gateway-level security middleware
-const llm = gateway({
-  provider: 'anthropic',
-  apiKey: env('ANTHROPIC_API_KEY'),
-  middleware: [
-    securityMiddleware({
-      promptInjection: true,          // Block injection attempts
-      jailbreakDetection: true,       // Block jailbreak attempts
-      secretRedaction: true,          // Redact API keys, SSNs, etc. in output
-      blockedPatterns: [/competitor/i], // Custom blocked patterns
-      onViolation: (v) => console.warn('Security:', v.detail),
-    }),
-  ],
-})
-
-// Agent-level security guardrails
-const agent = defineAgent(
-  {
-    name: 'secure-agent',
-    system: 'You are a helpful assistant.',
-    guardrails: {
-      security: {
-        detectPromptInjection: true,
-        detectJailbreak: true,
-        redactSecrets: true,
-      },
-    },
-  },
-  { complete: (req) => llm.complete(req) },
-)
-```
-
-### Confidence Scoring
-
-Get a confidence score on every agent result — hallucination risk, relevance, citation coverage, and custom checks.
-
-```typescript
-const agent = defineAgent(
-  {
-    name: 'confident-agent',
-    system: 'Answer questions accurately.',
-    confidence: {
-      hallucinationRisk: true,
-      relevanceScore: true,
-      citationCoverage: true,
-      customChecks: [{
-        name: 'formality',
-        check: async (input, output) => ({
-          score: output.includes('Dear') ? 1.0 : 0.5,
-          reason: 'Formal tone check',
-        }),
-      }],
-    },
-    guardrails: {
-      semantic: {
-        hallucination: { enabled: true, ragContext: docs },
-        relevance: { enabled: true },
-      },
-    },
-  },
-  { complete: (req) => llm.complete(req) },
-)
-
-const result = await agent.run('What is TypeScript?')
-console.log(result.confidence)
-// { overall: 0.85, hallucinationRisk: 0.1, relevanceScore: 0.9, citationCoverage: 0.8, checks: [...] }
-```
-
-### Agent State Machines
-
-Build multi-turn conversational flows with explicit state transitions — each state can override the system prompt, tools, and guardrails.
-
-```typescript
-const agent = defineAgent(
-  {
-    name: 'support-bot',
-    system: 'You are a customer support agent.',
-    initialState: 'greet',
-    states: {
-      greet: {
-        system: 'Greet the user and ask how you can help.',
-        transition: (result) => {
-          const text = typeof result.message.content === 'string' ? result.message.content : ''
-          return text.includes('billing') ? 'billing' : 'general'
-        },
-      },
-      billing: {
-        system: 'Help the user with billing questions.',
-        tools: [lookupInvoiceTool, refundTool],
-        transition: () => 'resolve',
-      },
-      general: {
-        system: 'Help the user with general questions.',
-        tools: [searchKBTool],
-        transition: () => 'resolve',
-      },
-      resolve: {
-        system: 'Summarize the resolution and ask if there is anything else.',
-        terminal: true,
-        transition: () => 'resolve',
-      },
-    },
-  },
-  { complete: (req) => llm.complete(req) },
-)
-
-const result = await agent.run('I have a billing question')
-console.log(result.finalState)    // 'resolve'
-console.log(result.stateHistory)  // Full trace of state transitions
-```
-
-### Full observability with cost tracking
-
-Track every LLM call's cost, latency, and token usage. Export traces to OpenTelemetry backends like Jaeger, Datadog, or Grafana.
-
-```typescript
-import { observe } from '@elsium-ai/observe'
-
-const tracer = observe({
-  output: ['console', 'json-file'],
-  costTracking: true,
-})
-
-// All LLM calls are automatically traced
-const span = tracer.startSpan('my-pipeline')
-// ... do work ...
-span.end({ status: 'ok' })
-
-// Get a cost report
-const report = tracer.getCostReport()
-// { totalCost: 0.0234, totalTokens: 15420, byModel: { 'claude-sonnet-4-6': ... } }
-
-// Export to OpenTelemetry
-import { createOTLPExporter } from '@elsium-ai/observe'
-const exporter = createOTLPExporter({ endpoint: 'http://localhost:4318' })
-await exporter.export(tracer.getSpans())
-```
-
-### Deterministic AI testing
-
-Test your AI code without hitting real APIs. Mock providers, record/replay fixtures, run evals, catch prompt regressions, and use LLM-as-judge criteria.
-
-```typescript
-import { mockProvider, runEvalSuite, createRegressionSuite, createReplayRecorder } from '@elsium-ai/testing'
-
-test('agent answers correctly', async () => {
-  const mock = mockProvider({
-    responses: [{ content: 'The capital of France is Paris.' }],
-  })
-
-  const agent = defineAgent(
-    { name: 'test-agent', system: 'Answer questions accurately.' },
-    { complete: mock.complete },
-  )
-
-  const result = await agent.run('What is the capital of France?')
-  expect(result.message.content).toContain('Paris')
-  expect(mock.calls).toHaveLength(1)
-})
-
-// Eval framework with LLM-as-judge
-const results = await runEvalSuite({
-  name: 'quality-check',
-  cases: [{
-    name: 'helpful-response',
-    input: 'How do I reset my password?',
-    criteria: [
-      { type: 'contains', value: 'password' },
-      { type: 'llm_judge', prompt: 'Is this helpful and actionable?', judge: myJudge },
-      { type: 'semantic_similarity', reference: 'Click forgot password...', threshold: 0.7 },
-    ],
-  }],
-  runner: (input) => agent.run(input).then(r => extractText(r.message.content)),
-})
-
-// Regression detection for CI
-const regression = createRegressionSuite('my-agent')
-const result = await regression.run(myRunner)
-if (result.regressions.length > 0) process.exit(1)
-
-// Deterministic replay
-const recorder = createReplayRecorder(llm.complete)
-const result = await recorder.complete(request)  // Records the call
-await recorder.save('fixtures/my-test.json')
-```
-
-### Prompt as Code
-
-Treat prompts like database migrations: versioned, diffable, testable, with template variables.
-
-```typescript
-import { createPromptRegistry, definePrompt } from '@elsium-ai/testing'
-
-const registry = createPromptRegistry()
-
-registry.register('classifier', definePrompt({
-  name: 'classifier',
-  version: '1.0.0',
-  content: 'Classify this text into: {{categories}}\n\nText: {{input}}',
-  variables: ['categories', 'input'],
-}))
-
-registry.register('classifier', definePrompt({
-  name: 'classifier',
-  version: '1.1.0',
-  content: 'You are a text classifier. Categories: {{categories}}\n\nClassify: {{input}}\nRespond with JSON.',
-  variables: ['categories', 'input'],
-}))
-
-// Diff between versions
-const diff = registry.diff('classifier', '1.0.0', '1.1.0')
-
-// Render with variables
-const prompt = registry.render('classifier', { categories: 'spam,ham', input: 'Buy now!' })
-```
-
----
-
-## Why ElsiumAI?
-
-| Problem in existing frameworks | ElsiumAI solution |
-|---|---|
-| Over-abstracted, hard to debug | X-Ray mode — see the exact HTTP request/response for every LLM call |
-| Python-only or poor TypeScript support | TypeScript-first with full end-to-end type safety |
-| Need 3-4 libraries for one AI app | Single framework, modular packages — use only what you need |
-| Poor error messages from LLMs | Structured `Result<T, E>` pattern with retry strategies |
-| No cost visibility | Cost Intelligence Engine — budgets, projections, recommendations, loop detection |
-| Hard to test AI code | Mock providers, fixtures, evals, LLM-as-judge, regression suites, replay mode |
-| Vendor lock-in | Provider Mesh — Anthropic, OpenAI, Google with keyword-aware routing and fallback |
-| No observability standard | OpenTelemetry compatible — export to Jaeger, Datadog, Grafana |
-| No MCP support | Native bidirectional MCP — use any MCP server, expose tools as MCP server |
-| Hallucination blindness | Semantic guardrails — hallucination detection, grounding checks, auto-retry |
-| No confidence in AI output | Confidence scoring — per-result hallucination risk, relevance, custom checks |
-| Prompt injection attacks | AI Security Layer — injection/jailbreak detection, secret redaction |
-| Complex multi-turn flows | Agent State Machines — explicit states, transitions, per-state tools |
-| Prompt versioning chaos | Prompt as Code — versioned, diffable, testable prompt management |
-| Streaming breaks on errors | Resilient streaming — checkpoints, partial recovery, timeout support |
+It also does everything you'd expect — multi-provider gateway, agents, tools, RAG, workflows, MCP, streaming, cost tracking. But those are table stakes. The three pillars are what make ElsiumAI different.
 
 ---
 
@@ -563,16 +44,9 @@ const prompt = registry.render('classifier', { categories: 'spam,ham', input: 'B
 bun add @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents
 ```
 
-Or install everything at once:
-
-```bash
-bun add elsium-ai
-```
-
 ```typescript
 import { gateway } from '@elsium-ai/gateway'
 import { defineAgent } from '@elsium-ai/agents'
-import { env } from '@elsium-ai/core'
 
 const llm = gateway({
   provider: 'anthropic',
@@ -586,8 +60,120 @@ const agent = defineAgent(
 )
 
 const result = await agent.run('What is TypeScript?')
-console.log(result.message.content)
 ```
+
+---
+
+## Reliability
+
+Providers go down. Rate limits hit. Costs spiral. ElsiumAI treats failure as a first-class concern.
+
+```typescript
+import { createProviderMesh } from '@elsium-ai/gateway'
+import { dedupMiddleware } from '@elsium-ai/core'
+
+const mesh = createProviderMesh({
+  providers: [
+    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') }, priority: 1 },
+    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') }, priority: 2 },
+  ],
+  strategy: 'fallback',
+  circuitBreaker: {         // Provider failing? Circuit opens, traffic reroutes
+    failureThreshold: 5,
+    resetTimeoutMs: 30_000,
+  },
+})
+```
+
+| Feature | What it does |
+|---------|-------------|
+| **Circuit Breaker** | Detects failing providers, stops sending traffic, auto-recovers |
+| **Bulkhead Isolation** | Bounds concurrency — one slow consumer can't starve the rest |
+| **Request Dedup** | Identical in-flight calls coalesce into one API request |
+| **Graceful Shutdown** | Drains in-flight operations before process exit |
+| **Retry with Backoff** | Exponential backoff with jitter, respects `Retry-After` headers |
+
+---
+
+## Governance
+
+Who called which model? Did they have permission? Can you prove the audit log hasn't been tampered with?
+
+```typescript
+import { createPolicySet, policyMiddleware, modelAccessPolicy, costLimitPolicy } from '@elsium-ai/core'
+import { createAuditTrail, auditMiddleware } from '@elsium-ai/observe'
+import { createRBAC } from '@elsium-ai/app'
+
+// Policy: what's allowed
+const policies = createPolicySet([
+  modelAccessPolicy(['claude-sonnet-4-6', 'gpt-4o-mini']),
+  costLimitPolicy(5.00),
+])
+
+// Audit: what happened (hash-chained, tamper-proof)
+const audit = createAuditTrail({ hashChain: true })
+
+// RBAC: who can do it
+const rbac = createRBAC({
+  roles: [{ name: 'analyst', permissions: ['model:use:gpt-4o-mini'], inherits: ['viewer'] }],
+})
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [policyMiddleware(policies), auditMiddleware(audit)],
+})
+```
+
+| Feature | What it does |
+|---------|-------------|
+| **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern |
+| **RBAC** | Role-based permissions with inheritance and wildcard matching |
+| **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations |
+| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification |
+| **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model |
+
+---
+
+## Deterministic AI
+
+LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, verify, and prove output consistency.
+
+```typescript
+import { assertDeterministic } from '@elsium-ai/testing'
+import { createProvenanceTracker } from '@elsium-ai/observe'
+
+// Verify: same input → same output
+const result = await assertDeterministic(
+  (seed) => llm.complete({
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Classify: spam' }] }],
+    temperature: 0,
+    seed,  // Propagated to provider API automatically
+  }).then(r => extractText(r.message.content)),
+  { runs: 5, seed: 42, tolerance: 0 },
+)
+// { deterministic: true, variance: 0, uniqueOutputs: 1 }
+
+// Prove: who/what/when produced this output
+const provenance = createProvenanceTracker()
+provenance.record({ prompt, model, config, input, output, traceId })
+```
+
+| Feature | What it does |
+|---------|-------------|
+| **Seed Propagation** | Passes seed through the stack to OpenAI, Google, and Anthropic APIs |
+| **Output Pinning** | Locks expected outputs — model update changes your classifier? CI catches it |
+| **Determinism Assertions** | Run N times, verify all outputs match, fail in CI if they don't |
+| **Provenance Tracking** | SHA-256 hashes every prompt/config/input/output — full lineage per traceId |
+| **Request-Matched Fixtures** | Replay test fixtures by content hash, not sequence order |
+
+---
+
+## Everything Else
+
+The three pillars are what make ElsiumAI unique. These are the fundamentals it also delivers:
+
+**Multi-provider gateway** with X-Ray mode, middleware, and smart routing (fallback, cost-optimized, latency-racing, capability-aware). **Agents** with memory, semantic guardrails, confidence scoring, state machines, and multi-agent orchestration. **RAG** with document loading, chunking, embeddings, and vector search. **Workflows** with retries, parallel execution, and branching. **MCP** with bidirectional client/server bridge. **Cost intelligence** with budgets, projections, and loop detection. **Testing** with mock providers, evals, LLM-as-judge, prompt versioning, and regression suites.
 
 ---
 
@@ -596,116 +182,74 @@ console.log(result.message.content)
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                       @elsium-ai/app                         │
-│               (App bootstrap + HTTP server)                  │
-├──────────┬───────────┬──────────┬───────────┬────────────────┤
-│ gateway  │  agents   │   rag    │   tools   │   workflows    │
-│ (mesh)   │ (guards)  │          │           │                │
-├──────────┴───────────┴──────────┼───────────┴────────────────┤
-│       @elsium-ai/observe        │        @elsium-ai/mcp      │
-│ (Tracing, metrics, cost intel)  │    (Client + Server)       │
+│              (HTTP server, RBAC, auth)                       │
+├──────────┬───────────┬──────────┬──────────┬─────────────────┤
+│ gateway  │  agents   │   rag    │  tools   │   workflows     │
+├──────────┴───────────┴──────────┼──────────┴─────────────────┤
+│       @elsium-ai/observe        │       @elsium-ai/mcp       │
 ├─────────────────────────────────┴────────────────────────────┤
 │                      @elsium-ai/core                         │
-│       (Types, schemas, errors, utilities, streaming)         │
+├──────────────────────────────────────────────────────────────┤
+│                     @elsium-ai/testing                       │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ## Packages
 
-| Package | Description | Size |
-|---------|-------------|------|
-| [`@elsium-ai/core`](./packages/core) | Types, errors, resilient streaming, Result pattern, config loader | 5.2 KB |
-| [`@elsium-ai/gateway`](./packages/gateway) | Multi-provider LLM gateway with X-Ray, middleware, and provider mesh | 12.4 KB |
-| [`@elsium-ai/agents`](./packages/agents) | Agent framework with memory, semantic guardrails, multi-agent | 10.0 KB |
-| [`@elsium-ai/tools`](./packages/tools) | Tool definitions with Zod schema validation | 7.0 KB |
-| [`@elsium-ai/rag`](./packages/rag) | Document loading, chunking, embeddings, vector search | 9.2 KB |
-| [`@elsium-ai/workflows`](./packages/workflows) | Sequential, parallel, and branching workflows | 4.6 KB |
-| [`@elsium-ai/observe`](./packages/observe) | Tracing, cost intelligence engine, OpenTelemetry export | 2.9 KB |
-| [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server bridge | — |
-| [`@elsium-ai/app`](./packages/app) | HTTP server with CORS, auth, rate limiting (Hono) | 17.7 KB |
-| [`@elsium-ai/testing`](./packages/testing) | Mock providers, evals, prompt versioning, regression suites, replay | 7.9 KB |
-| [`@elsium-ai/cli`](./packages/cli) | CLI for scaffolding, dev server, X-Ray inspection | — |
+| Package | Description |
+|---------|-------------|
+| [`@elsium-ai/core`](./packages/core) | Types, errors, streaming, circuit breaker, dedup, policy engine, shutdown |
+| [`@elsium-ai/gateway`](./packages/gateway) | Multi-provider gateway, X-Ray, provider mesh, bulkhead, PII detection |
+| [`@elsium-ai/agents`](./packages/agents) | Agents, memory, guardrails, approval gates, multi-agent |
+| [`@elsium-ai/tools`](./packages/tools) | Tool definitions with Zod validation |
+| [`@elsium-ai/rag`](./packages/rag) | Document loading, chunking, embeddings, vector search |
+| [`@elsium-ai/workflows`](./packages/workflows) | Sequential, parallel, and branching workflows |
+| [`@elsium-ai/observe`](./packages/observe) | Tracing, cost intelligence, audit trail, provenance tracking |
+| [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server |
+| [`@elsium-ai/app`](./packages/app) | HTTP server, CORS, auth, rate limiting, RBAC |
+| [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, pinning, determinism assertions, prompt versioning |
+| [`@elsium-ai/cli`](./packages/cli) | Scaffolding, dev server, X-Ray inspection |
 
 ---
 
-## Feature Comparison
+## What Others Don't Do
 
-| Feature | ElsiumAI | LangChain | Vercel AI SDK | LlamaIndex |
-|---------|----------|-----------|---------------|------------|
-| Language | TypeScript-first | Python (JS port) | TypeScript | Python (TS port) |
-| Runtime | Bun | Node/Python | Node | Python |
-| Type Safety | Full end-to-end | Partial | Good | Partial |
-| Bundle Size | 77 KB | ~2 MB | ~150 KB | ~3 MB |
-| Cold Start | < 3ms | ~500ms | ~50ms | ~800ms |
-| X-Ray Mode (DevTools) | Yes | No | No | No |
-| Multi-Provider Mesh | Yes (Anthropic, OpenAI, Google + keyword-aware routing) | Yes | Yes | Yes |
-| Cost Intelligence | Yes (budgets, projections, loop detection) | No | No | No |
-| MCP Support | Yes (bidirectional) | Partial | No | No |
-| Semantic Guardrails | Yes (hallucination, grounding, relevance) | No | No | No |
-| AI Security Layer | Yes (injection, jailbreak, secret redaction) | No | No | No |
-| Confidence Scoring | Yes (per-result confidence with custom checks) | No | No | No |
-| Agent State Machines | Yes (multi-turn flows with state transitions) | No | No | No |
-| Prompt Versioning | Yes (diff, template, registry) | No (LangSmith) | No | No |
-| Resilient Streaming | Yes (checkpoints, recovery) | No | No | No |
-| Built-in Tracing | Yes (OTel) | LangSmith (paid) | No | No |
-| LLM-as-Judge Evals | Yes | No | No | LlamaIndex evals |
-| Regression Detection | Yes | No | No | No |
-| Deterministic Replay | Yes | No | No | No |
-| Mock Providers | Yes | No | No | No |
-| RAG Pipeline | Yes | Yes | No | Yes |
-| Agent Framework | Yes | Yes | Partial | Yes |
-| Tool System | Zod-validated | Dynamic | Zod-validated | Dynamic |
-| Streaming | Native async iterables | Callbacks | ReadableStream | Callbacks |
-| Modular (use what you need) | Yes | No (monolithic) | Partial | No (monolithic) |
+| | ElsiumAI | LangChain | Vercel AI SDK | LlamaIndex |
+|---|:---:|:---:|:---:|:---:|
+| Circuit Breaker | Yes | — | — | — |
+| Bulkhead Isolation | Yes | — | — | — |
+| Request Dedup | Yes | — | — | — |
+| Graceful Shutdown | Yes | — | — | — |
+| Policy Engine | Yes | — | — | — |
+| RBAC | Yes | — | — | — |
+| Approval Gates | Yes | — | — | — |
+| Hash-Chained Audit | Yes | — | — | — |
+| PII Detection | Yes | — | — | — |
+| Seed Propagation | Yes | — | — | — |
+| Output Pinning | Yes | — | — | — |
+| Determinism Assertions | Yes | — | — | — |
+| Provenance Tracking | Yes | — | — | — |
+
+All four frameworks support agents, tools, RAG, and multi-provider routing. Only one was built for reliability, governance, and determinism.
 
 ---
 
 ## Performance
 
-Benchmarked on Apple Silicon (M-series):
-
-| Metric | Result | Target |
-|--------|--------|--------|
-| Cold Start (all packages) | ~2ms | < 50ms |
-| Completion overhead | ~0.003ms | < 5ms |
-| Throughput | ~400K ops/sec | — |
-| Memory (per agent) | < 1 KB | < 10 MB |
-| Core bundle | 5.2 KB | < 50 KB |
-| Full bundle | 76.9 KB | < 200 KB |
-
-```bash
-bun benchmarks/run-all.ts
-```
+| Cold Start | Overhead | Throughput | Bundle |
+|:---:|:---:|:---:|:---:|
+| ~2ms | ~0.003ms | ~400K ops/sec | 77 KB |
 
 ---
 
-## Examples
+## Principles
 
-| Example | Description | API Key Required |
-|---------|-------------|:---:|
-| [`chatbot`](./examples/chatbot) | Interactive conversation with memory and cost tracking | Yes |
-| [`rag-app`](./examples/rag-app) | Knowledge base with document chunking and vector search | No |
-| [`multi-agent`](./examples/multi-agent) | Sequential, parallel, and workflow agent pipelines | No |
-| [`api-server`](./examples/api-server) | HTTP API with tools, multiple agents, and middleware | Optional |
-| [`mcp-integration`](./examples/mcp-integration) | Bidirectional MCP bridge — client and server modes | Optional |
-| [`cost-tracking`](./examples/cost-tracking) | Cost intelligence engine with budgets and recommendations | No |
-
-```bash
-bun examples/multi-agent/index.ts
-bun examples/rag-app/index.ts
-bun examples/mcp-integration/index.ts client
-bun examples/cost-tracking/index.ts
-```
-
----
-
-## Core Principles
-
-1. **Zero magic** — no hidden behavior, no decorators, no reflection
-2. **Type safety end-to-end** — from config to LLM output
-3. **Performance by default** — streaming, caching, connection pooling
-4. **Debuggable** — every LLM call has a trace ID, cost, and latency
-5. **Modular** — use only what you need, tree-shakeable
-6. **Test-first** — mock providers, deterministic fixtures, eval tools
+1. **Fail predictably** — handle failure before you see it
+2. **Trust but verify** — every call auditable, every output traceable
+3. **Deterministic by default** — reproducible AI is testable AI
+4. **Zero magic** — `createX(config)` everywhere, no hidden behavior
+5. **Type safety end-to-end** — from config to LLM output
+6. **Modular** — use what you need, tree-shake the rest
 
 ---
 

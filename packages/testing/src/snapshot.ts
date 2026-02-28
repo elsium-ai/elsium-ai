@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { CompletionRequest } from '@elsium-ai/core'
 
 export interface PromptSnapshot {
@@ -47,12 +48,7 @@ export function createSnapshotStore(existing?: PromptSnapshot[]): SnapshotStore 
 }
 
 export function hashOutput(output: string): string {
-	let hash = 0
-	for (let i = 0; i < output.length; i++) {
-		const char = output.charCodeAt(i)
-		hash = ((hash << 5) - hash + char) | 0
-	}
-	return (hash >>> 0).toString(36)
+	return createHash('sha256').update(output).digest('hex')
 }
 
 export interface SnapshotTestResult {

@@ -192,6 +192,28 @@ describe('Utils', () => {
 		expect(attempts).toBe(3)
 	})
 
+	it('respects retryAfterMs on error', async () => {
+		let attempts = 0
+		const startTime = Date.now()
+		const result = await retry(
+			async () => {
+				attempts++
+				if (attempts < 2) {
+					const error = new Error('rate limited') as Error & { retryAfterMs: number }
+					error.retryAfterMs = 50
+					throw error
+				}
+				return 'success'
+			},
+			{ maxRetries: 3, baseDelayMs: 1000 },
+		)
+		const elapsed = Date.now() - startTime
+		expect(result).toBe('success')
+		expect(attempts).toBe(2)
+		// The delay should be based on retryAfterMs (50ms) not baseDelayMs (1000ms)
+		expect(elapsed).toBeLessThan(500)
+	})
+
 	it('stops retrying when shouldRetry returns false', async () => {
 		let attempts = 0
 		await expect(

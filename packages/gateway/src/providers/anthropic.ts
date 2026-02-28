@@ -194,6 +194,11 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		return { system, messages: formatted }
 	}
 
+	function buildSeedMetadata(req: CompletionRequest): Record<string, unknown> {
+		if (req.seed === undefined) return {}
+		return { metadata: { ...((req.metadata as Record<string, unknown>) ?? {}), seed: req.seed } }
+	}
+
 	function formatTools(tools?: ToolDefinition[]): AnthropicTool[] | undefined {
 		if (!tools?.length) return undefined
 		return tools.map((t) => ({
@@ -270,6 +275,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
 				...(req.topP !== undefined ? { top_p: req.topP } : {}),
 				...(req.stopSequences?.length ? { stop_sequences: req.stopSequences } : {}),
+				...buildSeedMetadata(req),
 			}
 
 			const tools = formatTools(req.tools)
@@ -313,6 +319,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
 				...(req.topP !== undefined ? { top_p: req.topP } : {}),
 				...(req.stopSequences?.length ? { stop_sequences: req.stopSequences } : {}),
+				...buildSeedMetadata(req),
 			}
 
 			const tools = formatTools(req.tools)

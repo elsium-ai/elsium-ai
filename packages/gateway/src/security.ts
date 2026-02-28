@@ -19,6 +19,7 @@ export interface SecurityMiddlewareConfig {
 	secretRedaction?: boolean
 	jailbreakDetection?: boolean
 	blockedPatterns?: RegExp[]
+	piiTypes?: Array<'email' | 'phone' | 'address' | 'passport' | 'all'>
 	onViolation?: (violation: SecurityViolation) => void
 }
 
@@ -111,6 +112,82 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; detail: string; replacement: str
 	},
 ]
 
+// ─── PII Patterns ───────────────────────────────────────────────
+
+const PII_PATTERNS: Record<
+	string,
+	Array<{ pattern: RegExp; detail: string; replacement: string }>
+> = {
+	email: [
+		{
+			pattern: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g,
+			detail: 'Email address detected',
+			replacement: '[REDACTED_EMAIL]',
+		},
+	],
+	phone: [
+		{
+			pattern: /\b(?:\+?1[-.\s]?)?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+			detail: 'US phone number detected',
+			replacement: '[REDACTED_PHONE]',
+		},
+	],
+	address: [
+		{
+			pattern:
+				/\b\d{1,5}\s+[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\s+(?:St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Ln|Lane|Rd|Road|Ct|Court|Way|Pl|Place)\.?\b/g,
+			detail: 'Street address detected',
+			replacement: '[REDACTED_ADDRESS]',
+		},
+	],
+	passport: [
+		{
+			pattern: /\b[A-Z]\d{8}\b/g,
+			detail: 'Passport number detected',
+			replacement: '[REDACTED_PASSPORT]',
+		},
+	],
+}
+
+// ─── Data Classification ────────────────────────────────────────
+
+export type DataClassification = 'public' | 'internal' | 'confidential' | 'restricted'
+
+export interface ClassificationResult {
+	level: DataClassification
+	detectedTypes: string[]
+}
+
+export function classifyContent(text: string): ClassificationResult {
+	const detectedTypes: string[] = []
+
+	// Check secrets (restricted)
+	for (const { pattern, detail } of SECRET_PATTERNS) {
+		if (new RegExp(pattern.source, pattern.flags).test(text)) {
+			detectedTypes.push(detail)
+		}
+	}
+
+	if (detectedTypes.length > 0) {
+		return { level: 'restricted', detectedTypes }
+	}
+
+	// Check PII (confidential)
+	for (const [type, patterns] of Object.entries(PII_PATTERNS)) {
+		for (const { pattern, detail } of patterns) {
+			if (new RegExp(pattern.source, pattern.flags).test(text)) {
+				detectedTypes.push(detail)
+			}
+		}
+	}
+
+	if (detectedTypes.length > 0) {
+		return { level: 'confidential', detectedTypes }
+	}
+
+	return { level: 'public', detectedTypes: [] }
+}
+
 // ─── Detection Functions ────────────────────────────────────────
 
 // M6 fix: Normalize Unicode (NFKC) before security pattern matching to prevent bypass via confusables
@@ -140,16 +217,51 @@ export function detectJailbreak(text: string): SecurityViolation[] {
 	return violations
 }
 
-export function redactSecrets(text: string): { redacted: string; found: SecurityViolation[] } {
+function redactPatterns(
+	text: string,
+	patterns: Array<{ pattern: RegExp; detail: string; replacement: string }>,
+): { redacted: string; found: SecurityViolation[] } {
 	const found: SecurityViolation[] = []
 	let redacted = text
 
-	for (const { pattern, detail, replacement } of SECRET_PATTERNS) {
+	for (const { pattern, detail, replacement } of patterns) {
 		const regex = new RegExp(pattern.source, pattern.flags)
 		if (regex.test(redacted)) {
 			found.push({ type: 'secret_detected', detail, severity: 'medium' })
 			redacted = redacted.replace(new RegExp(pattern.source, pattern.flags), replacement)
 		}
+	}
+
+	return { redacted, found }
+}
+
+function resolvePiiPatterns(
+	piiTypes: Array<'email' | 'phone' | 'address' | 'passport' | 'all'>,
+): Array<{ pattern: RegExp; detail: string; replacement: string }> {
+	const typesToCheck = piiTypes.includes('all')
+		? Object.keys(PII_PATTERNS)
+		: piiTypes.filter((t) => t !== 'all')
+
+	const patterns: Array<{ pattern: RegExp; detail: string; replacement: string }> = []
+	for (const type of typesToCheck) {
+		const typePatterns = PII_PATTERNS[type]
+		if (typePatterns) patterns.push(...typePatterns)
+	}
+	return patterns
+}
+
+export function redactSecrets(
+	text: string,
+	piiTypes?: Array<'email' | 'phone' | 'address' | 'passport' | 'all'>,
+): { redacted: string; found: SecurityViolation[] } {
+	const secretResult = redactPatterns(text, SECRET_PATTERNS)
+	let { redacted } = secretResult
+	const found = [...secretResult.found]
+
+	if (piiTypes?.length) {
+		const piiResult = redactPatterns(redacted, resolvePiiPatterns(piiTypes))
+		redacted = piiResult.redacted
+		found.push(...piiResult.found)
 	}
 
 	return { redacted, found }
@@ -208,7 +320,7 @@ function redactResponseSecrets(
 	const responseText = extractText(response.message.content)
 	if (!responseText) return response
 
-	const { redacted, found } = redactSecrets(responseText)
+	const { redacted, found } = redactSecrets(responseText, config.piiTypes)
 	if (found.length === 0) return response
 
 	for (const v of found) {

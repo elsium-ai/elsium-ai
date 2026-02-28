@@ -102,6 +102,7 @@ export interface CompletionRequest {
 	system?: string
 	maxTokens?: number
 	temperature?: number
+	seed?: number
 	topP?: number
 	stopSequences?: string[]
 	tools?: ToolDefinition[]

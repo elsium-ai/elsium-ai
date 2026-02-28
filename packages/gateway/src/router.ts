@@ -1,5 +1,11 @@
 import type { CompletionRequest, LLMResponse, ProviderConfig } from '@elsium-ai/core'
-import { ElsiumError, type ElsiumStream } from '@elsium-ai/core'
+import {
+	type CircuitBreaker,
+	type CircuitBreakerConfig,
+	ElsiumError,
+	type ElsiumStream,
+	createCircuitBreaker,
+} from '@elsium-ai/core'
 import { gateway } from './gateway'
 import type { Gateway } from './gateway'
 import { calculateCost } from './pricing'
@@ -28,6 +34,7 @@ export interface ProviderMeshConfig {
 	providers: ProviderEntry[]
 	strategy: RoutingStrategy
 	costOptimizer?: CostOptimizerConfig
+	circuitBreaker?: CircuitBreakerConfig | boolean
 }
 
 export interface ProviderMesh {
@@ -101,6 +108,8 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 	)
 
 	const gateways = new Map<string, Gateway>()
+	const circuitBreakers = new Map<string, CircuitBreaker>()
+
 	for (const entry of sortedProviders) {
 		const gw = gateway({
 			provider: entry.name,
@@ -109,6 +118,21 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 			model: entry.model,
 		})
 		gateways.set(entry.name, gw)
+
+		if (config.circuitBreaker) {
+			const cbConfig = typeof config.circuitBreaker === 'boolean' ? {} : config.circuitBreaker
+			circuitBreakers.set(entry.name, createCircuitBreaker(cbConfig))
+		}
+	}
+
+	function callWithCircuitBreaker<T>(providerName: string, fn: () => Promise<T>): Promise<T> {
+		const cb = circuitBreakers.get(providerName)
+		return cb ? cb.execute(fn) : fn()
+	}
+
+	function isProviderAvailable(providerName: string): boolean {
+		const cb = circuitBreakers.get(providerName)
+		return !cb || cb.state !== 'open'
 	}
 
 	function getGateway(providerName: string): Gateway {
@@ -127,12 +151,13 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		let lastError: Error | null = null
 
 		for (const entry of sortedProviders) {
+			if (!isProviderAvailable(entry.name)) continue
+
 			try {
 				const gw = getGateway(entry.name)
-				return await gw.complete({
-					...request,
-					model: request.model ?? entry.model,
-				})
+				return await callWithCircuitBreaker(entry.name, () =>
+					gw.complete({ ...request, model: request.model ?? entry.model }),
+				)
 			} catch (err) {
 				lastError = err instanceof Error ? err : new Error(String(err))
 			}
@@ -170,13 +195,17 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 	// H1 fix: Cancel remaining requests when first one succeeds
 	async function latencyOptimizedComplete(request: CompletionRequest): Promise<LLMResponse> {
 		const controller = new AbortController()
-		const promises = sortedProviders.map(async (entry) => {
+		const availableProviders = sortedProviders.filter((e) => isProviderAvailable(e.name))
+
+		const promises = availableProviders.map(async (entry) => {
 			const gw = getGateway(entry.name)
-			return gw.complete({
-				...request,
-				model: request.model ?? entry.model,
-				signal: controller.signal,
-			})
+			return callWithCircuitBreaker(entry.name, () =>
+				gw.complete({
+					...request,
+					model: request.model ?? entry.model,
+					signal: controller.signal,
+				}),
+			)
 		})
 
 		try {
@@ -219,9 +248,13 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		let lastError: Error | null = null
 
 		for (const entry of providers) {
+			if (!isProviderAvailable(entry.name)) continue
+
 			try {
 				const gw = getGateway(entry.name)
-				return await gw.complete({ ...request, model: request.model ?? entry.model })
+				return await callWithCircuitBreaker(entry.name, () =>
+					gw.complete({ ...request, model: request.model ?? entry.model }),
+				)
 			} catch (err) {
 				lastError = err instanceof Error ? err : new Error(String(err))
 			}

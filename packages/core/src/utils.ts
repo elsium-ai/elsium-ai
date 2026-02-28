@@ -33,6 +33,23 @@ export async function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function getRetryDelay(
+	error: unknown,
+	attempt: number,
+	baseDelayMs: number,
+	maxDelayMs: number,
+): number {
+	if (
+		error &&
+		typeof error === 'object' &&
+		'retryAfterMs' in error &&
+		typeof (error as { retryAfterMs: number }).retryAfterMs === 'number'
+	) {
+		return (error as { retryAfterMs: number }).retryAfterMs
+	}
+	return Math.min(baseDelayMs * 2 ** attempt, maxDelayMs)
+}
+
 export function retry<T>(
 	fn: () => Promise<T>,
 	options: {
@@ -65,7 +82,7 @@ export function retry<T>(
 				if (attempt === maxRetries || !shouldRetry(error)) {
 					throw error
 				}
-				const delay = Math.min(baseDelayMs * 2 ** attempt, maxDelayMs)
+				const delay = getRetryDelay(error, attempt, baseDelayMs, maxDelayMs)
 				const jitter = delay * (0.5 + Math.random() * 0.5)
 				await sleep(jitter)
 			}

@@ -2,6 +2,7 @@ import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-
 import { ElsiumError, extractText, generateTraceId } from '@elsium-ai/core'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
+import { type ApprovalGate, createApprovalGate, shouldRequireApproval } from './approval'
 import { createConfidenceScorer } from './confidence'
 import { type Memory, createMemory } from './memory'
 import { createAgentSecurity } from './security'
@@ -60,6 +61,9 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		: null
 
 	const agentSecurity = guardrails.security ? createAgentSecurity(guardrails.security) : null
+	const approvalGate: ApprovalGate | null = config.guardrails?.approval
+		? createApprovalGate(config.guardrails.approval)
+		: null
 
 	const confidenceScorer = config.confidence
 		? createConfidenceScorer(typeof config.confidence === 'boolean' ? {} : config.confidence)
@@ -323,6 +327,32 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 
 		for (const tc of toolCalls) {
 			await safeHook(() => config.hooks?.onToolCall?.({ name: tc.name, arguments: tc.arguments }))
+
+			// Check approval gate before executing tool
+			if (
+				approvalGate &&
+				shouldRequireApproval(config.guardrails?.approval?.requireApprovalFor, {
+					toolName: tc.name,
+				})
+			) {
+				const decision = await approvalGate.requestApproval(
+					'tool_call',
+					`Execute tool: ${tc.name}`,
+					{ toolName: tc.name, arguments: tc.arguments },
+				)
+				if (!decision.approved) {
+					const deniedResult: ToolExecutionResult = {
+						success: false,
+						error: `Tool call denied: ${decision.reason ?? 'Approval denied'}`,
+						toolCallId: tc.id,
+						durationMs: 0,
+					}
+					await safeHook(() => config.hooks?.onToolResult?.(deniedResult))
+					history.push({ name: tc.name, arguments: tc.arguments, result: deniedResult })
+					results.push(formatToolResult(deniedResult))
+					continue
+				}
+			}
 
 			const tool = toolMap.get(tc.name)
 			if (!tool) {

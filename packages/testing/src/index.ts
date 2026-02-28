@@ -38,3 +38,11 @@ export type {
 // Replay
 export { createReplayRecorder, createReplayPlayer } from './replay'
 export type { ReplayEntry, ReplayRecorder, ReplayPlayer } from './replay'
+
+// Pinning
+export { createPinStore, pinOutput } from './pinning'
+export type { Pin, PinStore, PinResult } from './pinning'
+
+// Determinism
+export { assertDeterministic, assertStable } from './determinism'
+export type { DeterminismResult, StabilityResult } from './determinism'

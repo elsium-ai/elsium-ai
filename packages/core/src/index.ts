@@ -43,3 +43,33 @@ export { env, envNumber, envBool } from './config'
 
 // Utils
 export { generateId, generateTraceId, extractText, sleep, retry } from './utils'
+
+// Circuit Breaker
+export { createCircuitBreaker } from './circuit-breaker'
+export type { CircuitBreakerConfig, CircuitBreaker, CircuitState } from './circuit-breaker'
+
+// Dedup
+export { createDedup, dedupMiddleware } from './dedup'
+export type { DedupConfig, Dedup } from './dedup'
+
+// Policy
+export {
+	createPolicySet,
+	policyMiddleware,
+	modelAccessPolicy,
+	tokenLimitPolicy,
+	costLimitPolicy,
+	contentPolicy,
+} from './policy'
+export type {
+	PolicyDecision,
+	PolicyResult,
+	PolicyContext,
+	PolicyRule,
+	PolicyConfig,
+	PolicySet,
+} from './policy'
+
+// Shutdown
+export { createShutdownManager } from './shutdown'
+export type { ShutdownConfig, ShutdownManager } from './shutdown'

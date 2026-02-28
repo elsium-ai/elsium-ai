@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { CompletionRequest, LLMResponse } from '@elsium-ai/core'
 import { type MockProvider, type MockResponseConfig, mockProvider } from './mock-provider'
 
@@ -14,8 +15,13 @@ export interface FixtureEntry {
 export interface Fixture {
 	readonly name: string
 	readonly entries: FixtureEntry[]
-	toProvider(): MockProvider
+	toProvider(options?: { matching?: 'sequential' | 'request-hash' }): MockProvider
 	toJSON(): string
+}
+
+function hashMessages(messages: Array<{ role: string; content: string }>): string {
+	const content = messages.map((m) => `${m.role}:${m.content}`).join('|')
+	return createHash('sha256').update(content).digest('hex').slice(0, 16)
 }
 
 export function createFixture(name: string, entries: FixtureEntry[]): Fixture {
@@ -23,7 +29,39 @@ export function createFixture(name: string, entries: FixtureEntry[]): Fixture {
 		name,
 		entries,
 
-		toProvider(): MockProvider {
+		toProvider(options?: { matching?: 'sequential' | 'request-hash' }): MockProvider {
+			if (options?.matching === 'request-hash') {
+				const hashMap = new Map<string, MockResponseConfig>()
+				for (const entry of entries) {
+					const hash = hashMessages(entry.request.messages)
+					hashMap.set(hash, entry.response)
+				}
+
+				const provider = mockProvider({
+					responses: entries.map((e) => e.response),
+				})
+
+				const originalComplete = provider.complete.bind(provider)
+				const wrapped = Object.create(provider) as MockProvider
+				wrapped.complete = async (request: CompletionRequest): Promise<LLMResponse> => {
+					const reqMessages = request.messages.map((m) => ({
+						role: m.role,
+						content: typeof m.content === 'string' ? m.content : '[complex]',
+					}))
+					const hash = hashMessages(reqMessages)
+					const matched = hashMap.get(hash)
+
+					if (matched) {
+						return mockProvider({ responses: [matched] }).complete(request)
+					}
+
+					// Fallback to sequential
+					return originalComplete(request)
+				}
+
+				return wrapped
+			}
+
 			return mockProvider({
 				responses: entries.map((e) => e.response),
 			})

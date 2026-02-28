@@ -23,6 +23,22 @@ export type { Tracer, TracerConfig, TracerOutput, TracerExporter, CostReport } f
 export { createMetrics } from './metrics'
 export type { MetricsCollector, MetricEntry } from './metrics'
 
+// Audit Trail
+export { createAuditTrail, auditMiddleware } from './audit'
+export type {
+	AuditEventType,
+	AuditEvent,
+	AuditStorageAdapter,
+	AuditQueryFilter,
+	AuditIntegrityResult,
+	AuditTrailConfig,
+	AuditTrail,
+} from './audit'
+
+// Provenance
+export { createProvenanceTracker } from './provenance'
+export type { ProvenanceRecord, ProvenanceTracker } from './provenance'
+
 // OpenTelemetry compatibility
 export {
 	toOTelSpan,

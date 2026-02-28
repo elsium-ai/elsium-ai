@@ -42,3 +42,13 @@ export type { ConfidenceConfig, ConfidenceResult } from './confidence'
 
 // State Machine
 export { executeStateMachine } from './state-machine'
+
+// Approval Gates
+export { createApprovalGate, shouldRequireApproval } from './approval'
+export type {
+	ApprovalRequest,
+	ApprovalDecision,
+	ApprovalCallback,
+	ApprovalGateConfig,
+	ApprovalGate,
+} from './approval'

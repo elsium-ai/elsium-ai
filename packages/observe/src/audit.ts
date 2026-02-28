@@ -1,0 +1,242 @@
+import { createHash } from 'node:crypto'
+import type { Middleware, MiddlewareContext, MiddlewareNext } from '@elsium-ai/core'
+
+export type AuditEventType =
+	| 'llm_call'
+	| 'tool_execution'
+	| 'security_violation'
+	| 'budget_alert'
+	| 'policy_violation'
+	| 'auth_event'
+	| 'approval_request'
+	| 'approval_decision'
+	| 'config_change'
+
+export interface AuditEvent {
+	id: string
+	sequenceId: number
+	type: AuditEventType
+	timestamp: number
+	actor?: string
+	traceId?: string
+	data: Record<string, unknown>
+	hash: string
+	previousHash: string
+}
+
+export interface AuditStorageAdapter {
+	append(event: AuditEvent): void | Promise<void>
+	query(filter: AuditQueryFilter): AuditEvent[] | Promise<AuditEvent[]>
+	count(): number | Promise<number>
+	verifyIntegrity(): AuditIntegrityResult | Promise<AuditIntegrityResult>
+}
+
+export interface AuditQueryFilter {
+	type?: AuditEventType | AuditEventType[]
+	actor?: string
+	traceId?: string
+	fromTimestamp?: number
+	toTimestamp?: number
+	limit?: number
+	offset?: number
+}
+
+export interface AuditIntegrityResult {
+	valid: boolean
+	totalEvents: number
+	brokenAt?: number
+}
+
+export interface AuditTrailConfig {
+	storage?: AuditStorageAdapter | 'memory'
+	hashChain?: boolean
+}
+
+export interface AuditTrail {
+	log(
+		type: AuditEventType,
+		data: Record<string, unknown>,
+		options?: { actor?: string; traceId?: string },
+	): void
+	query(filter: AuditQueryFilter): Promise<AuditEvent[]>
+	verifyIntegrity(): Promise<AuditIntegrityResult>
+	readonly count: number
+}
+
+function computeEventHash(event: Omit<AuditEvent, 'hash'>, previousHash: string): string {
+	const content = JSON.stringify({
+		id: event.id,
+		sequenceId: event.sequenceId,
+		type: event.type,
+		timestamp: event.timestamp,
+		actor: event.actor,
+		traceId: event.traceId,
+		data: event.data,
+		previousHash,
+	})
+	return createHash('sha256').update(content).digest('hex')
+}
+
+class InMemoryAuditStorage implements AuditStorageAdapter {
+	private events: AuditEvent[] = []
+
+	append(event: AuditEvent): void {
+		this.events.push(event)
+	}
+
+	query(filter: AuditQueryFilter): AuditEvent[] {
+		let results = [...this.events]
+
+		if (filter.type) {
+			const types = Array.isArray(filter.type) ? filter.type : [filter.type]
+			results = results.filter((e) => types.includes(e.type))
+		}
+		if (filter.actor) {
+			results = results.filter((e) => e.actor === filter.actor)
+		}
+		if (filter.traceId) {
+			results = results.filter((e) => e.traceId === filter.traceId)
+		}
+		if (filter.fromTimestamp !== undefined) {
+			const from = filter.fromTimestamp
+			results = results.filter((e) => e.timestamp >= from)
+		}
+		if (filter.toTimestamp !== undefined) {
+			const to = filter.toTimestamp
+			results = results.filter((e) => e.timestamp <= to)
+		}
+
+		const offset = filter.offset ?? 0
+		const limit = filter.limit ?? results.length
+		return results.slice(offset, offset + limit)
+	}
+
+	count(): number {
+		return this.events.length
+	}
+
+	verifyIntegrity(): AuditIntegrityResult {
+		if (this.events.length === 0) {
+			return { valid: true, totalEvents: 0 }
+		}
+
+		for (let i = 0; i < this.events.length; i++) {
+			const event = this.events[i]
+			const expectedHash = computeEventHash(event, event.previousHash)
+			if (event.hash !== expectedHash) {
+				return { valid: false, totalEvents: this.events.length, brokenAt: i }
+			}
+
+			if (i > 0 && event.previousHash !== this.events[i - 1].hash) {
+				return { valid: false, totalEvents: this.events.length, brokenAt: i }
+			}
+		}
+
+		return { valid: true, totalEvents: this.events.length }
+	}
+}
+
+let auditIdCounter = 0
+
+export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
+	const useHashChain = config?.hashChain !== false
+	const storage: AuditStorageAdapter =
+		config?.storage && typeof config.storage !== 'string'
+			? config.storage
+			: new InMemoryAuditStorage()
+
+	let sequenceId = 0
+	let previousHash = '0'.repeat(64)
+	let eventCount = 0
+
+	return {
+		log(
+			type: AuditEventType,
+			data: Record<string, unknown>,
+			options?: { actor?: string; traceId?: string },
+		): void {
+			sequenceId++
+			auditIdCounter++
+
+			const event: Omit<AuditEvent, 'hash'> & { hash?: string; previousHash: string } = {
+				id: `audit_${auditIdCounter.toString(36)}_${Date.now().toString(36)}`,
+				sequenceId,
+				type,
+				timestamp: Date.now(),
+				actor: options?.actor,
+				traceId: options?.traceId,
+				data,
+				previousHash: useHashChain ? previousHash : '0'.repeat(64),
+			}
+
+			const hash = useHashChain
+				? computeEventHash(event as Omit<AuditEvent, 'hash'>, event.previousHash)
+				: createHash('sha256').update(JSON.stringify(event)).digest('hex')
+
+			const finalEvent: AuditEvent = { ...(event as Omit<AuditEvent, 'hash'>), hash }
+
+			if (useHashChain) {
+				previousHash = hash
+			}
+
+			eventCount++
+			storage.append(finalEvent)
+		},
+
+		async query(filter: AuditQueryFilter): Promise<AuditEvent[]> {
+			return storage.query(filter)
+		},
+
+		async verifyIntegrity(): Promise<AuditIntegrityResult> {
+			return storage.verifyIntegrity()
+		},
+
+		get count(): number {
+			return eventCount
+		},
+	}
+}
+
+export function auditMiddleware(auditTrail: AuditTrail): Middleware {
+	return async (ctx: MiddlewareContext, next: MiddlewareNext) => {
+		const startTime = performance.now()
+
+		try {
+			const response = await next(ctx)
+			const latencyMs = Math.round(performance.now() - startTime)
+
+			auditTrail.log(
+				'llm_call',
+				{
+					provider: ctx.provider,
+					model: ctx.model,
+					inputTokens: response.usage.inputTokens,
+					outputTokens: response.usage.outputTokens,
+					totalTokens: response.usage.totalTokens,
+					cost: response.cost.totalCost,
+					latencyMs,
+					stopReason: response.stopReason,
+				},
+				{ traceId: ctx.traceId },
+			)
+
+			return response
+		} catch (error) {
+			const latencyMs = Math.round(performance.now() - startTime)
+
+			auditTrail.log(
+				'llm_call',
+				{
+					provider: ctx.provider,
+					model: ctx.model,
+					error: error instanceof Error ? error.message : String(error),
+					latencyMs,
+					success: false,
+				},
+				{ traceId: ctx.traceId },
+			)
+
+			throw error
+		}
+	}
+}

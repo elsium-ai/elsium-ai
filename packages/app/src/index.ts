@@ -22,3 +22,7 @@ export { corsMiddleware, authMiddleware, rateLimitMiddleware } from './middlewar
 // Routes
 export { createRoutes } from './routes'
 export type { RoutesDeps } from './routes'
+
+// RBAC
+export { createRBAC } from './rbac'
+export type { Permission, Role, RBACConfig, RBAC } from './rbac'

@@ -218,6 +218,7 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 			maxOutputTokens: req.maxTokens ?? 4096,
 		}
 		if (req.temperature !== undefined) config.temperature = req.temperature
+		if (req.seed !== undefined) config.seed = req.seed
 		if (req.topP !== undefined) config.topP = req.topP
 		if (req.stopSequences?.length) config.stopSequences = req.stopSequences
 		return config

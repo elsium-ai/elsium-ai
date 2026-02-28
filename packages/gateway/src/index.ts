@@ -27,12 +27,19 @@ export {
 	detectJailbreak,
 	redactSecrets,
 	checkBlockedPatterns,
+	classifyContent,
 } from './security'
 export type {
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,
+	DataClassification,
+	ClassificationResult,
 } from './security'
+
+// Bulkhead
+export { createBulkhead, bulkheadMiddleware } from './bulkhead'
+export type { BulkheadConfig, Bulkhead } from './bulkhead'
 
 // Pricing
 export { calculateCost, registerPricing } from './pricing'

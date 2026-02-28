@@ -1,6 +1,7 @@
 import type { CompletionRequest, LLMResponse, Message } from '@elsium-ai/core'
 import type { Span } from '@elsium-ai/observe'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
+import type { ApprovalCallback, ApprovalGateConfig } from './approval'
 import type { ConfidenceConfig, ConfidenceResult } from './confidence'
 import type { MemoryConfig } from './memory'
 import type { AgentSecurityConfig } from './security'
@@ -26,6 +27,7 @@ export interface GuardrailConfig {
 	outputValidator?: (output: string) => boolean | string
 	semantic?: SemanticGuardrailConfig
 	security?: AgentSecurityConfig
+	approval?: ApprovalGateConfig
 }
 
 // ─── State Machine Types ────────────────────────────────────────
@@ -55,6 +57,7 @@ export interface AgentHooks {
 	onToolResult?: (result: ToolExecutionResult) => void | Promise<void>
 	onError?: (error: Error) => void | Promise<void>
 	onComplete?: (result: AgentResult) => void | Promise<void>
+	onApprovalRequired?: ApprovalCallback
 }
 
 export interface AgentResult {
