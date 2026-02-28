@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "description": "ElsiumAI — A high-performance, TypeScript-first AI framework built on Bun",
   "license": "MIT",
+  "author": "Eric Utrera <ebutrera9103@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ebutrera9103/elsium-ai",
+    "directory": "packages/elsium-ai"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",

@@ -578,6 +578,10 @@ bun examples/cost-tracking/index.ts
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
 
+## Author
+
+Created and maintained by **Eric Utrera** ([@ebutrera9103](https://github.com/ebutrera9103)).
+
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) - Copyright (c) 2026 Eric Utrera

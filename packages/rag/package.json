@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "description": "RAG pipeline, document processing, embeddings, and vector stores for ElsiumAI",
   "license": "MIT",
+  "author": "Eric Utrera <ebutrera9103@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ebutrera9103/elsium-ai",
+    "directory": "packages/rag"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "description": "Agent orchestration, memory, and multi-agent patterns for ElsiumAI",
   "license": "MIT",
+  "author": "Eric Utrera <ebutrera9103@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ebutrera9103/elsium-ai",
+    "directory": "packages/agents"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
