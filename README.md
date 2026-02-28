@@ -186,18 +186,40 @@ The three pillars are what make ElsiumAI unique. These are the fundamentals it a
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                       @elsium-ai/app                         │
-│              (HTTP server, RBAC, auth)                       │
-├──────────┬───────────┬──────────┬──────────┬─────────────────┤
-│ gateway  │  agents   │   rag    │  tools   │   workflows     │
-├──────────┴───────────┴──────────┼──────────┴─────────────────┤
-│       @elsium-ai/observe        │       @elsium-ai/mcp       │
-├─────────────────────────────────┴────────────────────────────┤
-│                      @elsium-ai/core                         │
-├──────────────────────────────────────────────────────────────┤
-│                     @elsium-ai/testing                       │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                          @elsium-ai/app                           │
+│                  HTTP server · RBAC · auth · routes               │
+├────────────────────┬────────────────┬────────────────────────────┤
+│  @elsium-ai/agents │ @elsium-ai/mcp │       @elsium-ai/cli       │
+│  memory · approval │ client · server│      init · dev · eval     │
+│  guardrails · multi│                │                            │
+├──────────┬─────────┼────────┬───────┼───────────┬────────────────┤
+│  gateway │  tools  │observe │  rag  │ workflows │                │
+│ providers│ define  │ trace  │ load  │   steps   │                │
+│   mesh   │ toolkit │ audit  │ chunk │  parallel │                │
+│ security │         │ prove- │ embed │  branch   │                │
+│ bulkhead │         │ nance  │vector │           │                │
+├──────────┴─────────┴────────┴───────┴───────────┴────────────────┤
+│                         @elsium-ai/core                           │
+│    types · errors · stream · logger · config · retry · result    │
+│    circuit breaker · dedup · policy engine · shutdown manager     │
+└──────────────────────────────────────────────────────────────────┘
+                          ·  ·  ·  ·  ·  ·
+┌──────────────────────────────────────────────────────────────────┐
+│                       @elsium-ai/testing                          │
+│    mocks · evals · fixtures · pinning · determinism · snapshots  │
+└──────────────────────────────────────────────────────────────────┘
+
+Three Pillars — where each feature lives:
+
+  Reliability             Governance              Determinism
+  ───────────             ──────────              ───────────
+  circuit breaker  [core] policy engine    [core] seed propagation [gw]
+  request dedup    [core] RBAC             [app]  output pinning   [test]
+  shutdown manager [core] approval gates   [agt]  determinism test [test]
+  retry + backoff  [core] audit trail      [obs]  provenance       [obs]
+  bulkhead         [gw]   PII detection    [gw]   req-match fixts  [test]
+  provider mesh    [gw]   content classify [gw]   crypto hashing   [test]
 ```
 
 ## Packages
