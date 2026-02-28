@@ -215,10 +215,10 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 					const timer = setTimeout(() => controller.abort(), timeout)
 
 					try {
-						const url = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`
+						const url = `${baseUrl}/v1beta/models/${model}:generateContent`
 						const response = await fetch(url, {
 							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
+							headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
 							body: JSON.stringify(body),
 							signal: controller.signal,
 						})
@@ -283,10 +283,10 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 				const timer = setTimeout(() => controller.abort(), timeout)
 
 				try {
-					const url = `${baseUrl}/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`
+					const url = `${baseUrl}/v1beta/models/${model}:streamGenerateContent?alt=sse`
 					const response = await fetch(url, {
 						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
+						headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
 						body: JSON.stringify(body),
 						signal: controller.signal,
 					})
@@ -335,19 +335,20 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 										emit({ type: 'text_delta', text: part.text })
 									}
 									if (part.functionCall) {
+										const toolCallId = generateId('tc')
 										emit({
 											type: 'tool_call_start',
 											toolCall: {
-												id: generateId('tc'),
+												id: toolCallId,
 												name: part.functionCall.name,
 											},
 										})
 										emit({
 											type: 'tool_call_delta',
-											toolCallId: '',
+											toolCallId,
 											arguments: JSON.stringify(part.functionCall.args),
 										})
-										emit({ type: 'tool_call_end', toolCallId: '' })
+										emit({ type: 'tool_call_end', toolCallId })
 									}
 								}
 

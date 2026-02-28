@@ -89,7 +89,8 @@ describe('xrayMiddleware', () => {
 
 		const last = xray.lastCall()
 		expect(last?.request.headers['x-api-key']).not.toBe('sk-ant-api03-verysecretkey')
-		expect(last?.request.headers['x-api-key']).toContain('...')
+		// M4 fix: Headers are now fully redacted
+		expect(last?.request.headers['x-api-key']).toBe('[REDACTED]')
 	})
 
 	it('should clear history', async () => {

@@ -1,8 +1,15 @@
+import { randomBytes } from 'node:crypto'
+
 let traceCounter = 0
+
+// M1 fix: Use crypto.randomBytes for unpredictable IDs
+function cryptoHex(bytes: number): string {
+	return randomBytes(bytes).toString('hex')
+}
 
 export function generateId(prefix = 'els'): string {
 	const timestamp = Date.now().toString(36)
-	const random = Math.random().toString(36).substring(2, 8)
+	const random = cryptoHex(4)
 	return `${prefix}_${timestamp}_${random}`
 }
 
@@ -10,7 +17,7 @@ export function generateTraceId(): string {
 	traceCounter++
 	const timestamp = Date.now().toString(36)
 	const counter = traceCounter.toString(36).padStart(4, '0')
-	const random = Math.random().toString(36).substring(2, 6)
+	const random = cryptoHex(4)
 	return `trc_${timestamp}_${counter}_${random}`
 }
 
@@ -35,11 +42,17 @@ export function retry<T>(
 		shouldRetry?: (error: unknown) => boolean
 	} = {},
 ): Promise<T> {
+	// M2 fix: Default shouldRetry respects ElsiumError.retryable
 	const {
 		maxRetries = 3,
 		baseDelayMs = 1000,
 		maxDelayMs = 30000,
-		shouldRetry = () => true,
+		shouldRetry = (error: unknown) => {
+			if (error && typeof error === 'object' && 'retryable' in error) {
+				return (error as { retryable: boolean }).retryable !== false
+			}
+			return true
+		},
 	} = options
 
 	return (async () => {

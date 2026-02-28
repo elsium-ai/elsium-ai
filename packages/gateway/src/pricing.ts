@@ -37,6 +37,12 @@ export function calculateCost(model: string, usage: TokenUsage): CostBreakdown {
 	const pricing = PRICING[model]
 
 	if (!pricing) {
+		// L3 fix: Warn when an unknown model is used — pricing data may be missing
+		if (typeof console !== 'undefined') {
+			console.warn(
+				`[elsium] Unknown model "${model}" — cost will be reported as $0. Register pricing with registerPricing().`,
+			)
+		}
 		return {
 			inputCost: 0,
 			outputCost: 0,

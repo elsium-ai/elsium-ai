@@ -40,33 +40,34 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 		return parts.join('')
 	}
 
+	// C4 fix: Race each iterator.next() against a deadline to avoid leaking iterators
 	async toTextWithTimeout(timeoutMs: number): Promise<string> {
-		return new Promise<string>((resolve, reject) => {
-			const parts: string[] = []
-			const timer = setTimeout(() => {
-				resolve(parts.join(''))
-			}, timeoutMs)
+		const parts: string[] = []
+		const deadline = Date.now() + timeoutMs
+		const iterator = this.source[Symbol.asyncIterator]()
 
-			const run = async () => {
-				try {
-					for await (const event of this.source) {
-						if (event.type === 'text_delta') {
-							parts.push(event.text)
-						}
-					}
-					clearTimeout(timer)
-					resolve(parts.join(''))
-				} catch (err) {
-					clearTimeout(timer)
-					if (parts.length > 0) {
-						resolve(parts.join(''))
-					} else {
-						reject(err)
-					}
+		try {
+			while (true) {
+				const remaining = deadline - Date.now()
+				if (remaining <= 0) break
+
+				const timeoutPromise = new Promise<{ value: undefined; done: true }>((resolve) =>
+					setTimeout(() => resolve({ value: undefined, done: true }), remaining),
+				)
+
+				const result = await Promise.race([iterator.next(), timeoutPromise])
+				if (result.done) break
+
+				const event = result.value as StreamEvent
+				if (event.type === 'text_delta') {
+					parts.push(event.text)
 				}
 			}
-			run()
-		})
+		} catch (err) {
+			if (parts.length === 0) throw err
+		}
+
+		return parts.join('')
 	}
 
 	async toResponse(): Promise<{
@@ -123,7 +124,8 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 								id: generateId('ckpt'),
 								timestamp: now,
 								text: textAccumulator,
-								tokensSoFar: Math.ceil(textAccumulator.length / 4),
+								// L2 fix: use conservative 1.5:1 ratio instead of 4:1
+								tokensSoFar: Math.ceil(textAccumulator.length / 1.5),
 								eventIndex,
 							}
 							onCheckpoint?.(checkpoint)
@@ -148,6 +150,9 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 }
 
 export type StreamTransformer = (source: AsyncIterable<StreamEvent>) => AsyncIterable<StreamEvent>
+
+// C5 fix: Add maximum buffer size with backpressure
+const MAX_BUFFER_SIZE = 10_000
 
 export function createStream(
 	executor: (emit: (event: StreamEvent) => void) => Promise<void>,
@@ -185,7 +190,10 @@ export function createStream(
 			resolve = null
 			r({ value: event, done: false })
 		} else {
-			buffer.push(event)
+			if (buffer.length < MAX_BUFFER_SIZE) {
+				buffer.push(event)
+			}
+			// Drop events if buffer is full (backpressure)
 		}
 	}
 

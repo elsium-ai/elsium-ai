@@ -49,6 +49,15 @@ async function runStateMachine(
 	while (iterations < maxIterations) {
 		iterations++
 
+		// M7/H7 fix: Check AbortSignal at each iteration
+		if (options.signal?.aborted) {
+			throw new ElsiumError({
+				code: 'VALIDATION_ERROR',
+				message: `State machine for "${baseConfig.name}" was aborted`,
+				retryable: false,
+			})
+		}
+
 		// Merge state overrides onto base config
 		const stateTools = currentState.tools ?? baseConfig.tools ?? []
 		const stateSystem = currentState.system ?? baseConfig.system

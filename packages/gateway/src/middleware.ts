@@ -95,7 +95,8 @@ function redactHeaders(headers: Record<string, string>): Record<string, string> 
 	const redacted: Record<string, string> = {}
 	for (const [key, value] of Object.entries(headers)) {
 		if (SENSITIVE_HEADERS.includes(key.toLowerCase())) {
-			redacted[key] = `${value.slice(0, 4)}...${value.slice(-4)}`
+			// M4 fix: Fully redact sensitive headers — don't leak partial key material
+			redacted[key] = '[REDACTED]'
 		} else {
 			redacted[key] = value
 		}

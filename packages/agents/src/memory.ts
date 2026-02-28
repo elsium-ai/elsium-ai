@@ -25,8 +25,9 @@ export function createMemory(config: MemoryConfig): Memory {
 
 	function estimateTokens(msg: Message): number {
 		const text = extractText(msg.content)
-		// Rough estimate: ~4 chars per token
-		return Math.ceil(text.length / 4)
+		// Conservative estimate: ~1.5 chars per token (English averages ~1.3)
+		// Intentionally over-counts to prevent budget overruns
+		return Math.ceil(text.length / 1.5) + 4 // +4 for message overhead (role, formatting)
 	}
 
 	function trimToTokenLimit() {

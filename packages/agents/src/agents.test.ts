@@ -57,16 +57,17 @@ describe('createMemory', () => {
 	})
 
 	it('token-limited trims by estimated tokens', () => {
-		const mem = createMemory({ strategy: 'token-limited', maxTokens: 20 })
+		// Conservative estimate: ~1.5 chars/token + 4 overhead per message
+		// 24 chars / 1.5 + 4 = 20 tokens per message
+		const mem = createMemory({ strategy: 'token-limited', maxTokens: 50 })
 
-		// Each message ~6-7 tokens (25 chars / 4)
 		mem.add({ role: 'user', content: 'This is a medium message' })
 		mem.add({ role: 'assistant', content: 'This is another message!' })
 		mem.add({ role: 'user', content: 'And one more message here' })
 
 		const messages = mem.getMessages()
 		expect(messages.length).toBeLessThanOrEqual(3)
-		expect(mem.getTokenEstimate()).toBeLessThanOrEqual(20)
+		expect(mem.getTokenEstimate()).toBeLessThanOrEqual(50)
 	})
 
 	it('clears all messages', () => {

@@ -1,18 +1,27 @@
+import { timingSafeEqual } from 'node:crypto'
 import type { Context, Next } from 'hono'
 import type { AuthConfig, CorsConfig, RateLimitConfig } from './types'
 
 // ─── CORS ────────────────────────────────────────────────────────
 
+// H2 fix: Require explicit origin configuration; no wildcard by default
 export function corsMiddleware(config: CorsConfig | boolean = true) {
 	const opts: CorsConfig =
-		typeof config === 'boolean'
-			? { origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }
-			: config
+		typeof config === 'boolean' ? { origin: [], methods: ['GET', 'POST', 'OPTIONS'] } : config
 
 	return async (c: Context, next: Next) => {
-		const origin = Array.isArray(opts.origin) ? opts.origin.join(', ') : (opts.origin ?? '*')
+		const requestOrigin = c.req.header('Origin') ?? ''
 
-		c.res.headers.set('Access-Control-Allow-Origin', origin)
+		let allowedOrigin: string
+		if (Array.isArray(opts.origin)) {
+			allowedOrigin = opts.origin.includes(requestOrigin) ? requestOrigin : ''
+		} else {
+			allowedOrigin = opts.origin ?? ''
+		}
+
+		if (allowedOrigin) {
+			c.res.headers.set('Access-Control-Allow-Origin', allowedOrigin)
+		}
 		c.res.headers.set(
 			'Access-Control-Allow-Methods',
 			(opts.methods ?? ['GET', 'POST', 'OPTIONS']).join(', '),
@@ -36,6 +45,7 @@ export function corsMiddleware(config: CorsConfig | boolean = true) {
 
 // ─── Auth ────────────────────────────────────────────────────────
 
+// H4 fix: Use constant-time comparison for bearer token
 export function authMiddleware(config: AuthConfig) {
 	return async (c: Context, next: Next) => {
 		// Skip health endpoint
@@ -51,7 +61,10 @@ export function authMiddleware(config: AuthConfig) {
 
 		if (config.type === 'bearer') {
 			const token = authorization.replace(/^Bearer\s+/, '')
-			if (token !== config.token) {
+			const expected = config.token
+			const tokenBuf = Buffer.from(token)
+			const expectedBuf = Buffer.from(expected)
+			if (tokenBuf.length !== expectedBuf.length || !timingSafeEqual(tokenBuf, expectedBuf)) {
 				return c.json({ error: 'Invalid token' }, 401)
 			}
 		}
@@ -62,12 +75,14 @@ export function authMiddleware(config: AuthConfig) {
 
 // ─── Rate Limiting ───────────────────────────────────────────────
 
+// H3 fix: Don't trust X-Forwarded-For from untrusted clients
 export function rateLimitMiddleware(config: RateLimitConfig) {
 	const requests = new Map<string, { count: number; resetTime: number }>()
 
 	return async (c: Context, next: Next) => {
-		const clientId =
-			c.req.header('X-Forwarded-For') ?? c.req.header('CF-Connecting-IP') ?? 'unknown'
+		// Use CF-Connecting-IP (from trusted proxy) or fall back to a per-request hash
+		// Do NOT trust X-Forwarded-For as it's client-controlled
+		const clientId = c.req.header('CF-Connecting-IP') ?? c.req.header('X-Real-IP') ?? 'anonymous'
 		const now = Date.now()
 
 		let record = requests.get(clientId)

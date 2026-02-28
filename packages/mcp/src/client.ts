@@ -104,8 +104,14 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 		})
 	}
 
+	const MAX_LINE_LENGTH = 1024 * 1024 // 1MB max line length
+
 	function handleData(data: string) {
 		buffer += data
+		if (buffer.length > MAX_LINE_LENGTH) {
+			buffer = ''
+			return // Drop oversized lines to prevent memory exhaustion
+		}
 		const lines = buffer.split('\n')
 		buffer = lines.pop() ?? ''
 
@@ -143,9 +149,16 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 		async connect(): Promise<void> {
 			if (connected) return
 
+			// C6 fix: Only pass explicitly declared env vars, not the full host env
+			const childEnv: Record<string, string> = {
+				PATH: globalThis.process?.env?.PATH ?? '',
+				HOME: globalThis.process?.env?.HOME ?? '',
+				...(config.env ?? {}),
+			}
+
 			process = spawn(config.command, config.args ?? [], {
 				stdio: ['pipe', 'pipe', 'pipe'],
-				env: { ...globalThis.process?.env, ...config.env },
+				env: childEnv,
 			})
 
 			process.stdout?.setEncoding('utf-8')

@@ -165,6 +165,10 @@ export function gateway(config: GatewayConfig): Gateway {
 	}
 }
 
+/**
+ * Lightweight Zod-to-JSON-Schema for structured output prompts.
+ * Uses Zod's internal `_def` — see packages/tools/src/define.ts for the full version.
+ */
 function schemaToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 	try {
 		if ('_def' in schema) {

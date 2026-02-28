@@ -106,7 +106,8 @@ Only respond with JSON, nothing else.`,
 			}
 		}
 
-		// Heuristic fallback: check if output terms appear in context
+		// Heuristic fallback (word-overlap based — NOT semantic analysis)
+		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const contextText = context.join(' ').toLowerCase()
 		const outputSentences = output.split(/[.!?]+/).filter((s) => s.trim().length > 10)
 		let supported = 0
@@ -117,7 +118,7 @@ Only respond with JSON, nothing else.`,
 				.split(/\s+/)
 				.filter((w) => w.length > 3)
 			const matchCount = words.filter((w) => contextText.includes(w)).length
-			if (matchCount / Math.max(words.length, 1) > 0.3) {
+			if (matchCount / Math.max(words.length, 1) > 0.5) {
 				supported++
 			}
 		}
@@ -130,8 +131,8 @@ Only respond with JSON, nothing else.`,
 			score,
 			reason:
 				score >= threshold
-					? 'Output appears grounded in context'
-					: `Only ${(score * 100).toFixed(0)}% of claims supported by context`,
+					? 'Output appears grounded in context (heuristic)'
+					: `Only ${(score * 100).toFixed(0)}% of claims supported by context (heuristic — provide llmComplete for production-grade checks)`,
 		}
 	}
 
@@ -173,7 +174,8 @@ Only respond with JSON, nothing else.`,
 			}
 		}
 
-		// Heuristic: word overlap between input and output
+		// Heuristic fallback (word-overlap based — NOT semantic analysis)
+		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const inputWords = new Set(
 			input
 				.toLowerCase()
@@ -194,8 +196,8 @@ Only respond with JSON, nothing else.`,
 			score,
 			reason:
 				score >= threshold
-					? 'Output is relevant to input'
-					: 'Output may not be relevant to the input',
+					? 'Output is relevant to input (heuristic)'
+					: 'Output may not be relevant to the input (heuristic — provide llmComplete for production-grade checks)',
 		}
 	}
 
@@ -245,7 +247,8 @@ Only respond with JSON, nothing else.`,
 			}
 		}
 
-		// Heuristic: check term overlap with sources
+		// Heuristic fallback (word-overlap based — NOT semantic analysis)
+		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const sourceText = sources.join(' ').toLowerCase()
 		const outputWords = output
 			.toLowerCase()
@@ -255,12 +258,12 @@ Only respond with JSON, nothing else.`,
 		const score = outputWords.length > 0 ? grounded / outputWords.length : 1
 
 		return {
-			passed: score >= 0.5,
+			passed: score >= 0.7,
 			score,
 			reason:
-				score >= 0.5
-					? 'Output appears grounded in sources'
-					: 'Output contains claims not found in sources',
+				score >= 0.7
+					? 'Output appears grounded in sources (heuristic)'
+					: 'Output contains claims not found in sources (heuristic — provide llmComplete for production-grade checks)',
 		}
 	}
 

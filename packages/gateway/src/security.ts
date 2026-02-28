@@ -113,10 +113,16 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; detail: string; replacement: str
 
 // ─── Detection Functions ────────────────────────────────────────
 
+// M6 fix: Normalize Unicode (NFKC) before security pattern matching to prevent bypass via confusables
+function normalizeText(text: string): string {
+	return text.normalize('NFKC')
+}
+
 export function detectPromptInjection(text: string): SecurityViolation[] {
 	const violations: SecurityViolation[] = []
+	const normalized = normalizeText(text)
 	for (const { pattern, detail } of INJECTION_PATTERNS) {
-		if (pattern.test(text)) {
+		if (pattern.test(normalized)) {
 			violations.push({ type: 'prompt_injection', detail, severity: 'high' })
 		}
 	}
@@ -125,8 +131,9 @@ export function detectPromptInjection(text: string): SecurityViolation[] {
 
 export function detectJailbreak(text: string): SecurityViolation[] {
 	const violations: SecurityViolation[] = []
+	const normalized = normalizeText(text)
 	for (const { pattern, detail } of JAILBREAK_PATTERNS) {
-		if (pattern.test(text)) {
+		if (pattern.test(normalized)) {
 			violations.push({ type: 'jailbreak', detail, severity: 'high' })
 		}
 	}

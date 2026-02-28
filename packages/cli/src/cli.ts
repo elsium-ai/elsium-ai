@@ -81,7 +81,8 @@ async function main() {
 	}
 }
 
-main().catch((err) => {
-	console.error('Error:', err.message)
+main().catch((err: unknown) => {
+	const message = err instanceof Error ? err.message : String(err)
+	console.error('Error:', message)
 	process.exit(1)
 })

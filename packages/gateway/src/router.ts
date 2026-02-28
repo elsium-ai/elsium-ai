@@ -167,19 +167,29 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		}
 	}
 
+	// H1 fix: Cancel remaining requests when first one succeeds
 	async function latencyOptimizedComplete(request: CompletionRequest): Promise<LLMResponse> {
+		const controller = new AbortController()
 		const promises = sortedProviders.map(async (entry) => {
 			const gw = getGateway(entry.name)
-			return gw.complete({ ...request, model: request.model ?? entry.model })
+			return gw.complete({
+				...request,
+				model: request.model ?? entry.model,
+				signal: controller.signal,
+			})
 		})
 
-		return Promise.any(promises).catch(() => {
+		try {
+			const result = await Promise.any(promises)
+			controller.abort() // Cancel remaining in-flight requests
+			return result
+		} catch {
 			throw new ElsiumError({
 				code: 'PROVIDER_ERROR',
 				message: 'All providers failed',
 				retryable: false,
 			})
-		})
+		}
 	}
 
 	async function capabilityAwareComplete(request: CompletionRequest): Promise<LLMResponse> {

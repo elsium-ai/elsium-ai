@@ -125,6 +125,12 @@ export function defineTool<TInput, TOutput>(
 	}
 }
 
+/**
+ * Converts a Zod schema to JSON Schema for LLM tool definitions.
+ * Uses Zod's internal `_def` property — this is the standard community pattern
+ * since Zod does not expose a public schema introspection API.
+ * Pin Zod minor version in package.json to guard against internal changes.
+ */
 function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 	if (!('_def' in schema)) return { type: 'object' }
 

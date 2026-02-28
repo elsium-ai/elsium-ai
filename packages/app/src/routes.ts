@@ -67,6 +67,12 @@ export function createRoutes(deps: RoutesDeps): Hono {
 	app.post('/chat', async (c) => {
 		totalRequests++
 
+		// M13 fix: Enforce body size limit
+		const contentLength = Number(c.req.header('Content-Length') ?? '0')
+		if (contentLength > 1_048_576) {
+			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
+		}
+
 		const body = await c.req.json<ChatRequest>()
 
 		if (!body.message) {
@@ -76,12 +82,10 @@ export function createRoutes(deps: RoutesDeps): Hono {
 		const agent = body.agent ? deps.agents.get(body.agent) : deps.defaultAgent
 
 		if (!agent) {
-			const available = Array.from(deps.agents.keys())
+			// M14 fix: Don't disclose available agent names in error messages
 			return c.json(
 				{
-					error: body.agent
-						? `Agent "${body.agent}" not found. Available: ${available.join(', ')}`
-						: 'No default agent configured',
+					error: body.agent ? `Agent "${body.agent}" not found` : 'No default agent configured',
 				},
 				404,
 			)
@@ -118,6 +122,12 @@ export function createRoutes(deps: RoutesDeps): Hono {
 
 	app.post('/complete', async (c) => {
 		totalRequests++
+
+		// M13 fix: Enforce body size limit
+		const contentLength = Number(c.req.header('Content-Length') ?? '0')
+		if (contentLength > 1_048_576) {
+			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
+		}
 
 		const body = await c.req.json<CompleteRequest>()
 

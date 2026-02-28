@@ -1,6 +1,20 @@
 import { z } from 'zod'
 import { defineTool } from './define'
 
+// C3 fix: Block requests to private/internal networks
+const BLOCKED_HOSTS =
+	/^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[::1\]|\[fd[0-9a-f]{2}:)/i
+
+function validateUrl(urlString: string): void {
+	const parsed = new URL(urlString)
+	if (!['http:', 'https:'].includes(parsed.protocol)) {
+		throw new Error(`Blocked protocol: ${parsed.protocol}`)
+	}
+	if (BLOCKED_HOSTS.test(parsed.hostname)) {
+		throw new Error('Requests to private/internal networks are not allowed')
+	}
+}
+
 export const httpFetchTool = defineTool({
 	name: 'http_fetch',
 	description: 'Fetch content from a URL via HTTP GET request',
@@ -15,6 +29,8 @@ export const httpFetchTool = defineTool({
 	}),
 	timeoutMs: 15_000,
 	handler: async ({ url, headers }, context) => {
+		validateUrl(url)
+
 		const response = await fetch(url, {
 			headers,
 			signal: context.signal,
@@ -47,35 +63,202 @@ export const calculatorTool = defineTool({
 	},
 })
 
+// C1 fix: Safe math expression parser — no new Function() / eval
+const MATH_FUNCTIONS: Record<string, (...args: number[]) => number> = {
+	sqrt: Math.sqrt,
+	abs: Math.abs,
+	round: Math.round,
+	floor: Math.floor,
+	ceil: Math.ceil,
+	sin: Math.sin,
+	cos: Math.cos,
+	tan: Math.tan,
+	log2: Math.log2,
+	log10: Math.log10,
+	log: Math.log,
+	exp: Math.exp,
+	pow: Math.pow,
+	min: Math.min,
+	max: Math.max,
+}
+
+const MATH_CONSTANTS: Record<string, number> = {
+	PI: Math.PI,
+	E: Math.E,
+}
+
+interface Token {
+	type: 'number' | 'op' | 'lparen' | 'rparen' | 'func' | 'const' | 'comma'
+	value: string
+}
+
+function tokenize(expr: string): Token[] {
+	const tokens: Token[] = []
+	let i = 0
+	while (i < expr.length) {
+		if (/\s/.test(expr[i])) {
+			i++
+			continue
+		}
+		if (/[0-9.]/.test(expr[i])) {
+			let num = ''
+			while (i < expr.length && /[0-9.eE]/.test(expr[i])) {
+				num += expr[i++]
+			}
+			tokens.push({ type: 'number', value: num })
+			continue
+		}
+		if (/[a-zA-Z_]/.test(expr[i])) {
+			let name = ''
+			while (i < expr.length && /[a-zA-Z0-9_]/.test(expr[i])) {
+				name += expr[i++]
+			}
+			if (name in MATH_FUNCTIONS) {
+				tokens.push({ type: 'func', value: name })
+			} else if (name in MATH_CONSTANTS) {
+				tokens.push({ type: 'const', value: name })
+			} else {
+				throw new Error(`Unknown identifier: ${name}`)
+			}
+			continue
+		}
+		if ('+-*/%'.includes(expr[i])) {
+			// Handle ** (exponentiation)
+			if (expr[i] === '*' && expr[i + 1] === '*') {
+				tokens.push({ type: 'op', value: '**' })
+				i += 2
+				continue
+			}
+			tokens.push({ type: 'op', value: expr[i++] })
+			continue
+		}
+		if (expr[i] === '(') {
+			tokens.push({ type: 'lparen', value: '(' })
+			i++
+			continue
+		}
+		if (expr[i] === ')') {
+			tokens.push({ type: 'rparen', value: ')' })
+			i++
+			continue
+		}
+		if (expr[i] === ',') {
+			tokens.push({ type: 'comma', value: ',' })
+			i++
+			continue
+		}
+		throw new Error(`Unexpected character: ${expr[i]}`)
+	}
+	return tokens
+}
+
+function parseExpression(tokens: Token[], pos: { i: number }): number {
+	let left = parseTerm(tokens, pos)
+	while (
+		pos.i < tokens.length &&
+		tokens[pos.i]?.type === 'op' &&
+		'+-'.includes(tokens[pos.i].value)
+	) {
+		const op = tokens[pos.i++].value
+		const right = parseTerm(tokens, pos)
+		left = op === '+' ? left + right : left - right
+	}
+	return left
+}
+
+function parseTerm(tokens: Token[], pos: { i: number }): number {
+	let left = parseExponent(tokens, pos)
+	while (
+		pos.i < tokens.length &&
+		tokens[pos.i]?.type === 'op' &&
+		'*/%'.includes(tokens[pos.i].value)
+	) {
+		const op = tokens[pos.i++].value
+		const right = parseExponent(tokens, pos)
+		if (op === '*') left *= right
+		else if (op === '/') left /= right
+		else left %= right
+	}
+	return left
+}
+
+function parseExponent(tokens: Token[], pos: { i: number }): number {
+	let base = parseUnary(tokens, pos)
+	while (pos.i < tokens.length && tokens[pos.i]?.type === 'op' && tokens[pos.i].value === '**') {
+		pos.i++
+		const exp = parseUnary(tokens, pos)
+		base = base ** exp
+	}
+	return base
+}
+
+function parseUnary(tokens: Token[], pos: { i: number }): number {
+	if (pos.i < tokens.length && tokens[pos.i]?.type === 'op' && tokens[pos.i].value === '-') {
+		pos.i++
+		return -parseUnary(tokens, pos)
+	}
+	if (pos.i < tokens.length && tokens[pos.i]?.type === 'op' && tokens[pos.i].value === '+') {
+		pos.i++
+		return parseUnary(tokens, pos)
+	}
+	return parseAtom(tokens, pos)
+}
+
+function parseAtom(tokens: Token[], pos: { i: number }): number {
+	const token = tokens[pos.i]
+	if (!token) throw new Error('Unexpected end of expression')
+
+	if (token.type === 'number') {
+		pos.i++
+		const val = Number(token.value)
+		if (!Number.isFinite(val)) throw new Error(`Invalid number: ${token.value}`)
+		return val
+	}
+
+	if (token.type === 'const') {
+		pos.i++
+		return MATH_CONSTANTS[token.value]
+	}
+
+	if (token.type === 'func') {
+		const fn = MATH_FUNCTIONS[token.value]
+		pos.i++
+		if (tokens[pos.i]?.type !== 'lparen') throw new Error(`Expected ( after ${token.value}`)
+		pos.i++ // skip (
+		const args: number[] = []
+		if (tokens[pos.i]?.type !== 'rparen') {
+			args.push(parseExpression(tokens, pos))
+			while (tokens[pos.i]?.type === 'comma') {
+				pos.i++
+				args.push(parseExpression(tokens, pos))
+			}
+		}
+		if (tokens[pos.i]?.type !== 'rparen')
+			throw new Error(`Expected ) after ${token.value} arguments`)
+		pos.i++ // skip )
+		return fn(...args)
+	}
+
+	if (token.type === 'lparen') {
+		pos.i++
+		const val = parseExpression(tokens, pos)
+		if (tokens[pos.i]?.type !== 'rparen') throw new Error('Mismatched parentheses')
+		pos.i++
+		return val
+	}
+
+	throw new Error(`Unexpected token: ${token.value}`)
+}
+
 function safeEval(expr: string): number {
-	const sanitized = expr.replace(/[^0-9+\-*/().,%\s a-zA-Z_]/g, '')
-
-	const withMath = sanitized
-		.replace(/\bsqrt\b/g, 'Math.sqrt')
-		.replace(/\babs\b/g, 'Math.abs')
-		.replace(/\bround\b/g, 'Math.round')
-		.replace(/\bfloor\b/g, 'Math.floor')
-		.replace(/\bceil\b/g, 'Math.ceil')
-		.replace(/\bsin\b/g, 'Math.sin')
-		.replace(/\bcos\b/g, 'Math.cos')
-		.replace(/\btan\b/g, 'Math.tan')
-		.replace(/\blog2\b/g, 'Math.log2')
-		.replace(/\blog10\b/g, 'Math.log10')
-		.replace(/\blog\b/g, 'Math.log')
-		.replace(/\bexp\b/g, 'Math.exp')
-		.replace(/\bPI\b/g, 'Math.PI')
-		.replace(/\bE\b/g, 'Math.E')
-		.replace(/\bpow\b/g, 'Math.pow')
-		.replace(/\bmin\b/g, 'Math.min')
-		.replace(/\bmax\b/g, 'Math.max')
-
-	const fn = new Function(`'use strict'; return (${withMath})`)
-	const result = fn()
-
+	const tokens = tokenize(expr)
+	if (tokens.length === 0) throw new Error('Empty expression')
+	const pos = { i: 0 }
+	const result = parseExpression(tokens, pos)
+	if (pos.i < tokens.length) throw new Error(`Unexpected token: ${tokens[pos.i].value}`)
 	if (typeof result !== 'number' || !Number.isFinite(result)) {
 		throw new Error(`Expression did not produce a finite number: ${expr}`)
 	}
-
 	return result
 }
 
@@ -93,7 +276,10 @@ export const jsonParseTool = defineTool({
 		value: z.unknown(),
 	}),
 	handler: async ({ json, path }) => {
-		const parsed = JSON.parse(json)
+		const parsed = JSON.parse(json, (key, value) => {
+			if (key === '__proto__' || key === 'constructor' || key === 'prototype') return undefined
+			return value
+		})
 
 		if (!path) return { value: parsed }
 

@@ -235,11 +235,16 @@ describe('GET /agents', () => {
 describe('corsMiddleware', () => {
 	it('adds CORS headers', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware())
+		// H2 fix: CORS now requires explicit origins — pass origin to get Access-Control-Allow-Origin
+		app.use('*', corsMiddleware({ origin: ['http://example.com'] }))
 		app.get('/test', (c) => c.text('ok'))
 
-		const res = await app.fetch(req('GET', '/test'))
-		expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*')
+		const corsReq = new Request('http://localhost/test', {
+			method: 'GET',
+			headers: { Origin: 'http://example.com' },
+		})
+		const res = await app.fetch(corsReq)
+		expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://example.com')
 	})
 
 	it('handles preflight OPTIONS', async () => {

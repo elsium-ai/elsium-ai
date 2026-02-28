@@ -1,10 +1,17 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 export async function devCommand(args: string[]) {
 	const entryFile = args[0] ?? 'src/index.ts'
-	const fullPath = join(process.cwd(), entryFile)
+	const cwd = process.cwd()
+	const fullPath = resolve(cwd, entryFile)
+
+	// H8 fix: Prevent path traversal outside project root
+	if (!fullPath.startsWith(cwd + '/') && fullPath !== cwd) {
+		console.error('Error: entry file must be within the project directory')
+		process.exit(1)
+	}
 
 	if (!existsSync(fullPath)) {
 		console.error(`Entry file not found: ${entryFile}`)

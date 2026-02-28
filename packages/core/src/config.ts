@@ -22,10 +22,11 @@ export function envNumber(name: string, fallback?: number): number {
 	const raw = getEnvVar(name)
 	if (raw !== undefined) {
 		const parsed = Number(raw)
-		if (Number.isNaN(parsed)) {
+		// L1 fix: Reject NaN AND Infinity — both are invalid for configuration values
+		if (!Number.isFinite(parsed)) {
 			throw new ElsiumError({
 				code: 'CONFIG_ERROR',
-				message: `Environment variable ${name} is not a valid number: ${raw}`,
+				message: `Environment variable ${name} is not a valid finite number: ${raw}`,
 				retryable: false,
 				metadata: { variable: name, value: raw },
 			})

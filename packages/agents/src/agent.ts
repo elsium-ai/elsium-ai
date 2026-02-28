@@ -26,6 +26,16 @@ type OutputProcessResult =
 	| { action: 'return'; result: AgentResult }
 	| { action: 'retry'; feedbackMessage: string }
 
+/** Safely invoke a lifecycle hook — failures are swallowed so hooks never crash the agent loop. */
+async function safeHook<T>(fn: (() => T | Promise<T>) | undefined): Promise<void> {
+	if (!fn) return
+	try {
+		await fn()
+	} catch (_) {
+		/* hook errors are intentionally swallowed to protect the agent loop */
+	}
+}
+
 export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent {
 	const memory: Memory = createMemory(
 		config.memory ?? { strategy: 'sliding-window', maxMessages: 50 },
@@ -123,7 +133,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			confidence,
 		}
 
-		await config.hooks?.onComplete?.(agentResult)
+		await safeHook(() => config.hooks?.onComplete?.(agentResult))
 
 		return { action: 'return', result: agentResult }
 	}
@@ -145,6 +155,15 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		while (iterations < guardrails.maxIterations) {
 			iterations++
 
+			// H7 fix: Check AbortSignal at each iteration
+			if (options.signal?.aborted) {
+				throw new ElsiumError({
+					code: 'VALIDATION_ERROR',
+					message: `Agent "${config.name}" was aborted`,
+					retryable: false,
+				})
+			}
+
 			if (totalInputTokens + totalOutputTokens > guardrails.maxTokenBudget) {
 				throw ElsiumError.budgetExceeded(
 					totalInputTokens + totalOutputTokens,
@@ -165,7 +184,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			totalOutputTokens += response.usage.outputTokens
 			totalCost += response.cost.totalCost
 
-			await config.hooks?.onMessage?.(response.message)
+			await safeHook(() => config.hooks?.onMessage?.(response.message))
 
 			conversationMessages.push(response.message)
 			memory.add(response.message)
@@ -220,7 +239,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		const results = []
 
 		for (const tc of toolCalls) {
-			await config.hooks?.onToolCall?.({ name: tc.name, arguments: tc.arguments })
+			await safeHook(() => config.hooks?.onToolCall?.({ name: tc.name, arguments: tc.arguments }))
 
 			const tool = toolMap.get(tc.name)
 			if (!tool) {
@@ -230,14 +249,14 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 					toolCallId: tc.id,
 					durationMs: 0,
 				}
-				await config.hooks?.onToolResult?.(errorResult)
+				await safeHook(() => config.hooks?.onToolResult?.(errorResult))
 				history.push({ name: tc.name, arguments: tc.arguments, result: errorResult })
 				results.push(formatToolResult(errorResult))
 				continue
 			}
 
 			const result = await tool.execute(tc.arguments, { toolCallId: tc.id })
-			await config.hooks?.onToolResult?.(result)
+			await safeHook(() => config.hooks?.onToolResult?.(result))
 			history.push({ name: tc.name, arguments: tc.arguments, result })
 			results.push(formatToolResult(result))
 		}

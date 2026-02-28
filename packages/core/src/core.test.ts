@@ -236,7 +236,7 @@ describe('Config', () => {
 
 	it('throws on invalid number env var', () => {
 		process.env.TEST_NUM = 'not_a_number'
-		expect(() => envNumber('TEST_NUM')).toThrow('not a valid number')
+		expect(() => envNumber('TEST_NUM')).toThrow('not a valid finite number')
 		process.env.TEST_NUM = undefined
 	})
 
