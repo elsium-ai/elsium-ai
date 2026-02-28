@@ -8,6 +8,7 @@ export interface CircuitBreakerConfig {
 	halfOpenMaxAttempts?: number
 	windowMs?: number
 	onStateChange?: (from: CircuitState, to: CircuitState) => void
+	shouldCount?: (error: unknown) => boolean
 }
 
 export interface CircuitBreaker {
@@ -17,12 +18,21 @@ export interface CircuitBreaker {
 	reset(): void
 }
 
+function defaultShouldCount(error: unknown): boolean {
+	if (error && typeof error === 'object' && 'retryable' in error) {
+		return (error as { retryable: boolean }).retryable === true
+	}
+	// Count unknown errors (network failures, etc.) by default
+	return true
+}
+
 export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBreaker {
 	const failureThreshold = config?.failureThreshold ?? 5
 	const resetTimeoutMs = config?.resetTimeoutMs ?? 30_000
 	const halfOpenMaxAttempts = config?.halfOpenMaxAttempts ?? 3
 	const windowMs = config?.windowMs ?? 60_000
 	const onStateChange = config?.onStateChange
+	const shouldCount = config?.shouldCount ?? defaultShouldCount
 
 	let currentState: CircuitState = 'closed'
 	let failureTimestamps: number[] = []
@@ -103,7 +113,9 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 				recordSuccess()
 				return result
 			} catch (error) {
-				recordFailure()
+				if (shouldCount(error)) {
+					recordFailure()
+				}
 				throw error
 			}
 		},

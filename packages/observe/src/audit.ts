@@ -136,8 +136,6 @@ class InMemoryAuditStorage implements AuditStorageAdapter {
 	}
 }
 
-let auditIdCounter = 0
-
 export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	const useHashChain = config?.hashChain !== false
 	const storage: AuditStorageAdapter =
@@ -146,6 +144,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			: new InMemoryAuditStorage()
 
 	let sequenceId = 0
+	let idCounter = 0
 	let previousHash = '0'.repeat(64)
 	let eventCount = 0
 
@@ -156,10 +155,10 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			options?: { actor?: string; traceId?: string },
 		): void {
 			sequenceId++
-			auditIdCounter++
+			idCounter++
 
 			const event: Omit<AuditEvent, 'hash'> & { hash?: string; previousHash: string } = {
-				id: `audit_${auditIdCounter.toString(36)}_${Date.now().toString(36)}`,
+				id: `audit_${idCounter.toString(36)}_${Date.now().toString(36)}`,
 				sequenceId,
 				type,
 				timestamp: Date.now(),

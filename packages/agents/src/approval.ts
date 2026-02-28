@@ -63,11 +63,12 @@ export function createApprovalGate(config: ApprovalGateConfig): ApprovalGate {
 
 			pendingCount++
 
+			let timer: ReturnType<typeof setTimeout> | undefined
 			try {
 				const callbackPromise = config.callback(request)
 
 				const timeoutPromise = new Promise<ApprovalDecision>((resolve) => {
-					setTimeout(() => {
+					timer = setTimeout(() => {
 						resolve({
 							requestId: request.id,
 							approved: onTimeout === 'allow',
@@ -79,6 +80,7 @@ export function createApprovalGate(config: ApprovalGateConfig): ApprovalGate {
 
 				return await Promise.race([callbackPromise, timeoutPromise])
 			} finally {
+				if (timer !== undefined) clearTimeout(timer)
 				pendingCount--
 			}
 		},

@@ -173,7 +173,13 @@ provenance.record({ prompt, model, config, input, output, traceId })
 
 The three pillars are what make ElsiumAI unique. These are the fundamentals it also delivers:
 
-**Multi-provider gateway** with X-Ray mode, middleware, and smart routing (fallback, cost-optimized, latency-racing, capability-aware). **Agents** with memory, semantic guardrails, confidence scoring, state machines, and multi-agent orchestration. **RAG** with document loading, chunking, embeddings, and vector search. **Workflows** with retries, parallel execution, and branching. **MCP** with bidirectional client/server bridge. **Cost intelligence** with budgets, projections, and loop detection. **Testing** with mock providers, evals, LLM-as-judge, prompt versioning, and regression suites.
+- **Multi-provider gateway** — X-Ray mode, middleware, smart routing (fallback, cost-optimized, latency-racing, capability-aware)
+- **Agents** — Memory, semantic guardrails, confidence scoring, state machines, multi-agent orchestration
+- **RAG** — Document loading, chunking, embeddings, vector search
+- **Workflows** — Retries, parallel execution, branching
+- **MCP** — Bidirectional client/server bridge
+- **Cost intelligence** — Budgets, projections, loop detection
+- **Testing** — Mock providers, evals, LLM-as-judge, prompt versioning, regression suites
 
 ---
 
@@ -212,25 +218,15 @@ The three pillars are what make ElsiumAI unique. These are the fundamentals it a
 
 ---
 
-## What Others Don't Do
+## Built-In Capabilities
 
-| | ElsiumAI | LangChain | Vercel AI SDK | LlamaIndex |
-|---|:---:|:---:|:---:|:---:|
-| Circuit Breaker | Yes | — | — | — |
-| Bulkhead Isolation | Yes | — | — | — |
-| Request Dedup | Yes | — | — | — |
-| Graceful Shutdown | Yes | — | — | — |
-| Policy Engine | Yes | — | — | — |
-| RBAC | Yes | — | — | — |
-| Approval Gates | Yes | — | — | — |
-| Hash-Chained Audit | Yes | — | — | — |
-| PII Detection | Yes | — | — | — |
-| Seed Propagation | Yes | — | — | — |
-| Output Pinning | Yes | — | — | — |
-| Determinism Assertions | Yes | — | — | — |
-| Provenance Tracking | Yes | — | — | — |
+Beyond agents, tools, RAG, and multi-provider routing, ElsiumAI ships production infrastructure out of the box:
 
-All four frameworks support agents, tools, RAG, and multi-provider routing. Only one was built for reliability, governance, and determinism.
+| Category | Feature |
+|----------|---------|
+| **Reliability** | Circuit Breaker, Bulkhead Isolation, Request Dedup, Graceful Shutdown, Retry with Backoff |
+| **Governance** | Policy Engine, RBAC, Approval Gates, Hash-Chained Audit, PII Detection |
+| **Determinism** | Seed Propagation, Output Pinning, Determinism Assertions, Provenance Tracking |
 
 ---
 

@@ -314,7 +314,9 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		},
 
 		stream(request: CompletionRequest): ElsiumStream {
-			const entry = sortedProviders[0]
+			// Find first available provider (respects circuit breakers)
+			const available = sortedProviders.find((e) => isProviderAvailable(e.name))
+			const entry = available ?? sortedProviders[0]
 			const gw = getGateway(entry.name)
 			return gw.stream({ ...request, model: request.model ?? entry.model })
 		},

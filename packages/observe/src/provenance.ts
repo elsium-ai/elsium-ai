@@ -48,16 +48,15 @@ function matchesFilter(
 	return true
 }
 
-let provenanceIdCounter = 0
-
 export function createProvenanceTracker(): ProvenanceTracker {
 	const records: ProvenanceRecord[] = []
+	let idCounter = 0
 
 	return {
 		record(data): ProvenanceRecord {
-			provenanceIdCounter++
+			idCounter++
 			const record: ProvenanceRecord = {
-				id: `prov_${provenanceIdCounter.toString(36)}_${Date.now().toString(36)}`,
+				id: `prov_${idCounter.toString(36)}_${Date.now().toString(36)}`,
 				outputHash: sha256(data.output),
 				promptVersion: sha256(data.prompt),
 				modelVersion: sha256(data.model),

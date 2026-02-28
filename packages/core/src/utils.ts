@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto'
 
-let traceCounter = 0
-
 // M1 fix: Use crypto.randomBytes for unpredictable IDs
 function cryptoHex(bytes: number): string {
 	return randomBytes(bytes).toString('hex')
@@ -13,12 +11,12 @@ export function generateId(prefix = 'els'): string {
 	return `${prefix}_${timestamp}_${random}`
 }
 
+// Counter scoped to each call site via cryptoHex for uniqueness.
+// No global counter needed — timestamp + random provides sufficient uniqueness.
 export function generateTraceId(): string {
-	traceCounter++
 	const timestamp = Date.now().toString(36)
-	const counter = traceCounter.toString(36).padStart(4, '0')
-	const random = cryptoHex(4)
-	return `trc_${timestamp}_${counter}_${random}`
+	const random = cryptoHex(6)
+	return `trc_${timestamp}_${random}`
 }
 
 export function extractText(content: string | { type: string; text?: string }[]): string {

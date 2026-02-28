@@ -17,6 +17,7 @@ export interface ShutdownManager {
 
 export function createShutdownManager(config?: ShutdownConfig): ShutdownManager {
 	const drainTimeoutMs = config?.drainTimeoutMs ?? 30_000
+	const signals = config?.signals ?? ['SIGTERM', 'SIGINT']
 
 	let shuttingDown = false
 	let inFlightCount = 0
@@ -29,7 +30,35 @@ export function createShutdownManager(config?: ShutdownConfig): ShutdownManager 
 		}
 	}
 
-	return {
+	async function shutdown(): Promise<void> {
+		if (shuttingDown) return
+		shuttingDown = true
+
+		config?.onDrainStart?.()
+
+		if (inFlightCount === 0) {
+			config?.onDrainComplete?.()
+			return
+		}
+
+		const drainPromise = new Promise<void>((resolve) => {
+			drainResolve = resolve
+		})
+
+		const timeoutPromise = new Promise<'timeout'>((resolve) => {
+			setTimeout(() => resolve('timeout'), drainTimeoutMs)
+		})
+
+		const result = await Promise.race([drainPromise.then(() => 'drained' as const), timeoutPromise])
+
+		if (result === 'timeout') {
+			config?.onForceShutdown?.()
+		} else {
+			config?.onDrainComplete?.()
+		}
+	}
+
+	const manager: ShutdownManager = {
 		get inFlight(): number {
 			return inFlightCount
 		},
@@ -56,35 +85,17 @@ export function createShutdownManager(config?: ShutdownConfig): ShutdownManager 
 			}
 		},
 
-		async shutdown(): Promise<void> {
-			if (shuttingDown) return
-			shuttingDown = true
-
-			config?.onDrainStart?.()
-
-			if (inFlightCount === 0) {
-				config?.onDrainComplete?.()
-				return
-			}
-
-			const drainPromise = new Promise<void>((resolve) => {
-				drainResolve = resolve
-			})
-
-			const timeoutPromise = new Promise<'timeout'>((resolve) => {
-				setTimeout(() => resolve('timeout'), drainTimeoutMs)
-			})
-
-			const result = await Promise.race([
-				drainPromise.then(() => 'drained' as const),
-				timeoutPromise,
-			])
-
-			if (result === 'timeout') {
-				config?.onForceShutdown?.()
-			} else {
-				config?.onDrainComplete?.()
-			}
-		},
+		shutdown,
 	}
+
+	// Register signal handlers for graceful shutdown
+	if (typeof process !== 'undefined' && process.on) {
+		for (const signal of signals) {
+			process.on(signal, () => {
+				manager.shutdown()
+			})
+		}
+	}
+
+	return manager
 }

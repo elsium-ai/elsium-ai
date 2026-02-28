@@ -127,7 +127,7 @@ const PII_PATTERNS: Record<
 	],
 	phone: [
 		{
-			pattern: /\b(?:\+?1[-.\s]?)?\(?[2-9]\d{2}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
+			pattern: /\b(?:\+?1[-.\s]?)?(?:\([2-9]\d{2}\)|[2-9]\d{2})[-.\s]?\d{3}[-.\s]?\d{4}\b/g,
 			detail: 'US phone number detected',
 			replacement: '[REDACTED_PHONE]',
 		},
@@ -135,7 +135,7 @@ const PII_PATTERNS: Record<
 	address: [
 		{
 			pattern:
-				/\b\d{1,5}\s+[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\s+(?:St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Ln|Lane|Rd|Road|Ct|Court|Way|Pl|Place)\.?\b/g,
+				/\b\d{1,5}\s+[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*){0,5}\s+(?:St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Ln|Lane|Rd|Road|Ct|Court|Way|Pl|Place)\.?\b/g,
 			detail: 'Street address detected',
 			replacement: '[REDACTED_ADDRESS]',
 		},
