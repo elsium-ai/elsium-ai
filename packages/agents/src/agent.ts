@@ -2,8 +2,12 @@ import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-
 import { ElsiumError, extractText, generateTraceId } from '@elsium-ai/core'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
+import { createConfidenceScorer } from './confidence'
 import { type Memory, createMemory } from './memory'
+import { createAgentSecurity } from './security'
+import type { SemanticValidationResult, SemanticValidator } from './semantic-guardrails'
 import { createSemanticValidator } from './semantic-guardrails'
+import { executeStateMachine } from './state-machine'
 import type { AgentConfig, AgentResult, AgentRunOptions, GuardrailConfig } from './types'
 
 export interface Agent {
@@ -18,6 +22,10 @@ export interface AgentDependencies {
 	complete: (request: CompletionRequest) => Promise<LLMResponse>
 }
 
+type OutputProcessResult =
+	| { action: 'return'; result: AgentResult }
+	| { action: 'retry'; feedbackMessage: string }
+
 export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent {
 	const memory: Memory = createMemory(
 		config.memory ?? { strategy: 'sliding-window', maxMessages: 50 },
@@ -25,19 +33,100 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 
 	const toolMap = new Map((config.tools ?? []).map((t) => [t.name, t]))
 
-	const guardrails: Required<Omit<GuardrailConfig, 'semantic'>> & {
+	const guardrails: Required<Omit<GuardrailConfig, 'semantic' | 'security'>> & {
 		semantic?: GuardrailConfig['semantic']
+		security?: GuardrailConfig['security']
 	} = {
 		maxIterations: config.guardrails?.maxIterations ?? 10,
 		maxTokenBudget: config.guardrails?.maxTokenBudget ?? 500_000,
 		inputValidator: config.guardrails?.inputValidator ?? (() => true),
 		outputValidator: config.guardrails?.outputValidator ?? (() => true),
 		semantic: config.guardrails?.semantic,
+		security: config.guardrails?.security,
 	}
 
 	const semanticValidator = guardrails.semantic
 		? createSemanticValidator(guardrails.semantic, deps.complete)
 		: null
+
+	const agentSecurity = guardrails.security ? createAgentSecurity(guardrails.security) : null
+
+	const confidenceScorer = config.confidence
+		? createConfidenceScorer(typeof config.confidence === 'boolean' ? {} : config.confidence)
+		: null
+
+	function formatFailedChecks(checks: SemanticValidationResult['checks']): string {
+		return checks
+			.filter((c) => !c.passed)
+			.map((c) => `${c.name}: ${c.reason}`)
+			.join('; ')
+	}
+
+	async function processOutput(
+		responseMessage: Message,
+		inputMessages: Message[],
+		iterations: number,
+		usage: AgentResult['usage'],
+		toolCallHistory: AgentResult['toolCalls'],
+		traceId: string,
+	): Promise<OutputProcessResult> {
+		let outputText = extractText(responseMessage.content)
+		let finalMessage = responseMessage
+
+		// Output validation
+		const validation = guardrails.outputValidator(outputText)
+		if (validation !== true) {
+			const errorMsg = typeof validation === 'string' ? validation : 'Output validation failed'
+			throw ElsiumError.validation(errorMsg)
+		}
+
+		// Security output sanitization
+		if (agentSecurity) {
+			const securityResult = agentSecurity.sanitizeOutput(outputText)
+			if (!securityResult.safe && securityResult.redactedOutput) {
+				outputText = securityResult.redactedOutput
+				finalMessage = { ...finalMessage, content: outputText }
+			}
+		}
+
+		// Semantic validation
+		let semanticResult: SemanticValidationResult | null = null
+		if (semanticValidator) {
+			const inputText = inputMessages.map((m) => extractText(m.content)).join('\n')
+			semanticResult = await semanticValidator.validate(inputText, outputText)
+
+			if (!semanticResult.valid) {
+				const autoRetry = guardrails.semantic?.autoRetry
+				if (autoRetry?.enabled && iterations < (autoRetry.maxRetries ?? 2) + 1) {
+					return {
+						action: 'retry',
+						feedbackMessage: `Your previous response failed semantic validation: ${formatFailedChecks(semanticResult.checks)}. Please correct your response.`,
+					}
+				}
+				throw ElsiumError.validation(
+					`Semantic validation failed: ${formatFailedChecks(semanticResult.checks)}`,
+				)
+			}
+		}
+
+		// Confidence scoring
+		const inputText = inputMessages.map((m) => extractText(m.content)).join('\n')
+		const confidence = confidenceScorer
+			? await confidenceScorer.score(inputText, outputText, semanticResult ?? undefined)
+			: undefined
+
+		const agentResult: AgentResult = {
+			message: finalMessage,
+			usage,
+			toolCalls: toolCallHistory,
+			traceId,
+			confidence,
+		}
+
+		await config.hooks?.onComplete?.(agentResult)
+
+		return { action: 'return', result: agentResult }
+	}
 
 	async function executeLoop(messages: Message[], options: AgentRunOptions): Promise<AgentResult> {
 		const traceId = options.traceId ?? generateTraceId()
@@ -82,67 +171,29 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			memory.add(response.message)
 
 			if (!response.message.toolCalls?.length || response.stopReason !== 'tool_use') {
-				const outputText = extractText(response.message.content)
-
-				const validation = guardrails.outputValidator(outputText)
-				if (validation !== true) {
-					const errorMsg = typeof validation === 'string' ? validation : 'Output validation failed'
-					throw ElsiumError.validation(errorMsg)
+				const usage = {
+					totalInputTokens,
+					totalOutputTokens,
+					totalTokens: totalInputTokens + totalOutputTokens,
+					totalCost,
+					iterations,
 				}
 
-				// Semantic validation
-				if (semanticValidator) {
-					const inputText = messages.map((m) => extractText(m.content)).join('\n')
-					const semanticResult = await semanticValidator.validate(inputText, outputText)
-
-					if (!semanticResult.valid) {
-						const autoRetry = guardrails.semantic?.autoRetry
-						if (autoRetry?.enabled && iterations < (autoRetry.maxRetries ?? 2) + 1) {
-							const failedChecks = semanticResult.checks
-								.filter((c) => !c.passed)
-								.map((c) => `${c.name}: ${c.reason}`)
-								.join('; ')
-
-							conversationMessages.push({
-								role: 'user',
-								content: `Your previous response failed semantic validation: ${failedChecks}. Please correct your response.`,
-							})
-							continue
-						}
-
-						const failedChecks = semanticResult.checks
-							.filter((c) => !c.passed)
-							.map((c) => `${c.name}: ${c.reason}`)
-							.join('; ')
-						throw ElsiumError.validation(`Semantic validation failed: ${failedChecks}`)
-					}
-				}
-
-				await config.hooks?.onComplete?.({
-					message: response.message,
-					usage: {
-						totalInputTokens,
-						totalOutputTokens,
-						totalTokens: totalInputTokens + totalOutputTokens,
-						totalCost,
-						iterations,
-					},
-					toolCalls: toolCallHistory,
+				const processed = await processOutput(
+					response.message,
+					messages,
+					iterations,
+					usage,
+					toolCallHistory,
 					traceId,
-				})
+				)
 
-				return {
-					message: response.message,
-					usage: {
-						totalInputTokens,
-						totalOutputTokens,
-						totalTokens: totalInputTokens + totalOutputTokens,
-						totalCost,
-						iterations,
-					},
-					toolCalls: toolCallHistory,
-					traceId,
+				if (processed.action === 'retry') {
+					conversationMessages.push({ role: 'user', content: processed.feedbackMessage })
+					continue
 				}
+
+				return processed.result
 			}
 
 			const toolResults = await executeToolCalls(response.message.toolCalls, toolCallHistory)
@@ -205,11 +256,47 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 				throw ElsiumError.validation(errorMsg)
 			}
 
+			// Security input validation
+			if (agentSecurity) {
+				const securityResult = agentSecurity.validateInput(input)
+				if (!securityResult.safe) {
+					throw ElsiumError.validation(
+						`Security violation: ${securityResult.violations.map((v) => v.detail).join('; ')}`,
+					)
+				}
+			}
+
+			// State machine mode
+			if (config.states && config.initialState) {
+				return executeStateMachine(
+					config,
+					{ states: config.states, initialState: config.initialState },
+					deps,
+					input,
+					options,
+				)
+			}
+
 			const userMessage: Message = { role: 'user', content: input }
 			return executeLoop([userMessage], options)
 		},
 
 		async chat(messages: Message[], options: AgentRunOptions = {}): Promise<AgentResult> {
+			// State machine mode
+			if (config.states && config.initialState) {
+				const inputText = messages
+					.filter((m) => m.role === 'user')
+					.map((m) => extractText(m.content))
+					.join('\n')
+				return executeStateMachine(
+					config,
+					{ states: config.states, initialState: config.initialState },
+					deps,
+					inputText || '',
+					options,
+				)
+			}
+
 			return executeLoop(messages, options)
 		},
 

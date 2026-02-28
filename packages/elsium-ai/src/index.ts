@@ -87,6 +87,11 @@ export {
 	createOpenAIProvider,
 	createGoogleProvider,
 	createProviderMesh,
+	securityMiddleware,
+	detectPromptInjection,
+	detectJailbreak,
+	redactSecrets,
+	checkBlockedPatterns,
 } from '@elsium-ai/gateway'
 
 export type {
@@ -99,6 +104,9 @@ export type {
 	ProviderEntry,
 	RoutingStrategy,
 	ProviderMesh,
+	SecurityMiddlewareConfig,
+	SecurityViolation,
+	SecurityResult,
 } from '@elsium-ai/gateway'
 
 // ─── Agents ─────────────────────────────────────────────────────
@@ -109,6 +117,9 @@ export {
 	runSupervisor,
 	createMemory,
 	createSemanticValidator,
+	createAgentSecurity,
+	createConfidenceScorer,
+	executeStateMachine,
 } from '@elsium-ai/agents'
 
 export type {
@@ -126,6 +137,13 @@ export type {
 	SemanticCheckResult,
 	SemanticValidationResult,
 	SemanticValidator,
+	AgentSecurityConfig,
+	AgentSecurityResult,
+	ConfidenceConfig,
+	ConfidenceResult,
+	StateDefinition,
+	StateHistoryEntry,
+	StateMachineResult,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────

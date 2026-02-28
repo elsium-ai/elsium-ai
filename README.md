@@ -299,6 +299,124 @@ const agent = defineAgent(
 )
 ```
 
+### AI Security Layer
+
+Protect against prompt injection, jailbreak attempts, and secret leakage — at both gateway and agent level.
+
+```typescript
+import { gateway, securityMiddleware } from '@elsium-ai/gateway'
+
+// Gateway-level security middleware
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [
+    securityMiddleware({
+      promptInjection: true,          // Block injection attempts
+      jailbreakDetection: true,       // Block jailbreak attempts
+      secretRedaction: true,          // Redact API keys, SSNs, etc. in output
+      blockedPatterns: [/competitor/i], // Custom blocked patterns
+      onViolation: (v) => console.warn('Security:', v.detail),
+    }),
+  ],
+})
+
+// Agent-level security guardrails
+const agent = defineAgent(
+  {
+    name: 'secure-agent',
+    system: 'You are a helpful assistant.',
+    guardrails: {
+      security: {
+        detectPromptInjection: true,
+        detectJailbreak: true,
+        redactSecrets: true,
+      },
+    },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+```
+
+### Confidence Scoring
+
+Get a confidence score on every agent result — hallucination risk, relevance, citation coverage, and custom checks.
+
+```typescript
+const agent = defineAgent(
+  {
+    name: 'confident-agent',
+    system: 'Answer questions accurately.',
+    confidence: {
+      hallucinationRisk: true,
+      relevanceScore: true,
+      citationCoverage: true,
+      customChecks: [{
+        name: 'formality',
+        check: async (input, output) => ({
+          score: output.includes('Dear') ? 1.0 : 0.5,
+          reason: 'Formal tone check',
+        }),
+      }],
+    },
+    guardrails: {
+      semantic: {
+        hallucination: { enabled: true, ragContext: docs },
+        relevance: { enabled: true },
+      },
+    },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+
+const result = await agent.run('What is TypeScript?')
+console.log(result.confidence)
+// { overall: 0.85, hallucinationRisk: 0.1, relevanceScore: 0.9, citationCoverage: 0.8, checks: [...] }
+```
+
+### Agent State Machines
+
+Build multi-turn conversational flows with explicit state transitions — each state can override the system prompt, tools, and guardrails.
+
+```typescript
+const agent = defineAgent(
+  {
+    name: 'support-bot',
+    system: 'You are a customer support agent.',
+    initialState: 'greet',
+    states: {
+      greet: {
+        system: 'Greet the user and ask how you can help.',
+        transition: (result) => {
+          const text = typeof result.message.content === 'string' ? result.message.content : ''
+          return text.includes('billing') ? 'billing' : 'general'
+        },
+      },
+      billing: {
+        system: 'Help the user with billing questions.',
+        tools: [lookupInvoiceTool, refundTool],
+        transition: () => 'resolve',
+      },
+      general: {
+        system: 'Help the user with general questions.',
+        tools: [searchKBTool],
+        transition: () => 'resolve',
+      },
+      resolve: {
+        system: 'Summarize the resolution and ask if there is anything else.',
+        terminal: true,
+        transition: () => 'resolve',
+      },
+    },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+
+const result = await agent.run('I have a billing question')
+console.log(result.finalState)    // 'resolve'
+console.log(result.stateHistory)  // Full trace of state transitions
+```
+
 ### Full observability with cost tracking
 
 Track every LLM call's cost, latency, and token usage. Export traces to OpenTelemetry backends like Jaeger, Datadog, or Grafana.
@@ -420,6 +538,9 @@ const prompt = registry.render('classifier', { categories: 'spam,ham', input: 'B
 | No observability standard | OpenTelemetry compatible — export to Jaeger, Datadog, Grafana |
 | No MCP support | Native bidirectional MCP — use any MCP server, expose tools as MCP server |
 | Hallucination blindness | Semantic guardrails — hallucination detection, grounding checks, auto-retry |
+| No confidence in AI output | Confidence scoring — per-result hallucination risk, relevance, custom checks |
+| Prompt injection attacks | AI Security Layer — injection/jailbreak detection, secret redaction |
+| Complex multi-turn flows | Agent State Machines — explicit states, transitions, per-state tools |
 | Prompt versioning chaos | Prompt as Code — versioned, diffable, testable prompt management |
 | Streaming breaks on errors | Resilient streaming — checkpoints, partial recovery, timeout support |
 
@@ -509,6 +630,9 @@ console.log(result.message.content)
 | Cost Intelligence | Yes (budgets, projections, loop detection) | No | No | No |
 | MCP Support | Yes (bidirectional) | Partial | No | No |
 | Semantic Guardrails | Yes (hallucination, grounding, relevance) | No | No | No |
+| AI Security Layer | Yes (injection, jailbreak, secret redaction) | No | No | No |
+| Confidence Scoring | Yes (per-result confidence with custom checks) | No | No | No |
+| Agent State Machines | Yes (multi-turn flows with state transitions) | No | No | No |
 | Prompt Versioning | Yes (diff, template, registry) | No (LangSmith) | No | No |
 | Resilient Streaming | Yes (checkpoints, recovery) | No | No | No |
 | Built-in Tracing | Yes (OTel) | LangSmith (paid) | No | No |

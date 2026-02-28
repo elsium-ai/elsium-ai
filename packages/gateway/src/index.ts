@@ -20,6 +20,20 @@ export {
 } from './middleware'
 export type { XRayStore } from './middleware'
 
+// Security
+export {
+	securityMiddleware,
+	detectPromptInjection,
+	detectJailbreak,
+	redactSecrets,
+	checkBlockedPatterns,
+} from './security'
+export type {
+	SecurityMiddlewareConfig,
+	SecurityViolation,
+	SecurityResult,
+} from './security'
+
 // Pricing
 export { calculateCost, registerPricing } from './pricing'
 

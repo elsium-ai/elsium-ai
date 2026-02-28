@@ -559,13 +559,114 @@ const agent = defineAgent(
 
 When a semantic check fails and `autoRetry` is enabled, the agent automatically re-runs with corrective instructions.
 
+## AI Security Layer
+
+Protect your agents against prompt injection, jailbreak attempts, and secret leakage:
+
+```typescript
+import { securityMiddleware } from '@elsium-ai/gateway'
+
+// Gateway-level security
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [
+    securityMiddleware({
+      promptInjection: true,
+      jailbreakDetection: true,
+      secretRedaction: true,
+    }),
+  ],
+})
+
+// Agent-level security
+const agent = defineAgent(
+  {
+    name: 'secure-agent',
+    system: 'You are a helpful assistant.',
+    guardrails: {
+      security: {
+        detectPromptInjection: true,
+        detectJailbreak: true,
+        redactSecrets: true,
+      },
+    },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+```
+
+Security scans input for injection/jailbreak patterns and redacts secrets (API keys, SSNs, credit cards, Bearer tokens) from output.
+
+## Confidence Scoring
+
+Get confidence scores on every agent result:
+
+```typescript
+const agent = defineAgent(
+  {
+    name: 'confident-agent',
+    system: 'Answer questions accurately.',
+    confidence: {
+      hallucinationRisk: true,
+      relevanceScore: true,
+    },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+
+const result = await agent.run('What is TypeScript?')
+console.log(result.confidence?.overall)          // 0.85
+console.log(result.confidence?.hallucinationRisk) // 0.1
+console.log(result.confidence?.relevanceScore)    // 0.9
+```
+
+When combined with semantic guardrails, confidence scores are derived from the semantic validation results for higher accuracy.
+
+## Agent State Machines
+
+Build multi-turn conversational flows with explicit state transitions:
+
+```typescript
+const agent = defineAgent(
+  {
+    name: 'support-bot',
+    system: 'You are a support agent.',
+    initialState: 'greet',
+    states: {
+      greet: {
+        system: 'Greet the user warmly.',
+        transition: (result) => 'help',
+      },
+      help: {
+        system: 'Help with their question.',
+        tools: [searchTool],
+        transition: () => 'resolve',
+      },
+      resolve: {
+        system: 'Summarize and close.',
+        terminal: true,
+        transition: () => 'resolve',
+      },
+    },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+
+const result = await agent.run('I need help')
+console.log(result.finalState)    // 'resolve'
+console.log(result.stateHistory)  // Full trace of transitions
+```
+
+Each state can override the system prompt, available tools, and guardrails. A single conversation history is maintained across all states.
+
 ## Packages
 
 | Package | Description |
 |---|---|
 | `@elsium-ai/core` | Types, errors, resilient streaming, utilities |
-| `@elsium-ai/gateway` | Multi-provider LLM gateway (Anthropic, OpenAI, Google) with X-Ray and provider mesh |
-| `@elsium-ai/agents` | Agent framework with memory, semantic guardrails, multi-agent |
+| `@elsium-ai/gateway` | Multi-provider LLM gateway (Anthropic, OpenAI, Google) with X-Ray, provider mesh, and security middleware |
+| `@elsium-ai/agents` | Agent framework with memory, semantic guardrails, security, confidence, state machines, multi-agent |
 | `@elsium-ai/tools` | Tool definitions with Zod validation |
 | `@elsium-ai/rag` | Document loading, chunking, embeddings, vector search |
 | `@elsium-ai/workflows` | Sequential, parallel, and branching workflows |

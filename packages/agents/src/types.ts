@@ -1,7 +1,9 @@
 import type { CompletionRequest, LLMResponse, Message } from '@elsium-ai/core'
 import type { Span } from '@elsium-ai/observe'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
+import type { ConfidenceConfig, ConfidenceResult } from './confidence'
 import type { MemoryConfig } from './memory'
+import type { AgentSecurityConfig } from './security'
 import type { SemanticGuardrailConfig } from './semantic-guardrails'
 
 export interface AgentConfig {
@@ -12,6 +14,9 @@ export interface AgentConfig {
 	memory?: MemoryConfig
 	guardrails?: GuardrailConfig
 	hooks?: AgentHooks
+	confidence?: boolean | ConfidenceConfig
+	states?: Record<string, StateDefinition>
+	initialState?: string
 }
 
 export interface GuardrailConfig {
@@ -20,6 +25,28 @@ export interface GuardrailConfig {
 	inputValidator?: (input: string) => boolean | string
 	outputValidator?: (output: string) => boolean | string
 	semantic?: SemanticGuardrailConfig
+	security?: AgentSecurityConfig
+}
+
+// ─── State Machine Types ────────────────────────────────────────
+
+export interface StateDefinition {
+	system?: string
+	tools?: Tool[]
+	guardrails?: GuardrailConfig
+	transition: (result: AgentResult) => string
+	terminal?: boolean
+}
+
+export interface StateHistoryEntry {
+	state: string
+	result: AgentResult
+	transitionedTo: string | null
+}
+
+export interface StateMachineResult extends AgentResult {
+	stateHistory: StateHistoryEntry[]
+	finalState: string
 }
 
 export interface AgentHooks {
@@ -45,6 +72,7 @@ export interface AgentResult {
 		result: ToolExecutionResult
 	}>
 	traceId: string
+	confidence?: ConfidenceResult
 }
 
 export interface AgentRunOptions {
