@@ -119,7 +119,7 @@ import { ElsiumError } from '@elsium-ai/core'
 const err = ElsiumError.providerError('anthropic', 500, 'Internal server error')
 const err = ElsiumError.rateLimit('anthropic', 5000) // retryAfterMs
 const err = ElsiumError.authError('anthropic')
-const err = ElsiumError.timeout('Request timed out after 30s')
+const err = ElsiumError.timeout('anthropic', 30_000)
 const err = ElsiumError.validation('Invalid model name')
 const err = ElsiumError.budgetExceeded(5.0, 10.23) // limit, actual
 

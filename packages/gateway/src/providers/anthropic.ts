@@ -119,7 +119,12 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 	}
 
 	function formatStringContent(msg: Message, role: 'user' | 'assistant'): AnthropicMessage {
-		const blocks: AnthropicContentBlock[] = [{ type: 'text', text: msg.content as string }]
+		const blocks: AnthropicContentBlock[] = []
+
+		const text = msg.content as string
+		if (text) {
+			blocks.push({ type: 'text', text })
+		}
 
 		if (msg.toolCalls?.length) {
 			for (const tc of msg.toolCalls) {
@@ -130,6 +135,10 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 					input: tc.arguments,
 				})
 			}
+		}
+
+		if (blocks.length === 0) {
+			return { role, content: text }
 		}
 
 		return { role, content: blocks }

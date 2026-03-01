@@ -44,7 +44,12 @@ const INJECTION_PATTERNS: Array<{ pattern: RegExp; detail: string }> = [
 ]
 
 const JAILBREAK_PATTERNS: Array<{ pattern: RegExp; detail: string }> = [
-	{ pattern: /\bDAN\b.*(?:mode|prompt|jailbreak)/i, detail: 'DAN jailbreak attempt' },
+	{
+		pattern: /\bDAN\b.*(?:mode|prompt|jailbreak|do\s+anything|no\s+(?:restrictions|rules|limits))/i,
+		detail: 'DAN jailbreak attempt',
+	},
+	{ pattern: /\bdo\s+anything\s+now\b/i, detail: 'DAN (Do Anything Now) jailbreak attempt' },
+	{ pattern: /you\s+are\s+(?:now\s+)?DAN\b/i, detail: 'DAN role assignment jailbreak attempt' },
 	{
 		pattern:
 			/(?:pretend|act\s+as\s+if)\s+(?:you\s+)?(?:have\s+no|don'?t\s+have\s+any?)\s+(?:restrictions|limitations|rules|guidelines)/i,

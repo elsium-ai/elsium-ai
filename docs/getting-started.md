@@ -106,16 +106,16 @@ import { z } from 'zod'
 const weatherTool = defineTool({
   name: 'get_weather',
   description: 'Get current weather for a city',
-  parameters: z.object({
+  input: z.object({
     city: z.string().describe('City name'),
   }),
-  execute: async ({ city }) => {
+  handler: async ({ city }) => {
     // Call your weather API here
     return { temperature: 22, condition: 'sunny', city }
   },
 })
 
-const tools = createToolkit([weatherTool])
+const tools = createToolkit('weather', [weatherTool])
 
 const agent = defineAgent(
   {
@@ -351,13 +351,13 @@ Record LLM interactions and replay them in tests:
 import { createReplayRecorder, createReplayPlayer } from '@elsium-ai/testing'
 
 // Record
-const recorder = createReplayRecorder(llm.complete)
-await recorder.complete(request)
-await recorder.save('fixtures/my-test.json')
+const recorder = createReplayRecorder()
+const wrappedComplete = recorder.wrap(llm.complete.bind(llm))
+await wrappedComplete(request)
+const recordings = recorder.toJSON()
 
 // Replay (no API calls)
-const player = createReplayPlayer()
-await player.load('fixtures/my-test.json')
+const player = createReplayPlayer(recordings)
 const result = await player.complete(request)
 ```
 
@@ -386,9 +386,7 @@ const pipeline = rag({
 })
 
 // Ingest documents
-await pipeline.ingest('# ElsiumAI\n\nA TypeScript-first AI framework...', {
-  source: 'readme.md',
-})
+await pipeline.ingest('readme.md', '# ElsiumAI\n\nA TypeScript-first AI framework...')
 
 // Query
 const results = await pipeline.query('What is ElsiumAI?', { topK: 3 })
@@ -407,23 +405,20 @@ import { defineWorkflow, step } from '@elsium-ai/workflows'
 const pipeline = defineWorkflow({
   name: 'content-pipeline',
   steps: [
-    step({
-      name: 'research',
-      execute: async (ctx) => {
+    step('research', {
+      handler: async (ctx) => {
         const result = await agent.run(`Research: ${ctx.input}`)
         return result.message.content
       },
     }),
-    step({
-      name: 'draft',
-      execute: async (ctx) => {
+    step('draft', {
+      handler: async (ctx) => {
         const result = await agent.run(`Write a draft based on: ${ctx.input}`)
         return result.message.content
       },
     }),
-    step({
-      name: 'review',
-      execute: async (ctx) => {
+    step('review', {
+      handler: async (ctx) => {
         const result = await agent.run(`Review and improve: ${ctx.input}`)
         return result.message.content
       },
