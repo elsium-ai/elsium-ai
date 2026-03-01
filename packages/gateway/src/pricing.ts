@@ -1,9 +1,8 @@
 import type { CostBreakdown, TokenUsage } from '@elsium-ai/core'
+import { createLogger } from '@elsium-ai/core'
+import type { ModelPricing } from './provider'
 
-interface ModelPricing {
-	inputPerMillion: number
-	outputPerMillion: number
-}
+const log = createLogger()
 
 const PRICING: Record<string, ModelPricing> = {
 	// Anthropic
@@ -29,8 +28,11 @@ const PRICING: Record<string, ModelPricing> = {
 	// Google
 	'gemini-2.0-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
 	'gemini-2.0-flash-lite': { inputPerMillion: 0.075, outputPerMillion: 0.3 },
+	'gemini-2.5-pro': { inputPerMillion: 1.25, outputPerMillion: 10 },
 	'gemini-2.5-pro-preview-05-06': { inputPerMillion: 1.25, outputPerMillion: 10 },
+	'gemini-2.5-flash': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
 	'gemini-2.5-flash-preview-04-17': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
+	'gemini-2.5-flash-lite': { inputPerMillion: 0.075, outputPerMillion: 0.3 },
 }
 
 function resolveModelName(model: string): string {
@@ -44,12 +46,9 @@ export function calculateCost(model: string, usage: TokenUsage): CostBreakdown {
 	const pricing = PRICING[resolveModelName(model)]
 
 	if (!pricing) {
-		// L3 fix: Warn when an unknown model is used — pricing data may be missing
-		if (typeof console !== 'undefined') {
-			console.warn(
-				`[elsium] Unknown model "${model}" — cost will be reported as $0. Register pricing with registerPricing().`,
-			)
-		}
+		log.warn(
+			`Unknown model "${model}" — cost will be reported as $0. Register pricing with registerPricing().`,
+		)
 		return {
 			inputCost: 0,
 			outputCost: 0,

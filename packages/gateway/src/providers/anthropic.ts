@@ -262,6 +262,11 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 	return {
 		name: 'anthropic',
 		defaultModel: 'claude-sonnet-4-6',
+		metadata: {
+			baseUrl: 'https://api.anthropic.com/v1/messages',
+			capabilities: ['tools', 'vision', 'streaming', 'system'],
+			authStyle: 'x-api-key' as const,
+		},
 
 		async complete(req: CompletionRequest): Promise<LLMResponse> {
 			const { system, messages } = formatMessages(req.messages)
@@ -438,15 +443,18 @@ function mapSSEEventContentBlockDelta(event: Record<string, unknown>): StreamEve
 
 function mapSSEEventMessageDelta(event: Record<string, unknown>): StreamEvent | null {
 	const delta = event.delta as { stop_reason?: string }
-	const usage = event.usage as { output_tokens?: number } | undefined
+	const usage = event.usage as { input_tokens?: number; output_tokens?: number } | undefined
 	if (!delta?.stop_reason) return null
+
+	const inputTokens = usage?.input_tokens ?? 0
+	const outputTokens = usage?.output_tokens ?? 0
 
 	return {
 		type: 'message_end',
 		usage: {
-			inputTokens: 0,
-			outputTokens: usage?.output_tokens ?? 0,
-			totalTokens: usage?.output_tokens ?? 0,
+			inputTokens,
+			outputTokens,
+			totalTokens: inputTokens + outputTokens,
 		},
 		stopReason: mapAnthropicStopReason(delta.stop_reason) as StreamEvent & {
 			type: 'message_end'

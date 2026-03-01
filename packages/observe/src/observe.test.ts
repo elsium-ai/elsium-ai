@@ -221,8 +221,9 @@ describe('observe', () => {
 
 		expect(spy).toHaveBeenCalledOnce()
 		const logged = JSON.parse(spy.mock.calls[0][0] as string)
-		expect(logged.span).toBe('my-op')
-		expect(logged.kind).toBe('llm')
+		// createLogger wraps data under a `data` key
+		expect(logged.data.span).toBe('my-op')
+		expect(logged.data.kind).toBe('llm')
 
 		spy.mockRestore()
 	})

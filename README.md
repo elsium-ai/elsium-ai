@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://github.com/ebutrera9103/elsium-ai" target="blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
 </p>
-<h3 align="center">Reliability. Governance. Deterministic AI.</h3>
+<h3 align="center">Reliability. Governance. Reproducible AI.</h3>
 <p align="center">The TypeScript framework for AI systems you can trust in production.</p>
 <p align="center">
   <a href="https://github.com/ebutrera9103/elsium-ai/actions"><img src="https://github.com/ebutrera9103/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
@@ -32,7 +32,7 @@ ElsiumAI is built on three pillars that most frameworks ignore entirely:
 |--------|--------------|
 | **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown |
 | **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail |
-| **Deterministic AI** | Same input, same output, provably — seed propagation, output pinning, provenance tracking, determinism assertions |
+| **Reproducible AI** | Tools to measure, pin, and reproduce AI outputs — seed propagation, output pinning, provenance tracking, determinism assertions |
 
 It also does everything you'd expect — multi-provider gateway, agents, tools, RAG, workflows, MCP, streaming, cost tracking. But those are table stakes. The three pillars are what make ElsiumAI different.
 
@@ -135,9 +135,9 @@ const llm = gateway({
 
 ---
 
-## Deterministic AI
+## Reproducible AI
 
-LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, verify, and prove output consistency.
+LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, measure, and track output consistency.
 
 ```typescript
 import { assertDeterministic } from '@elsium-ai/testing'
@@ -264,7 +264,7 @@ Beyond agents, tools, RAG, and multi-provider routing, ElsiumAI ships production
 
 1. **Fail predictably** — handle failure before you see it
 2. **Trust but verify** — every call auditable, every output traceable
-3. **Deterministic by default** — reproducible AI is testable AI
+3. **Reproducible by design** — testable AI is trustworthy AI
 4. **Zero magic** — `createX(config)` everywhere, no hidden behavior
 5. **Type safety end-to-end** — from config to LLM output
 6. **Modular** — use what you need, tree-shake the rest

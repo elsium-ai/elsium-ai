@@ -187,7 +187,6 @@ async function runStateMachine(
 	while (iterations < maxIterations) {
 		iterations++
 
-		// M7/H7 fix: Check AbortSignal at each iteration
 		checkAbortSignal(options, baseConfig.name)
 
 		// Merge state overrides onto base config

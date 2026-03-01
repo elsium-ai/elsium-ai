@@ -83,7 +83,6 @@ export function createRoutes(deps: RoutesDeps): Hono {
 		const agent = body.agent ? deps.agents.get(body.agent) : deps.defaultAgent
 
 		if (!agent) {
-			// M14 fix: Don't disclose available agent names in error messages
 			return c.json(
 				{
 					error: body.agent ? `Agent "${body.agent}" not found` : 'No default agent configured',

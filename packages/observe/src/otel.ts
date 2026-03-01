@@ -8,8 +8,11 @@
  *   (Jaeger, Grafana Tempo, Datadog, Honeycomb, etc.)
  */
 
+import { createLogger } from '@elsium-ai/core'
 import type { SpanData, SpanKind } from './span'
 import type { TracerExporter } from './tracer'
+
+const log = createLogger()
 
 // ─── OTel Span Format ───────────────────────────────────────────
 
@@ -299,10 +302,10 @@ export function createOTLPExporter(config: OTLPExporterConfig): TracerExporter {
 			})
 
 			if (!response.ok) {
-				console.error(`[elsium-ai/otel] Export failed: ${response.status} ${response.statusText}`)
+				log.error(`OTLP export failed: ${response.status} ${response.statusText}`)
 			}
 		} catch (err) {
-			console.error('[elsium-ai/otel] Export error:', err instanceof Error ? err.message : err)
+			log.error('OTLP export error', { error: err instanceof Error ? err.message : String(err) })
 		}
 	}
 

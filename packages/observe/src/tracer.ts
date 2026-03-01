@@ -1,4 +1,6 @@
-import { generateId } from '@elsium-ai/core'
+import { createLogger, generateId } from '@elsium-ai/core'
+
+const log = createLogger()
 import type { Span, SpanData, SpanHandler, SpanKind } from './span'
 import { createSpan } from './span'
 
@@ -151,16 +153,14 @@ function consoleHandler(span: SpanData): void {
 	const duration = span.durationMs !== undefined ? `${span.durationMs}ms` : 'running'
 	const status = span.status === 'error' ? '[ERROR]' : span.status === 'ok' ? '[OK]' : '[...]'
 
-	console.log(
-		JSON.stringify({
-			trace: span.traceId,
-			span: span.name,
-			kind: span.kind,
-			status: status,
-			duration,
-			...(Object.keys(span.metadata).length > 0 ? { metadata: span.metadata } : {}),
-		}),
-	)
+	log.info('span', {
+		trace: span.traceId,
+		span: span.name,
+		kind: span.kind,
+		status,
+		duration,
+		...(Object.keys(span.metadata).length > 0 ? { metadata: span.metadata } : {}),
+	})
 }
 
 function createNoopSpan(name: string, kind?: SpanKind): Span {

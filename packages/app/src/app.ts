@@ -1,6 +1,9 @@
 import type { Agent } from '@elsium-ai/agents'
+import { createLogger } from '@elsium-ai/core'
 import { type Gateway, gateway } from '@elsium-ai/gateway'
 import { type Tracer, observe } from '@elsium-ai/observe'
+
+const log = createLogger()
 import { Hono } from 'hono'
 import { authMiddleware, corsMiddleware, rateLimitMiddleware } from './middleware'
 import { createRoutes } from './routes'
@@ -94,12 +97,10 @@ export function createApp(config: AppConfig): ElsiumApp {
 				fetch: app.fetch,
 			})
 
-			console.log(`ElsiumAI server running at http://${hostname}:${listenPort}`)
-			console.log('  POST /chat      — Chat with an agent')
-			console.log('  POST /complete  — LLM completion')
-			console.log('  GET  /health    — Health check')
-			console.log('  GET  /metrics   — Usage metrics')
-			console.log('  GET  /agents    — List agents')
+			log.info('ElsiumAI server started', {
+				url: `http://${hostname}:${listenPort}`,
+				routes: ['POST /chat', 'POST /complete', 'GET /health', 'GET /metrics', 'GET /agents'],
+			})
 
 			return {
 				port: server.port as number,

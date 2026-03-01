@@ -3,7 +3,7 @@ export { createSpan } from './span'
 export type { Span, SpanData, SpanEvent, SpanKind, SpanStatus, SpanHandler } from './span'
 
 // Cost Engine
-export { createCostEngine } from './cost-engine'
+export { createCostEngine, registerModelTier } from './cost-engine'
 export type {
 	CostEngine,
 	CostEngineConfig,
@@ -13,6 +13,7 @@ export type {
 	CostDimension,
 	CostIntelligenceReport,
 	ModelSuggestion,
+	ModelTierEntry,
 } from './cost-engine'
 
 // Tracer

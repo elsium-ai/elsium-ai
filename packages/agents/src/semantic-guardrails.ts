@@ -121,7 +121,6 @@ Only respond with JSON, nothing else.`,
 
 	function checkHallucinationHeuristic(output: string, context: string[]): SemanticCheckResult {
 		// Heuristic fallback (word-overlap based — NOT semantic analysis)
-		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const contextText = context.join(' ').toLowerCase()
 		const outputSentences = output.split(/[.!?]+/).filter((s) => s.trim().length > 10)
 		let supported = 0
@@ -214,7 +213,6 @@ Only respond with JSON, nothing else.`,
 
 	function checkRelevanceHeuristic(input: string, output: string): SemanticCheckResult {
 		// Heuristic fallback (word-overlap based — NOT semantic analysis)
-		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const inputWords = new Set(
 			input
 				.toLowerCase()
@@ -299,7 +297,6 @@ Only respond with JSON, nothing else.`,
 
 	function checkGroundingHeuristic(output: string, sources: string[]): SemanticCheckResult {
 		// Heuristic fallback (word-overlap based — NOT semantic analysis)
-		// H5: This is a basic heuristic. For production guardrails, provide llmComplete.
 		const sourceText = sources.join(' ').toLowerCase()
 		const outputWords = output
 			.toLowerCase()

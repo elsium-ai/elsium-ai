@@ -46,6 +46,7 @@ export interface AuditIntegrityResult {
 	valid: boolean
 	totalEvents: number
 	brokenAt?: number
+	chainComplete?: boolean
 }
 
 export interface AuditTrailConfig {
@@ -128,7 +129,7 @@ class InMemoryAuditStorage implements AuditStorageAdapter {
 
 	verifyIntegrity(): AuditIntegrityResult {
 		if (this.events.length === 0) {
-			return { valid: true, totalEvents: 0 }
+			return { valid: true, totalEvents: 0, chainComplete: true }
 		}
 
 		for (let i = 0; i < this.events.length; i++) {
@@ -143,7 +144,8 @@ class InMemoryAuditStorage implements AuditStorageAdapter {
 			}
 		}
 
-		return { valid: true, totalEvents: this.events.length }
+		const chainComplete = this.events[0].previousHash === '0'.repeat(64)
+		return { valid: true, totalEvents: this.events.length, chainComplete }
 	}
 
 	getLastHash(): string {
@@ -162,7 +164,17 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	let sequenceId = 0
 	let idCounter = 0
 	let previousHash = '0'.repeat(64)
-	let eventCount = 0
+
+	if (useHashChain && storage.getLastHash) {
+		const lastHash = storage.getLastHash()
+		if (typeof lastHash === 'string') {
+			previousHash = lastHash
+		} else if (lastHash && typeof (lastHash as Promise<string>).then === 'function') {
+			;(lastHash as Promise<string>).then((hash) => {
+				if (typeof hash === 'string') previousHash = hash
+			})
+		}
+	}
 
 	return {
 		log(
@@ -194,7 +206,6 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 				previousHash = hash
 			}
 
-			eventCount++
 			const result = storage.append(finalEvent)
 			if (result && typeof (result as Promise<void>).catch === 'function') {
 				;(result as Promise<void>).catch((err) => config?.onError?.(err))
@@ -210,7 +221,8 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		},
 
 		get count(): number {
-			return eventCount
+			const result = storage.count()
+			return typeof result === 'number' ? result : 0
 		},
 	}
 }

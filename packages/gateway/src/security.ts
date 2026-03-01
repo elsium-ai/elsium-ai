@@ -190,7 +190,6 @@ export function classifyContent(text: string): ClassificationResult {
 
 // ─── Detection Functions ────────────────────────────────────────
 
-// M6 fix: Normalize Unicode (NFKC) before security pattern matching to prevent bypass via confusables
 function normalizeText(text: string): string {
 	return text.normalize('NFKC')
 }

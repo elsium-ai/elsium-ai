@@ -235,6 +235,11 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 	return {
 		name: 'google',
 		defaultModel: 'gemini-2.0-flash',
+		metadata: {
+			baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
+			capabilities: ['tools', 'vision', 'streaming', 'system'],
+			authStyle: 'bearer' as const,
+		},
 
 		async complete(req: CompletionRequest): Promise<LLMResponse> {
 			const model = req.model ?? 'gemini-2.0-flash'

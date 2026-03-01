@@ -63,7 +63,6 @@ export async function runSupervisor(
 		.map((w) => `- ${w.name}: ${w.config.system.slice(0, 100)}`)
 		.join('\n')
 
-	// H6 fix: Wrap user input in delimiters to prevent injection
 	const supervisorInput = [
 		'You are coordinating the following workers:',
 		workerDescriptions,

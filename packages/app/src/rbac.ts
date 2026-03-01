@@ -1,4 +1,7 @@
+import { createLogger } from '@elsium-ai/core'
 import type { Context, Next } from 'hono'
+
+const log = createLogger()
 
 export type Permission =
 	| 'model:use'
@@ -74,6 +77,12 @@ function matchPermission(granted: Permission, required: Permission): boolean {
 }
 
 export function createRBAC(config: RBACConfig): RBAC {
+	if (config.trustRoleHeader === true) {
+		log.warn(
+			'RBAC: trustRoleHeader is enabled — any client can self-assign roles via the X-Role header. Only use this in development or behind a trusted reverse proxy.',
+		)
+	}
+
 	const roleMap = new Map<string, Role>()
 
 	// Register built-in roles first (can be overridden)

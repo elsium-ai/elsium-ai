@@ -10,3 +10,4 @@ coverage/
 .DS_Store
 *.log
 .claude/
+examples/integration-test/.tmp/

@@ -7,6 +7,7 @@ import type {
 } from '@elsium-ai/core'
 import { createLogger } from '@elsium-ai/core'
 import type { Logger } from '@elsium-ai/core'
+import { getProviderMetadata } from './provider'
 
 export function composeMiddleware(middlewares: Middleware[]): Middleware {
 	return (ctx, finalNext) => {
@@ -95,7 +96,6 @@ function redactHeaders(headers: Record<string, string>): Record<string, string> 
 	const redacted: Record<string, string> = {}
 	for (const [key, value] of Object.entries(headers)) {
 		if (SENSITIVE_HEADERS.includes(key.toLowerCase())) {
-			// M4 fix: Fully redact sensitive headers — don't leak partial key material
 			redacted[key] = '[REDACTED]'
 		} else {
 			redacted[key] = value
@@ -122,12 +122,15 @@ function buildProviderHeaders(
 	metadata: Record<string, unknown>,
 ): Record<string, string> {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+	const apiKey = (metadata._apiKey as string) ?? '***'
+	const providerMeta = getProviderMetadata(provider)
+	const authStyle = providerMeta?.authStyle
 
-	if (provider === 'anthropic') {
-		headers['x-api-key'] = (metadata._apiKey as string) ?? '***'
-	}
-	if (provider === 'openai' || provider === 'google') {
-		headers.Authorization = (metadata._apiKey as string) ?? '***'
+	if (authStyle === 'x-api-key' || provider === 'anthropic') {
+		headers['x-api-key'] = apiKey
+	} else {
+		// Default to bearer (most common across providers)
+		headers.Authorization = apiKey
 	}
 
 	return redactHeaders(headers)
@@ -140,8 +143,12 @@ function truncateContent(content: string | unknown): string {
 }
 
 function buildXRayRequest(ctx: MiddlewareContext): XRayData['request'] {
+	const providerMeta = getProviderMetadata(ctx.provider)
 	return {
-		url: PROVIDER_URLS[ctx.provider] ?? `https://${ctx.provider}.api/v1/messages`,
+		url:
+			PROVIDER_URLS[ctx.provider] ??
+			providerMeta?.baseUrl ??
+			`https://${ctx.provider}.api/v1/messages`,
 		method: 'POST',
 		headers: buildProviderHeaders(ctx.provider, ctx.metadata),
 		body: {

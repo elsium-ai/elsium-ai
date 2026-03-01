@@ -1,6 +1,4 @@
 import { randomBytes } from 'node:crypto'
-
-// M1 fix: Use crypto.randomBytes for unpredictable IDs
 function cryptoHex(bytes: number): string {
 	return randomBytes(bytes).toString('hex')
 }
@@ -57,7 +55,6 @@ export function retry<T>(
 		shouldRetry?: (error: unknown) => boolean
 	} = {},
 ): Promise<T> {
-	// M2 fix: Default shouldRetry respects ElsiumError.retryable
 	const {
 		maxRetries = 3,
 		baseDelayMs = 1000,

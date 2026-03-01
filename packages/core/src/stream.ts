@@ -26,7 +26,6 @@ function createCheckpoint(
 		id: generateId('ckpt'),
 		timestamp: now,
 		text: textAccumulator,
-		// L2 fix: use conservative 1.5:1 ratio instead of 4:1
 		tokensSoFar: Math.ceil(textAccumulator.length / 1.5),
 		eventIndex,
 	}
@@ -87,7 +86,6 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 		return parts.join('')
 	}
 
-	// C4 fix: Race each iterator.next() against a deadline to avoid leaking iterators
 	async toTextWithTimeout(timeoutMs: number): Promise<string> {
 		const parts: string[] = []
 		const deadline = Date.now() + timeoutMs
@@ -192,7 +190,6 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 
 export type StreamTransformer = (source: AsyncIterable<StreamEvent>) => AsyncIterable<StreamEvent>
 
-// C5 fix: Add maximum buffer size with backpressure
 const MAX_BUFFER_SIZE = 10_000
 
 export function createStream(

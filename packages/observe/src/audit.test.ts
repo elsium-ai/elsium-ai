@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import type {
+	AuditEvent,
+	AuditIntegrityResult,
+	AuditQueryFilter,
+	AuditStorageAdapter,
+} from './audit'
 import { auditMiddleware, createAuditTrail } from './audit'
 
 describe('AuditTrail', () => {
@@ -124,6 +130,96 @@ describe('AuditTrail', () => {
 		trail.log('llm_call', { a: 2 })
 
 		expect(trail.count).toBe(2)
+	})
+
+	it('count is correct after eviction', () => {
+		const trail = createAuditTrail({ maxEvents: 5 })
+
+		for (let i = 0; i < 8; i++) {
+			trail.log('llm_call', { index: i })
+		}
+
+		expect(trail.count).toBe(5)
+	})
+
+	it('chainComplete is true without eviction, false after eviction', async () => {
+		const noEviction = createAuditTrail({ maxEvents: 10 })
+		for (let i = 0; i < 3; i++) {
+			noEviction.log('llm_call', { index: i })
+		}
+		const integrityFull = await noEviction.verifyIntegrity()
+		expect(integrityFull.valid).toBe(true)
+		expect(integrityFull.chainComplete).toBe(true)
+
+		const withEviction = createAuditTrail({ maxEvents: 3 })
+		for (let i = 0; i < 6; i++) {
+			withEviction.log('llm_call', { index: i })
+		}
+		const integrityEvicted = await withEviction.verifyIntegrity()
+		expect(integrityEvicted.valid).toBe(true)
+		expect(integrityEvicted.chainComplete).toBe(false)
+	})
+
+	it('getLastHash is used on init to resume chain', async () => {
+		const preExistingHash = 'a'.repeat(64)
+		const events: AuditEvent[] = []
+
+		const adapter: AuditStorageAdapter = {
+			append(event: AuditEvent) {
+				events.push(event)
+			},
+			query(_filter: AuditQueryFilter) {
+				return events
+			},
+			count() {
+				return events.length
+			},
+			verifyIntegrity(): AuditIntegrityResult {
+				return { valid: true, totalEvents: events.length }
+			},
+			getLastHash() {
+				return preExistingHash
+			},
+		}
+
+		const trail = createAuditTrail({ storage: adapter, hashChain: true })
+		trail.log('llm_call', { model: 'test' })
+
+		expect(events).toHaveLength(1)
+		expect(events[0].previousHash).toBe(preExistingHash)
+	})
+
+	it('getLastHash works with async storage adapter', async () => {
+		const preExistingHash = 'b'.repeat(64)
+		const events: AuditEvent[] = []
+
+		const adapter: AuditStorageAdapter = {
+			append(event: AuditEvent) {
+				events.push(event)
+			},
+			query(_filter: AuditQueryFilter) {
+				return events
+			},
+			count() {
+				return events.length
+			},
+			verifyIntegrity(): AuditIntegrityResult {
+				return { valid: true, totalEvents: events.length }
+			},
+			getLastHash() {
+				return Promise.resolve(preExistingHash)
+			},
+		}
+
+		const trail = createAuditTrail({ storage: adapter, hashChain: true })
+
+		// Wait for the async getLastHash to resolve
+		await new Promise((r) => setTimeout(r, 10))
+
+		trail.log('llm_call', { model: 'test' })
+
+		expect(events).toHaveLength(1)
+		expect(events[0].previousHash).toBe(preExistingHash)
 	})
 })
 

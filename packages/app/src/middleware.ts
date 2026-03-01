@@ -4,7 +4,6 @@ import type { AuthConfig, CorsConfig, RateLimitConfig } from './types'
 
 // ─── CORS ────────────────────────────────────────────────────────
 
-// H2 fix: Require explicit origin configuration; no wildcard by default
 export function corsMiddleware(config: CorsConfig | boolean = true) {
 	const opts: CorsConfig =
 		typeof config === 'boolean' ? { origin: [], methods: ['GET', 'POST', 'OPTIONS'] } : config
@@ -46,7 +45,6 @@ export function corsMiddleware(config: CorsConfig | boolean = true) {
 
 // ─── Auth ────────────────────────────────────────────────────────
 
-// H4 fix: Use constant-time comparison for bearer token
 export function authMiddleware(config: AuthConfig) {
 	return async (c: Context, next: Next) => {
 		// Skip health endpoint
@@ -85,7 +83,6 @@ function cleanupExpiredEntries(
 	}
 }
 
-// H3 fix: Don't trust X-Forwarded-For from untrusted clients
 export function rateLimitMiddleware(config: RateLimitConfig) {
 	const requests = new Map<string, { count: number; resetTime: number }>()
 

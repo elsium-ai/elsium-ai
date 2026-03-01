@@ -3,8 +3,20 @@ export { gateway, registerProviderFactory } from './gateway'
 export type { GatewayConfig, Gateway } from './gateway'
 
 // Provider
-export type { LLMProvider, ProviderFactory } from './provider'
-export { registerProvider, getProviderFactory, listProviders } from './provider'
+export type {
+	LLMProvider,
+	ProviderFactory,
+	ProviderMetadata,
+	ModelPricing,
+	ModelTier,
+} from './provider'
+export {
+	registerProvider,
+	getProviderFactory,
+	listProviders,
+	registerProviderMetadata,
+	getProviderMetadata,
+} from './provider'
 
 // Providers
 export { createAnthropicProvider } from './providers/anthropic'

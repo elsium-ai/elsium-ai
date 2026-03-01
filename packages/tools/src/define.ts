@@ -1,5 +1,7 @@
 import type { ToolDefinition } from '@elsium-ai/core'
-import { ElsiumError, generateId } from '@elsium-ai/core'
+import { ElsiumError, createLogger, generateId } from '@elsium-ai/core'
+
+const log = createLogger()
 import type { z } from 'zod'
 
 export interface ToolConfig<TInput = unknown, TOutput = unknown> {
@@ -228,7 +230,7 @@ function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 		case 'ZodDate':
 			return { type: 'string', format: 'date-time' }
 		default:
-			console.warn(`zodToJsonSchema: unsupported type ${kind}, defaulting to string`)
+			log.warn(`zodToJsonSchema: unsupported type ${kind}, defaulting to string`)
 			return { type: 'string' }
 	}
 }

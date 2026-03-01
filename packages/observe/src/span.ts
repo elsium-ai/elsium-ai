@@ -72,7 +72,6 @@ export function createSpan(
 		},
 
 		setMetadata(key: string, value: unknown) {
-			// M16 fix: Reject prototype-polluting keys
 			if (key === '__proto__' || key === 'constructor' || key === 'prototype') return
 			metadata[key] = value
 		},

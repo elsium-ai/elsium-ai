@@ -118,7 +118,6 @@ export async function traceCommand(args: string[]) {
 		return
 	}
 
-	// H8 fix: Validate traceId to prevent path traversal
 	if (!/^[a-zA-Z0-9_-]+$/.test(traceId)) {
 		console.error('Invalid trace ID format')
 		process.exit(1)

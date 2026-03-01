@@ -1,5 +1,7 @@
-import { generateId } from '@elsium-ai/core'
+import { createLogger, generateId } from '@elsium-ai/core'
 import type { Tool } from '@elsium-ai/tools'
+
+const log = createLogger()
 
 export interface MCPServerConfig {
 	name: string
@@ -184,7 +186,7 @@ export function createMCPServer(config: MCPServerConfig): MCPServer {
 					buffer += chunk
 
 					if (buffer.length > MAX_BUFFER_SIZE) {
-						console.error('MCP server: buffer size limit exceeded, resetting')
+						log.error('MCP server: buffer size limit exceeded, resetting')
 						buffer = ''
 						continue
 					}

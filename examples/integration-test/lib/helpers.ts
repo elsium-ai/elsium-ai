@@ -108,7 +108,7 @@ export function createGoogleGateway(model?: string) {
 	return gateway({
 		provider: 'google',
 		apiKey,
-		model: model ?? 'gemini-2.0-flash',
+		model: model ?? 'gemini-2.5-flash-lite',
 	})
 }
 

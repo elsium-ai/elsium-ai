@@ -17,7 +17,7 @@ ElsiumAI is built on **three pillars** that most frameworks ignore entirely:
 |--------|--------------|
 | **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown, retry with backoff |
 | **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail, PII detection |
-| **Deterministic AI** | Same input, same output, provably — seed propagation, output pinning, determinism assertions, provenance tracking |
+| **Reproducible AI** | Tools to measure, pin, and reproduce AI outputs — seed propagation, output pinning, determinism assertions, provenance tracking |
 
 It also does everything you'd expect — multi-provider gateway, agents, tools, RAG, workflows, MCP, streaming, cost tracking. But those are table stakes. **The three pillars are what make ElsiumAI different.**
 
@@ -1927,11 +1927,11 @@ console.log(integrity.brokenAt)     // undefined (no tampering detected)
 
 ---
 
-## Deterministic AI
+## Reproducible AI
 
-> **Pillar 3: Same input, same output, provably.**
+> **Pillar 3: Tools to measure, pin, and reproduce AI outputs.**
 
-LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, verify, and prove output consistency. This is what makes AI systems testable and trustworthy in production.
+LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, measure, and track output consistency. This is what makes AI systems testable and trustworthy in production.
 
 | Feature | What it does | Package |
 |---------|-------------|---------|

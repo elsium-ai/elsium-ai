@@ -10,7 +10,9 @@ import { ElsiumError, type ElsiumStream, createStream, generateTraceId } from '@
 import type { z } from 'zod'
 import { composeMiddleware, xrayMiddleware } from './middleware'
 import type { XRayStore } from './middleware'
+import { registerPricing } from './pricing'
 import type { LLMProvider } from './provider'
+import { registerProviderMetadata } from './provider'
 import { createAnthropicProvider } from './providers/anthropic'
 import { createGoogleProvider } from './providers/google'
 import { createOpenAIProvider } from './providers/openai'
@@ -67,6 +69,16 @@ export function gateway(config: GatewayConfig): Gateway {
 		timeout: config.timeout,
 		maxRetries: config.maxRetries,
 	})
+
+	// Auto-register provider metadata for x-ray, router, and pricing
+	if (provider.metadata) {
+		registerProviderMetadata(provider.name, provider.metadata)
+		if (provider.metadata.pricing) {
+			for (const [model, pricing] of Object.entries(provider.metadata.pricing)) {
+				registerPricing(model, pricing)
+			}
+		}
+	}
 
 	const defaultModel = config.model ?? provider.defaultModel
 

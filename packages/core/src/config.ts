@@ -22,7 +22,6 @@ export function envNumber(name: string, fallback?: number): number {
 	const raw = getEnvVar(name)
 	if (raw !== undefined) {
 		const parsed = Number(raw)
-		// L1 fix: Reject NaN AND Infinity — both are invalid for configuration values
 		if (!Number.isFinite(parsed)) {
 			throw new ElsiumError({
 				code: 'CONFIG_ERROR',

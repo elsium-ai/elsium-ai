@@ -231,6 +231,11 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 	return {
 		name: 'openai',
 		defaultModel: 'gpt-4o',
+		metadata: {
+			baseUrl: 'https://api.openai.com/v1/chat/completions',
+			capabilities: ['tools', 'vision', 'streaming', 'system', 'json_mode'],
+			authStyle: 'bearer' as const,
+		},
 
 		async complete(req: CompletionRequest): Promise<LLMResponse> {
 			const messages = formatMessages(req.messages)

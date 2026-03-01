@@ -88,7 +88,16 @@ interface CallRecord {
 	tokens: number
 }
 
-const MODEL_TIERS: Record<string, { tier: 'low' | 'mid' | 'high'; costPerMToken: number }> = {
+export interface ModelTierEntry {
+	tier: 'low' | 'mid' | 'high'
+	costPerMToken: number
+}
+
+export function registerModelTier(model: string, entry: ModelTierEntry): void {
+	MODEL_TIERS[model] = entry
+}
+
+const MODEL_TIERS: Record<string, ModelTierEntry> = {
 	// Low tier
 	'gpt-5-nano': { tier: 'low', costPerMToken: 0.05 },
 	'gemini-2.0-flash-lite': { tier: 'low', costPerMToken: 0.075 },
@@ -135,6 +144,7 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 
 	let totalSpend = 0
 	let totalTokens = 0
+	let pendingSpend = 0
 	let totalCalls = 0
 	const startedAt = Date.now()
 	const alerts: CostAlert[] = []
@@ -301,7 +311,8 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 				const user = ctx.metadata.userId as string | undefined
 				const feature = ctx.metadata.feature as string | undefined
 
-				// Pre-call budget estimation
+				// Pre-call budget estimation with pending reservation
+				let reserved = 0
 				if (config.totalBudget) {
 					const inputText = ctx.request.messages
 						.map((m) => (typeof m.content === 'string' ? m.content : ''))
@@ -310,15 +321,23 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 					const modelTier = MODEL_TIERS[ctx.model]
 					if (modelTier) {
 						const estimatedCost = (estimatedTokens / 1_000_000) * modelTier.costPerMToken
-						if (totalSpend + estimatedCost > config.totalBudget) {
+						if (totalSpend + pendingSpend + estimatedCost > config.totalBudget) {
 							throw ElsiumError.validation('Budget would be exceeded')
 						}
+						reserved = estimatedCost
+						pendingSpend += reserved
 					}
 				}
 
-				const response = await next(ctx)
-				trackCall(response, { agent, user, feature })
-				return response
+				try {
+					const response = await next(ctx)
+					pendingSpend -= reserved
+					trackCall(response, { agent, user, feature })
+					return response
+				} catch (error) {
+					pendingSpend -= reserved
+					throw error
+				}
 			}
 		},
 
@@ -412,6 +431,7 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 			for (const key of Object.keys(byFeature)) delete byFeature[key]
 			totalSpend = 0
 			totalTokens = 0
+			pendingSpend = 0
 			totalCalls = 0
 			alerts.length = 0
 			recentCalls.length = 0

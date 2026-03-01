@@ -104,6 +104,18 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 		})
 	}
 
+	function sendNotification(method: string, params?: Record<string, unknown>): void {
+		const proc = process
+		if (!proc?.stdin) return
+
+		const notification = {
+			jsonrpc: '2.0',
+			method,
+			...(params ? { params } : {}),
+		}
+		proc.stdin.write(`${JSON.stringify(notification)}\n`)
+	}
+
 	const MAX_LINE_LENGTH = 1024 * 1024 // 1MB max line length
 
 	function processResponseLine(line: string) {
@@ -156,7 +168,6 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 		async connect(): Promise<void> {
 			if (connected) return
 
-			// C6 fix: Only pass explicitly declared env vars, not the full host env
 			const childEnv: Record<string, string> = {
 				PATH: globalThis.process?.env?.PATH ?? '',
 				HOME: globalThis.process?.env?.HOME ?? '',
@@ -179,8 +190,15 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 				pendingRequests.clear()
 			})
 
-			process.on('exit', () => {
+			process.on('exit', (code) => {
 				connected = false
+				if (pendingRequests.size > 0) {
+					const err = new Error(`MCP subprocess exited with code ${code}`)
+					for (const [, pending] of pendingRequests) {
+						pending.reject(err)
+					}
+					pendingRequests.clear()
+				}
 			})
 
 			// Initialize MCP protocol
@@ -190,7 +208,8 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 				clientInfo: { name: `elsium-mcp-${config.name}`, version: '0.1.0' },
 			})
 
-			await sendRequest('notifications/initialized')
+			// Send as notification (no id, no response expected per JSON-RPC 2.0)
+			sendNotification('notifications/initialized')
 			connected = true
 		},
 

@@ -9,6 +9,7 @@ import {
 import { gateway } from './gateway'
 import type { Gateway } from './gateway'
 import { calculateCost } from './pricing'
+import { getProviderMetadata } from './provider'
 
 export type RoutingStrategy =
 	| 'fallback'
@@ -192,7 +193,6 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		}
 	}
 
-	// H1 fix: Cancel remaining requests when first one succeeds
 	async function latencyOptimizedComplete(request: CompletionRequest): Promise<LLMResponse> {
 		const controller = new AbortController()
 		const availableProviders = sortedProviders.filter((e) => isProviderAvailable(e.name))
@@ -282,6 +282,10 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 	}
 
 	function defaultCapabilities(provider: string): string[] {
+		// Check provider metadata registry first (supports custom providers)
+		const meta = getProviderMetadata(provider)
+		if (meta?.capabilities) return meta.capabilities
+
 		switch (provider) {
 			case 'anthropic':
 				return ['tools', 'vision', 'streaming', 'system']
