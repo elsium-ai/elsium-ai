@@ -116,12 +116,12 @@ Every error in ElsiumAI is an `ElsiumError` with a categorized error code, retry
 import { ElsiumError } from '@elsium-ai/core'
 
 // Static factories for common errors
-const err = ElsiumError.providerError('anthropic', 500, 'Internal server error')
+const err = ElsiumError.providerError('Internal server error', { provider: 'anthropic', statusCode: 500 })
 const err = ElsiumError.rateLimit('anthropic', 5000) // retryAfterMs
 const err = ElsiumError.authError('anthropic')
 const err = ElsiumError.timeout('anthropic', 30_000)
 const err = ElsiumError.validation('Invalid model name')
-const err = ElsiumError.budgetExceeded(5.0, 10.23) // limit, actual
+const err = ElsiumError.budgetExceeded(10.23, 5.0) // spent, budget
 
 // Error codes for programmatic handling
 try {
@@ -136,7 +136,7 @@ try {
         console.error('Invalid API key for', error.provider)
         break
       case 'BUDGET_EXCEEDED':
-        notifyAdmin(`Budget exceeded: $${error.metadata?.actual}`)
+        notifyAdmin(`Budget exceeded: $${error.metadata?.spent}`)
         break
       case 'TIMEOUT':
         // Retry with a longer timeout
@@ -447,15 +447,12 @@ import {
 // Use provider factories directly (bypassing the gateway)
 const anthropic = createAnthropicProvider({
   apiKey: env('ANTHROPIC_API_KEY'),
-  defaultModel: 'claude-sonnet-4-6',
 })
 const openai = createOpenAIProvider({
   apiKey: env('OPENAI_API_KEY'),
-  defaultModel: 'gpt-4o',
 })
 const google = createGoogleProvider({
   apiKey: env('GOOGLE_API_KEY'),
-  defaultModel: 'gemini-2.0-flash',
 })
 
 // Use providers directly
@@ -2100,12 +2097,10 @@ const tracer = observe({
 const span = tracer.startSpan('agent.run', 'agent')
 try {
   const result = await agent.run('What is the weather?')
-  span.setStatus('ok')
+  span.end({ status: 'ok' })
 } catch (error) {
-  span.setStatus('error')
+  span.end({ status: 'error' })
   throw error
-} finally {
-  span.end()
 }
 
 // Track LLM calls for cost reporting
@@ -2153,25 +2148,24 @@ Create and manage individual spans for fine-grained tracing:
 import { createSpan } from '@elsium-ai/observe'
 
 // Create a span for any operation
-const span = createSpan('db.query', 'internal')
+const span = createSpan('db.query', { kind: 'custom' })
 span.addEvent('query_start', { table: 'users', query: 'SELECT *' })
 
 try {
   const rows = await db.query('SELECT * FROM users')
   span.addEvent('query_complete', { rowCount: rows.length })
-  span.setStatus('ok')
+  span.end({ status: 'ok' })
 } catch (error) {
-  span.setStatus('error')
   span.addEvent('query_error', { error: error.message })
-} finally {
-  span.end()
+  span.end({ status: 'error' })
 }
 
 // Access span data
-console.log(span.data.name)       // 'db.query'
-console.log(span.data.kind)       // 'internal'
-console.log(span.data.durationMs) // 45
-console.log(span.data.events)     // [{ name: 'query_start', ... }, ...]
+const data = span.toJSON()
+console.log(data.name)       // 'db.query'
+console.log(data.kind)       // 'custom'
+console.log(data.durationMs) // 45
+console.log(data.events)     // [{ name: 'query_start', ... }, ...]
 ```
 
 ### Metrics
@@ -2185,13 +2179,13 @@ const metrics = createMetrics()
 
 // Record metrics
 metrics.increment('requests.total')
-metrics.increment('requests.by_agent', { agent: 'support-bot' })
+metrics.increment('requests.by_agent', 1, { agent: 'support-bot' })
 metrics.gauge('memory.heap_used', process.memoryUsage().heapUsed)
 metrics.histogram('response.latency_ms', 234)
-metrics.timing('llm.complete', startTime) // Records elapsed time
+metrics.histogram('llm.complete', Date.now() - startTime)
 
 // Query metrics
-const entries = metrics.getEntries()
+const entries = metrics.getMetrics()
 for (const entry of entries) {
   console.log(`${entry.name}: ${entry.value} (${entry.type})`)
 }
@@ -2287,7 +2281,7 @@ console.log(call.model)          // 'claude-sonnet-4-6'
 console.log(call.latencyMs)      // 1234
 console.log(call.request)        // { url, method, headers (redacted), body }
 console.log(call.response)       // { status, headers, body }
-console.log(call.usage)          // { inputTokens, outputTokens }
+console.log(call.usage)          // { inputTokens, outputTokens, totalTokens }
 console.log(call.cost)           // { inputCost, outputCost, totalCost }
 
 // Browse history
@@ -2476,8 +2470,8 @@ const agent = defineAgent(
 const result = await agent.run('What is the weather in Tokyo?')
 
 // Verify behavior
-expect(mock.getCalls()).toHaveLength(1)
-expect(mock.getCalls()[0].messages).toBeDefined()
+expect(mock.calls).toHaveLength(1)
+expect(mock.calls[0].messages).toBeDefined()
 ```
 
 ### Evaluation Suites
@@ -2496,16 +2490,16 @@ const results = await runEvalSuite({
       criteria: [
         { type: 'contains', value: '30 days' },
         { type: 'contains', value: 'receipt' },
-        { type: 'min_length', value: 50 },
-        { type: 'max_length', value: 500 },
+        { type: 'length_min', value: 50 },
+        { type: 'length_max', value: 500 },
       ],
     },
     {
       name: 'greeting',
       input: 'Hello!',
       criteria: [
-        { type: 'matches', value: /hello|hi|hey/i },
-        { type: 'json_valid', value: false },  // Should NOT be JSON
+        { type: 'matches', pattern: 'hello|hi|hey', flags: 'i' },
+        { type: 'json_valid' },
       ],
     },
     {
@@ -2515,7 +2509,7 @@ const results = await runEvalSuite({
         {
           type: 'llm_judge',
           prompt: 'Rate if this response is empathetic, actionable, and offers a clear next step.',
-          judge: (input, output) => judgeAgent.run(`Input: ${input}\nOutput: ${output}`),
+          judge: (prompt) => judgeAgent.run(prompt).then(r => ({ score: r.confidence?.overall ?? 0.5, reasoning: extractText(r.message.content) })),
         },
         {
           type: 'semantic_similarity',
@@ -2534,7 +2528,7 @@ const results = await runEvalSuite({
 
 console.log(`Score: ${results.score}`)        // 0.0 - 1.0
 console.log(`Passed: ${results.passed}/${results.total}`)
-for (const caseResult of results.cases) {
+for (const caseResult of results.results) {
   console.log(`  ${caseResult.name}: ${caseResult.passed ? 'PASS' : 'FAIL'}`)
 }
 ```
@@ -2562,7 +2556,7 @@ const result = await regression.run(runner)
 if (result.regressions.length > 0) {
   console.error('Regressions detected:')
   for (const reg of result.regressions) {
-    console.error(`  ${reg.name}: ${reg.previousScore} → ${reg.currentScore}`)
+    console.error(`  ${reg.input}: ${reg.baselineScore} → ${reg.currentScore}`)
   }
   process.exit(1) // Fail CI
 }
@@ -2582,14 +2576,11 @@ const hash = hashOutput('The capital of France is Paris.')
 console.log(hash) // SHA-256 hash string
 
 // Test against a snapshot — detects if output changed
-const result = testSnapshot(snapshots, {
-  name: 'capital-question',
-  output: 'The capital of France is Paris.',
-})
+const result = await testSnapshot('capital-question', snapshots, async () => 'The capital of France is Paris.')
 
-console.log(result.status)    // 'new' (first run) | 'match' | 'changed'
-console.log(result.hash)      // Current output hash
-console.log(result.previous)  // Previous hash (if exists)
+console.log(result.status)        // 'new' (first run) | 'match' | 'changed'
+console.log(result.currentHash)   // Current output hash
+console.log(result.previousHash)  // Previous hash (if exists)
 ```
 
 **In CI — detect output drift:**
@@ -2599,10 +2590,9 @@ describe('snapshot tests', () => {
   const snapshots = createSnapshotStore()
 
   it('geography answers are stable', async () => {
-    const output = await agent.run('What is the capital of France?')
-    const result = testSnapshot(snapshots, {
-      name: 'france-capital',
-      output: extractText(output.message.content),
+    const result = await testSnapshot('france-capital', snapshots, async () => {
+      const output = await agent.run('What is the capital of France?')
+      return extractText(output.message.content)
     })
     expect(result.status).not.toBe('changed')
   })
@@ -2708,8 +2698,8 @@ registry.register('classifier', definePrompt({
 
 // Compare versions
 const diff = registry.diff('classifier', '1.0.0', '1.1.0')
-console.log('Added lines:', diff.added)
-console.log('Removed lines:', diff.removed)
+console.log('Added lines:', diff.changes.filter(c => c.type === 'added'))
+console.log('Removed lines:', diff.changes.filter(c => c.type === 'removed'))
 
 // Render a prompt with variables
 const prompt = registry.render('classifier', {

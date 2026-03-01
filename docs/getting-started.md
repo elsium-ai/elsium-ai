@@ -86,7 +86,7 @@ const result = await assistant.run('What is TypeScript?')
 console.log(result.message.content)
 
 // 4. Inspect the call with X-Ray
-console.log(llm.lastCall())  // { rawRequest, rawResponse, tokens, durationMs, cost }
+console.log(llm.lastCall())  // { traceId, provider, model, latencyMs, request, response, usage, cost }
 ```
 
 Run it:
@@ -126,7 +126,6 @@ const agent = defineAgent(
   },
   {
     complete: (req) => llm.complete(req),
-    executeTool: (name, args) => tools.execute(name, args),
   },
 )
 
@@ -201,15 +200,14 @@ ElsiumAI includes built-in tracing and cost tracking:
 import { observe } from '@elsium-ai/observe'
 
 const tracer = observe({
-  serviceName: 'my-app',
-  exporters: [{ type: 'console' }],
+  output: ['console'],
+  costTracking: true,
 })
 
 // Wrap any operation in a span
-const span = tracer.startSpan('agent.run', { kind: 'agent' })
+const span = tracer.startSpan('agent.run', 'agent')
 const result = await assistant.run('Hello')
-span.setStatus('ok')
-span.end()
+span.end({ status: 'ok' })
 
 // Check costs
 const report = tracer.getCostReport()
@@ -272,7 +270,7 @@ describe('my agent', () => {
 
     const result = await agent.run('What is TypeScript?')
     expect(result.message.content).toContain('TypeScript')
-    expect(mock.getCalls()).toHaveLength(1)
+    expect(mock.calls).toHaveLength(1)
   })
 })
 ```
@@ -375,14 +373,13 @@ Build a knowledge base from your documents:
 import { rag } from '@elsium-ai/rag'
 
 const pipeline = rag({
-  loader: { type: 'markdown' },
-  chunker: { type: 'recursive', chunkSize: 512, overlap: 50 },
+  loader: 'markdown',
+  chunking: { strategy: 'recursive', maxChunkSize: 512, overlap: 50 },
   embeddings: {
     provider: 'openai',
     model: 'text-embedding-3-small',
     apiKey: env('OPENAI_API_KEY'),
   },
-  store: { type: 'memory' },
 })
 
 // Ingest documents

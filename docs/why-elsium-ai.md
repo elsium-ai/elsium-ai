@@ -1,14 +1,14 @@
 # Why ElsiumAI
 
-Every framework helps you call an LLM. None of them help you trust the result.
+Every framework helps you call an LLM. ElsiumAI helps you trust the result.
 
-ElsiumAI is built on three pillars that most frameworks ignore entirely:
+ElsiumAI is built on three pillars that the ecosystem hasn't prioritized yet:
 
 | Pillar | The guarantee |
 |--------|--------------|
+| **Reproducible AI** | Tools to measure, pin, and reproduce AI outputs — seed propagation, output pinning, provenance tracking, determinism assertions |
 | **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown |
 | **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail |
-| **Reproducible AI** | Tools to measure, pin, and reproduce AI outputs — seed propagation, output pinning, provenance tracking, determinism assertions |
 
 It also does everything you'd expect — multi-provider gateway, agents, tools, RAG, workflows, MCP, streaming, cost tracking. But those are table stakes. The three pillars are what make ElsiumAI different.
 
@@ -28,18 +28,44 @@ If you're building a weekend hack with a single API key, you probably don't need
 
 ## What You Get
 
+### Reproducible AI — you can reproduce results
+
+Nobody is doing this well at the framework level. LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, measure, and track output consistency — and catch regressions in CI before they reach production.
+
+| Feature | What it does | Source |
+|---------|-------------|--------|
+| **Seed Propagation** | Passes seed through the stack to OpenAI, Google, and Anthropic APIs | [`CompletionRequest.seed`](../packages/core/src/types.ts) |
+| **Output Pinning** | Locks expected outputs — model update changes your classifier? CI catches it | [`pinOutput`](../packages/testing/src/pinning.ts) |
+| **Determinism Assertions** | Run N times, verify all outputs match, fail in CI if they don't | [`assertDeterministic`](../packages/testing/src/determinism.ts) |
+| **Provenance Tracking** | SHA-256 hashes every prompt/config/input/output — full lineage per traceId | [`createProvenanceTracker`](../packages/observe/src/provenance.ts) |
+| **Request-Matched Fixtures** | Replay test fixtures by content hash, not sequence order | [`createFixture`](../packages/testing/src/fixtures.ts) |
+
+```typescript
+const result = await assertDeterministic(
+  (seed) => llm.complete({
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Classify: spam' }] }],
+    temperature: 0,
+    seed,
+  }).then(r => extractText(r.message.content)),
+  { runs: 5, seed: 42, tolerance: 0 },
+)
+// { deterministic: true, variance: 0, uniqueOutputs: 1 }
+```
+
+Model provider ships a silent update and your classifier starts returning different results? Your CI pipeline catches it before production does.
+
 ### Reliability — your system stays up
 
 Providers go down. Rate limits hit. Costs spiral. ElsiumAI treats failure as a first-class concern.
 
-| Feature | What it does |
-|---------|-------------|
-| **Circuit Breaker** | Detects failing providers, stops sending traffic, auto-recovers |
-| **Bulkhead Isolation** | Bounds concurrency — one slow consumer can't starve the rest |
-| **Request Dedup** | Identical in-flight calls coalesce into one API request |
-| **Graceful Shutdown** | Drains in-flight operations before process exit |
-| **Retry with Backoff** | Exponential backoff with jitter, respects `Retry-After` headers |
-| **Provider Mesh** | Multi-provider routing: fallback, latency-racing, cost-optimized, capability-aware |
+| Feature | What it does | Source |
+|---------|-------------|--------|
+| **Circuit Breaker** | Detects failing providers, stops sending traffic, auto-recovers | [`createCircuitBreaker`](../packages/core/src/circuit-breaker.ts) |
+| **Bulkhead Isolation** | Bounds concurrency — one slow consumer can't starve the rest | [`createBulkhead`](../packages/gateway/src/bulkhead.ts) |
+| **Request Dedup** | Identical in-flight calls coalesce into one API request | [`createDedup`](../packages/core/src/dedup.ts) |
+| **Graceful Shutdown** | Drains in-flight operations before process exit | [`createShutdownManager`](../packages/core/src/shutdown.ts) |
+| **Retry with Backoff** | Exponential backoff with jitter, respects `Retry-After` headers | [`retry`](../packages/core/src/utils.ts) |
+| **Provider Mesh** | Multi-provider routing: fallback, latency-racing, cost-optimized, capability-aware | [`createProviderMesh`](../packages/gateway/src/router.ts) |
 
 ```typescript
 const mesh = createProviderMesh({
@@ -56,13 +82,13 @@ Anthropic goes down at 3 AM? Traffic reroutes to OpenAI. No pages. No code chang
 
 ### Governance — you can prove what happened
 
-| Feature | What it does |
-|---------|-------------|
-| **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern |
-| **RBAC** | Role-based permissions with inheritance and wildcard matching |
-| **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations |
-| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification |
-| **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model |
+| Feature | What it does | Source |
+|---------|-------------|--------|
+| **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern | [`createPolicySet`](../packages/core/src/policy.ts) |
+| **RBAC** | Role-based permissions with inheritance and wildcard matching | [`createRBAC`](../packages/app/src/rbac.ts) |
+| **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations | [`createApprovalGate`](../packages/agents/src/approval.ts) |
+| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification | [`createAuditTrail`](../packages/observe/src/audit.ts) |
+| **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model | [`createAgentSecurity`](../packages/agents/src/security.ts) |
 
 ```typescript
 const policies = createPolicySet([
@@ -78,32 +104,6 @@ const rbac = createRBAC({
 ```
 
 When an auditor asks "who ran this query, which model handled it, and can you prove the log hasn't been modified?" — you have the answer.
-
-### Reproducible AI — you can reproduce results
-
-LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, measure, and track output consistency.
-
-| Feature | What it does |
-|---------|-------------|
-| **Seed Propagation** | Passes seed through the stack to OpenAI, Google, and Anthropic APIs |
-| **Output Pinning** | Locks expected outputs — model update changes your classifier? CI catches it |
-| **Determinism Assertions** | Run N times, verify all outputs match, fail in CI if they don't |
-| **Provenance Tracking** | SHA-256 hashes every prompt/config/input/output — full lineage per traceId |
-| **Request-Matched Fixtures** | Replay test fixtures by content hash, not sequence order |
-
-```typescript
-const result = await assertDeterministic(
-  (seed) => llm.complete({
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'Classify: spam' }] }],
-    temperature: 0,
-    seed,
-  }).then(r => extractText(r.message.content)),
-  { runs: 5, seed: 42, tolerance: 0 },
-)
-// { deterministic: true, variance: 0, uniqueOutputs: 1 }
-```
-
-Model provider ships a silent update and your classifier starts returning different results? Your CI pipeline catches it before production does.
 
 ---
 
@@ -175,39 +175,55 @@ Full methodology and reproduction steps in [`../benchmarks/`](../benchmarks/).
 
 ---
 
-## Comparison with Alternatives
+## Where ElsiumAI Fits
 
-How ElsiumAI compares on the three pillars:
+The AI ecosystem has solved foundational problems. LangChain and LlamaIndex made orchestration accessible. Vercel AI SDK brought streaming-first ergonomics to the frontend. LiteLLM, Portkey, and Helicone built powerful LLM gateways for routing, observability, and cost tracking.
 
-| Feature | ElsiumAI | LangChain | Vercel AI SDK | LlamaIndex |
-|---------|:--------:|:---------:|:-------------:|:----------:|
-| **Reliability** | | | | |
-| Circuit breaker | Yes | No | No | No |
-| Bulkhead isolation | Yes | No | No | No |
-| Request dedup | Yes | No | No | No |
-| Provider mesh (multi-strategy) | Yes | Partial | No | No |
-| Graceful shutdown | Yes | No | No | No |
-| **Governance** | | | | |
-| Policy engine | Yes | No | No | No |
-| RBAC with role inheritance | Yes | No | No | No |
-| Approval gates | Yes | No | No | No |
-| Hash-chained audit trail | Yes | No | No | No |
-| PII detection & redaction | Yes | No | No | No |
-| **Reproducible AI** | | | | |
-| Seed propagation | Yes | No | No | No |
-| Output pinning | Yes | No | No | No |
-| Determinism assertions | Yes | No | No | No |
-| Provenance tracking | Yes | No | No | No |
-| Request-matched fixtures | Yes | No | No | No |
-| **Table Stakes** | | | | |
-| Multi-provider support | Yes | Yes | Yes | Yes |
-| Agents | Yes | Yes | Yes | Yes |
-| RAG | Yes | Yes | No | Yes |
-| Streaming | Yes | Yes | Yes | Yes |
-| Tool use | Yes | Yes | Yes | Yes |
-| TypeScript-native | Yes | Partial | Yes | No |
+ElsiumAI stands on those shoulders. It solves the next problem: **what happens when you take AI to production with regulated workloads?** When you need to prove what happened, survive provider outages without code changes, and catch model regressions before they ship.
 
-No framework is bad — they solve different problems. If you need the three pillars, ElsiumAI is the only framework that ships them as built-in, tested, production-ready features.
+You can use ElsiumAI alongside your existing tools, or as a standalone framework — it works either way.
+
+```
+Your Application
+├── Orchestration     → LangChain, LlamaIndex, Vercel AI SDK, or ElsiumAI agents
+├── LLM Gateway       → LiteLLM, Portkey, or ElsiumAI gateway
+└── Production Layer  → ElsiumAI (reliability, governance, reproducibility)
+```
+
+ElsiumAI is the production layer. Use it with whatever orchestration and gateway you already have, or use ElsiumAI's own — the three pillars work regardless.
+
+## What ElsiumAI Adds
+
+### Production Reliability
+
+| Feature | What it does | Source |
+|---------|-------------|--------|
+| Circuit breaker | Detects failing providers, stops sending traffic, auto-recovers | [`createCircuitBreaker`](../packages/core/src/circuit-breaker.ts) |
+| Bulkhead isolation | Bounds concurrency — one slow consumer can't starve the rest | [`createBulkhead`](../packages/gateway/src/bulkhead.ts) |
+| Request dedup | Identical in-flight calls coalesce into one API request | [`createDedup`](../packages/core/src/dedup.ts) |
+| Graceful shutdown | Drains in-flight operations before process exit | [`createShutdownManager`](../packages/core/src/shutdown.ts) |
+| Provider mesh | Multi-provider routing: fallback, latency-racing, cost-optimized, capability-aware | [`createProviderMesh`](../packages/gateway/src/router.ts) |
+| Retry with backoff | Exponential backoff with jitter, respects `Retry-After` headers | [`retry`](../packages/core/src/utils.ts) |
+
+### Governance & Compliance
+
+| Feature | What it does | Source |
+|---------|-------------|--------|
+| Policy engine | Declarative rules — deny by model, cost, token count, or content pattern | [`createPolicySet`](../packages/core/src/policy.ts) |
+| RBAC | Role-based permissions with inheritance and wildcard matching | [`createRBAC`](../packages/app/src/rbac.ts) |
+| Approval gates | Human-in-the-loop for high-stakes tool calls or expensive operations | [`createApprovalGate`](../packages/agents/src/approval.ts) |
+| Hash-chained audit trail | SHA-256 hash-chained events with tamper-proof integrity verification | [`createAuditTrail`](../packages/observe/src/audit.ts) |
+| PII detection & redaction | Auto-redacts emails, phones, addresses, API keys before they reach the model | [`createAgentSecurity`](../packages/agents/src/security.ts) |
+
+### Reproducible AI
+
+| Feature | What it does | Source |
+|---------|-------------|--------|
+| Seed propagation | Passes seed through the stack to OpenAI, Google, and Anthropic APIs | [`CompletionRequest.seed`](../packages/core/src/types.ts) |
+| Output pinning | Locks expected outputs — model update changes your classifier? CI catches it | [`pinOutput`](../packages/testing/src/pinning.ts) |
+| Determinism assertions | Run N times, verify all outputs match, fail in CI if they don't | [`assertDeterministic`](../packages/testing/src/determinism.ts) |
+| Provenance tracking | SHA-256 hashes every prompt/config/input/output — full lineage per traceId | [`createProvenanceTracker`](../packages/observe/src/provenance.ts) |
+| Request-matched fixtures | Replay test fixtures by content hash, not sequence order | [`createFixture`](../packages/testing/src/fixtures.ts) |
 
 ---
 
@@ -218,6 +234,7 @@ bun add @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents
 ```
 
 ```typescript
+import { env } from '@elsium-ai/core'
 import { gateway } from '@elsium-ai/gateway'
 import { defineAgent } from '@elsium-ai/agents'
 

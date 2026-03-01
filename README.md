@@ -47,6 +47,7 @@ bun add @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents
 ```typescript
 import { gateway } from '@elsium-ai/gateway'
 import { defineAgent } from '@elsium-ai/agents'
+import { env } from '@elsium-ai/core'
 
 const llm = gateway({
   provider: 'anthropic',
@@ -70,7 +71,7 @@ Providers go down. Rate limits hit. Costs spiral. ElsiumAI treats failure as a f
 
 ```typescript
 import { createProviderMesh } from '@elsium-ai/gateway'
-import { dedupMiddleware } from '@elsium-ai/core'
+import { env } from '@elsium-ai/core'
 
 const mesh = createProviderMesh({
   providers: [
@@ -100,7 +101,7 @@ const mesh = createProviderMesh({
 Who called which model? Did they have permission? Can you prove the audit log hasn't been tampered with?
 
 ```typescript
-import { createPolicySet, policyMiddleware, modelAccessPolicy, costLimitPolicy } from '@elsium-ai/core'
+import { createPolicySet, policyMiddleware, modelAccessPolicy, costLimitPolicy, env } from '@elsium-ai/core'
 import { createAuditTrail, auditMiddleware } from '@elsium-ai/observe'
 import { createRBAC } from '@elsium-ai/app'
 
