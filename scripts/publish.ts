@@ -130,6 +130,18 @@ try {
 			continue
 		}
 
+		// Check if this version is already published on the registry
+		try {
+			execSync(`npm view ${pkgJson.name}@${pkgJson.version} version --registry ${registryUrl}`, {
+				stdio: 'pipe',
+			})
+			console.log(' (already published)')
+			succeeded++
+			continue
+		} catch {
+			// Version doesn't exist on registry — proceed with publish
+		}
+
 		try {
 			execSync('npm publish', {
 				cwd: pkgDir,
@@ -140,15 +152,9 @@ try {
 		} catch (err: unknown) {
 			const stderr =
 				err instanceof Error && 'stderr' in err ? (err as { stderr: Buffer }).stderr.toString() : ''
-
-			if (stderr.includes('already been published') || stderr.includes('EPUBLISHCONFLICT')) {
-				console.log(' (already published)')
-				succeeded++
-			} else {
-				console.log(' ✗')
-				console.error(`    ${stderr.split('\n')[0]}`)
-				failed++
-			}
+			console.log(' ✗')
+			console.error(`    ${stderr.split('\n')[0]}`)
+			failed++
 		}
 	}
 } finally {
