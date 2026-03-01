@@ -10,29 +10,28 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 // Write a temporary MCP server script that the client will spawn
-const SERVER_SCRIPT = `
-import { createMCPServer } from '@elsium-ai/mcp'
+const SERVER_SCRIPT = `import { createMCPServer } from '@elsium-ai/mcp'
 import { defineTool } from '@elsium-ai/tools'
 import { z } from 'zod'
 
 const echo = defineTool({
-  name: 'echo',
-  description: 'Echoes input text',
-  input: z.object({ text: z.string() }),
-  handler: async (input) => input.text,
+\tname: 'echo',
+\tdescription: 'Echoes input text',
+\tinput: z.object({ text: z.string() }),
+\thandler: async (input) => input.text,
 })
 
 const add = defineTool({
-  name: 'add',
-  description: 'Adds two numbers',
-  input: z.object({ a: z.number(), b: z.number() }),
-  handler: async (input) => String(input.a + input.b),
+\tname: 'add',
+\tdescription: 'Adds two numbers',
+\tinput: z.object({ a: z.number(), b: z.number() }),
+\thandler: async (input) => String(input.a + input.b),
 })
 
 const server = createMCPServer({
-  name: 'test-mcp-server',
-  version: '1.0.0',
-  tools: [echo, add],
+\tname: 'test-mcp-server',
+\tversion: '1.0.0',
+\ttools: [echo, add],
 })
 
 server.start()
