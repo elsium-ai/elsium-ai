@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/core",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "Core types, schemas, errors, and utilities for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",

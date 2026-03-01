@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/agents",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "Agent orchestration, memory, and multi-agent patterns for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",

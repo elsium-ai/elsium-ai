@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/mcp",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "Model Context Protocol (MCP) support for ElsiumAI — bidirectional bridge",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
