@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "types": ["bun-types"],
+    "typeRoots": ["./packages/core/node_modules/@types", "./packages/core/node_modules"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "paths": {
+      "@elsium-ai/core": ["./packages/core/src"],
+      "@elsium-ai/gateway": ["./packages/gateway/src"],
+      "@elsium-ai/agents": ["./packages/agents/src"],
+      "@elsium-ai/rag": ["./packages/rag/src"],
+      "@elsium-ai/tools": ["./packages/tools/src"],
+      "@elsium-ai/workflows": ["./packages/workflows/src"],
+      "@elsium-ai/observe": ["./packages/observe/src"],
+      "@elsium-ai/app": ["./packages/app/src"],
+      "@elsium-ai/testing": ["./packages/testing/src"],
+      "@elsium-ai/mcp": ["./packages/mcp/src"],
+      "elsium-ai": ["./packages/elsium-ai/src"]
+    }
+  },
+  "include": ["packages/*/src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

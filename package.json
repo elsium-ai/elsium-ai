@@ -28,6 +28,7 @@
     "bench:overhead": "bun benchmarks/framework-overhead.ts",
     "bench:check": "bun benchmarks/framework-overhead.ts && bun benchmarks/check-regression.ts",
     "bench:freeze": "bun benchmarks/check-regression.ts --freeze",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "test:coverage": "vitest run --coverage",
     "metrics": "bun scripts/metrics.ts",
     "prepare": "husky"
