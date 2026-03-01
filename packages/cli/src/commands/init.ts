@@ -62,8 +62,8 @@ export async function initCommand(args: string[]) {
 	console.log('  Next steps:')
 	console.log(`    cd ${projectName}`)
 	console.log('    cp .env.example .env   # add your API keys')
-	console.log('    bun install')
-	console.log('    bun run dev')
+	console.log('    npm install')
+	console.log('    npm run dev')
 	console.log()
 }
 
@@ -412,20 +412,20 @@ Built with [ElsiumAI](https://github.com/elsium-ai/elsium-ai).
 
 \`\`\`bash
 cp .env.example .env   # add your API keys
-bun install
-bun run dev
+npm install
+npm run dev
 \`\`\`
 
 ## Scripts
 
 | Command | Description |
 | --- | --- |
-| \`bun run dev\` | Start the dev server |
-| \`bun run test\` | Run unit tests |
-| \`bun run eval\` | Run quality eval suite |
-| \`bun run eval:determinism\` | Run determinism eval |
-| \`bun run lint\` | Lint with Biome |
-| \`bun run format\` | Auto-format with Biome |
+| \`npm run dev\` | Start the dev server |
+| \`npm run test\` | Run unit tests |
+| \`npm run eval\` | Run quality eval suite |
+| \`npm run eval:determinism\` | Run determinism eval |
+| \`npm run lint\` | Lint with Biome |
+| \`npm run format\` | Auto-format with Biome |
 
 ## Project structure
 

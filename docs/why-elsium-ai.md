@@ -230,7 +230,7 @@ ElsiumAI is the production layer. Use it with whatever orchestration and gateway
 ## Get Started
 
 ```bash
-bun add @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents
+npm install @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents
 ```
 
 ```typescript

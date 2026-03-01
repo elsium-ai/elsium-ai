@@ -41,7 +41,7 @@ It also does everything you'd expect — multi-provider gateway, agents, tools, 
 ## Quick Start
 
 ```bash
-bun add @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents
+npm install @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents
 ```
 
 ```typescript
