@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/rag",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "RAG pipeline, document processing, embeddings, and vector stores for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
