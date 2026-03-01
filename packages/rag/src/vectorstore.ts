@@ -1,5 +1,4 @@
-import { generateId } from '@elsium-ai/core'
-import type { Chunk, EmbeddedChunk, EmbeddingVector, QueryOptions, RetrievalResult } from './types'
+import type { EmbeddedChunk, EmbeddingVector, QueryOptions, RetrievalResult } from './types'
 
 export interface VectorStore {
 	readonly name: string

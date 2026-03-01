@@ -4,8 +4,14 @@ import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
 import type { AgentDependencies } from './agent'
 import { createAgentSecurity } from './security'
-import type { AgentConfig, AgentResult, AgentRunOptions } from './types'
-import type { StateDefinition, StateHistoryEntry, StateMachineResult } from './types'
+import type {
+	AgentConfig,
+	AgentResult,
+	AgentRunOptions,
+	StateDefinition,
+	StateHistoryEntry,
+	StateMachineResult,
+} from './types'
 
 export function executeStateMachine(
 	baseConfig: AgentConfig,

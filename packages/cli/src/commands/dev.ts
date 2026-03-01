@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 export async function devCommand(args: string[]) {
 	const entryFile = args[0] ?? 'src/index.ts'

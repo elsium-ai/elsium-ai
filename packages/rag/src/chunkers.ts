@@ -1,5 +1,5 @@
 import { generateId } from '@elsium-ai/core'
-import type { Chunk, ChunkingConfig, ChunkingStrategy, Document } from './types'
+import type { Chunk, ChunkingConfig, Document } from './types'
 
 export interface Chunker {
 	chunk(document: Document): Chunk[]

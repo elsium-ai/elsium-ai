@@ -4,7 +4,6 @@ import {
 	gateway,
 	getProviderMetadata,
 	registerProviderFactory,
-	xrayMiddleware,
 } from '@elsium-ai/gateway'
 import { createCostEngine, registerModelTier } from '@elsium-ai/observe'
 import { mockProvider } from '@elsium-ai/testing'

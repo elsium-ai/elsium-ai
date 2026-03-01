@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { ElsiumStream, createStream } from './stream'
+import { describe, expect, it } from 'vitest'
+import { createStream } from './stream'
 import type { StreamCheckpoint, StreamEvent } from './types'
 
 describe('Resilient Streaming', () => {

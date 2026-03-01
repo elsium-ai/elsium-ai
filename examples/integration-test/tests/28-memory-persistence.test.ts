@@ -1,6 +1,5 @@
 import { defineAgent } from '@elsium-ai/agents'
 import { createMemory } from '@elsium-ai/agents'
-import { mockProvider } from '@elsium-ai/testing'
 /**
  * Test 28: Memory Persistence
  * Verifies: multi-turn memory, resetMemory(), memory strategies

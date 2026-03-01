@@ -1,13 +1,11 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { createMCPClient } from '@elsium-ai/mcp'
-import { defineTool } from '@elsium-ai/tools'
 /**
  * Test 38: MCP Client-Server Real Communication
  * Verifies: real subprocess stdio transport, tool listing, tool execution, error handling
  */
 import { describe, expect, it } from 'vitest'
-import { z } from 'zod'
 
 // Write a temporary MCP server script that the client will spawn
 const SERVER_SCRIPT = `import { createMCPServer } from '@elsium-ai/mcp'

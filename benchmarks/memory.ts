@@ -5,7 +5,6 @@
  */
 
 import { defineAgent } from '@elsium-ai/agents'
-import { createMemory } from '@elsium-ai/agents'
 import type { CompletionRequest, LLMResponse } from '@elsium-ai/core'
 import { generateId, generateTraceId } from '@elsium-ai/core'
 

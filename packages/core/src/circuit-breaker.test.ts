@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createCircuitBreaker } from './circuit-breaker'
-import { ElsiumError } from './errors'
 
 describe('CircuitBreaker', () => {
 	it('starts in closed state', () => {

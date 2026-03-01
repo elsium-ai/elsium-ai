@@ -1,5 +1,4 @@
 import type { Agent } from '@elsium-ai/agents'
-import type { Tracer, TracerConfig } from '@elsium-ai/observe'
 import type { RAGPipeline } from '@elsium-ai/rag'
 
 export interface AppConfig {

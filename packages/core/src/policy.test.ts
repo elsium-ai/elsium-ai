@@ -7,7 +7,6 @@ import {
 	policyMiddleware,
 	tokenLimitPolicy,
 } from './policy'
-import type { PolicyContext, PolicyResult } from './policy'
 
 describe('PolicySet', () => {
 	it('returns empty denials for no policies', () => {

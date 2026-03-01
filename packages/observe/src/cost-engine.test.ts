@@ -1,5 +1,5 @@
 import type { LLMResponse } from '@elsium-ai/core'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createCostEngine } from './cost-engine'
 
 function mockResponse(overrides: Partial<LLMResponse> = {}): LLMResponse {

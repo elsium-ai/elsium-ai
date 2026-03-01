@@ -1,4 +1,4 @@
-import { ElsiumError, createCircuitBreaker, createDedup } from '@elsium-ai/core'
+import { createCircuitBreaker, createDedup } from '@elsium-ai/core'
 import { createBulkhead } from '@elsium-ai/gateway'
 /**
  * Test 30: Concurrency Primitives

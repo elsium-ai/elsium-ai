@@ -14,8 +14,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
     "paths": {
       "@elsium-ai/core": ["./packages/core/src"],
       "@elsium-ai/gateway": ["./packages/gateway/src"],
