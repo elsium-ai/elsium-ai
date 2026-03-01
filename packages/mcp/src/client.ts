@@ -206,6 +206,9 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 
 			connected = false
 			process = null
+			for (const [, { reject }] of pendingRequests) {
+				reject(new Error('MCP client disconnected'))
+			}
 			pendingRequests.clear()
 		},
 
@@ -238,6 +241,7 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 					name: mcpTool.name,
 					description: mcpTool.description,
 					inputSchema: { _def: { typeName: 'ZodObject' } } as never,
+					rawSchema: mcpTool.inputSchema,
 					timeoutMs,
 
 					async execute(

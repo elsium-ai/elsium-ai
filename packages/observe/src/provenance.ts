@@ -48,7 +48,10 @@ function matchesFilter(
 	return true
 }
 
-export function createProvenanceTracker(): ProvenanceTracker {
+export function createProvenanceTracker(options?: {
+	maxRecords?: number
+}): ProvenanceTracker {
+	const maxRecords = options?.maxRecords ?? 10_000
 	const records: ProvenanceRecord[] = []
 	let idCounter = 0
 
@@ -68,6 +71,9 @@ export function createProvenanceTracker(): ProvenanceTracker {
 			}
 
 			records.push(record)
+			if (records.length > maxRecords) {
+				records.shift()
+			}
 			return record
 		},
 

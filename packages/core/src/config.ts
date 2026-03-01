@@ -45,7 +45,8 @@ export function envNumber(name: string, fallback?: number): number {
 export function envBool(name: string, fallback?: boolean): boolean {
 	const raw = getEnvVar(name)
 	if (raw !== undefined) {
-		return raw === 'true' || raw === '1' || raw === 'yes'
+		const normalized = raw.toLowerCase()
+		return normalized === 'true' || normalized === '1' || normalized === 'yes'
 	}
 	if (fallback !== undefined) return fallback
 	throw new ElsiumError({

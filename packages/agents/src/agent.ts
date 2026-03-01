@@ -77,6 +77,32 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			.join('; ')
 	}
 
+	function validateInputText(text: string): void {
+		const validation = guardrails.inputValidator(text)
+		if (validation !== true) {
+			const errorMsg = typeof validation === 'string' ? validation : 'Input validation failed'
+			throw ElsiumError.validation(errorMsg)
+		}
+		if (agentSecurity) {
+			const securityResult = agentSecurity.validateInput(text)
+			if (!securityResult.safe) {
+				throw ElsiumError.validation(
+					`Security violation: ${securityResult.violations.map((v) => v.detail).join('; ')}`,
+				)
+			}
+		}
+	}
+
+	function commitToMemory(
+		conversationMessages: Message[],
+		scopedLength: number,
+		mem: Memory,
+	): void {
+		for (const msg of conversationMessages.slice(scopedLength)) {
+			mem.add(msg)
+		}
+	}
+
 	function validateOutput(outputText: string): void {
 		const validation = guardrails.outputValidator(outputText)
 		if (validation !== true) {
@@ -260,11 +286,9 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		let iterations = 0
 		const toolCallHistory: AgentResult['toolCalls'] = []
 
-		const conversationMessages = [...memory.getMessages(), ...messages]
-
-		for (const msg of messages) {
-			memory.add(msg)
-		}
+		// Scoped copy of memory for concurrency safety
+		const scopedMessages = [...memory.getMessages()]
+		const conversationMessages = [...scopedMessages, ...messages]
 
 		while (iterations < guardrails.maxIterations) {
 			iterations++
@@ -282,7 +306,6 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			await safeHook(() => config.hooks?.onMessage?.(response.message))
 
 			conversationMessages.push(response.message)
-			memory.add(response.message)
 
 			if (!response.message.toolCalls?.length || response.stopReason !== 'tool_use') {
 				const result = await handleNonToolResponse(
@@ -298,12 +321,17 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 				)
 
 				if (result) {
+					commitToMemory(conversationMessages, scopedMessages.length, memory)
 					return result
 				}
 				continue
 			}
 
-			const toolResults = await executeToolCalls(response.message.toolCalls, toolCallHistory)
+			const toolResults = await executeToolCalls(
+				response.message.toolCalls,
+				toolCallHistory,
+				options,
+			)
 
 			const toolMessage: Message = {
 				role: 'tool',
@@ -312,7 +340,6 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			}
 
 			conversationMessages.push(toolMessage)
-			memory.add(toolMessage)
 		}
 
 		throw new ElsiumError({
@@ -323,7 +350,11 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		})
 	}
 
-	async function executeToolCalls(toolCalls: ToolCall[], history: AgentResult['toolCalls']) {
+	async function executeToolCalls(
+		toolCalls: ToolCall[],
+		history: AgentResult['toolCalls'],
+		options: AgentRunOptions = {},
+	) {
 		const results = []
 
 		for (const tc of toolCalls) {
@@ -369,7 +400,10 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 				continue
 			}
 
-			const result = await tool.execute(tc.arguments, { toolCallId: tc.id })
+			const result = await tool.execute(tc.arguments, {
+				toolCallId: tc.id,
+				signal: options.signal,
+			})
 			await safeHook(() => config.hooks?.onToolResult?.(result))
 			history.push({ name: tc.name, arguments: tc.arguments, result })
 			results.push(formatToolResult(result))
@@ -383,21 +417,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		config,
 
 		async run(input: string, options: AgentRunOptions = {}): Promise<AgentResult> {
-			const validation = guardrails.inputValidator(input)
-			if (validation !== true) {
-				const errorMsg = typeof validation === 'string' ? validation : 'Input validation failed'
-				throw ElsiumError.validation(errorMsg)
-			}
-
-			// Security input validation
-			if (agentSecurity) {
-				const securityResult = agentSecurity.validateInput(input)
-				if (!securityResult.safe) {
-					throw ElsiumError.validation(
-						`Security violation: ${securityResult.violations.map((v) => v.detail).join('; ')}`,
-					)
-				}
-			}
+			validateInputText(input)
 
 			// State machine mode
 			if (config.states && config.initialState) {
@@ -415,6 +435,12 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 		},
 
 		async chat(messages: Message[], options: AgentRunOptions = {}): Promise<AgentResult> {
+			// Validate user-role messages
+			for (const msg of messages) {
+				if (msg.role !== 'user') continue
+				validateInputText(extractText(msg.content))
+			}
+
 			// State machine mode
 			if (config.states && config.initialState) {
 				const inputText = messages

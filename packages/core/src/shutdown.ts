@@ -11,6 +11,7 @@ export interface ShutdownConfig {
 export interface ShutdownManager {
 	trackOperation<T>(fn: () => Promise<T>): Promise<T>
 	shutdown(): Promise<void>
+	dispose(): void
 	readonly inFlight: number
 	readonly isShuttingDown: boolean
 }
@@ -30,6 +31,8 @@ export function createShutdownManager(config?: ShutdownConfig): ShutdownManager 
 	let shuttingDown = false
 	let inFlightCount = 0
 	let drainResolve: (() => void) | null = null
+	let shutdownPromise: Promise<void> | null = null
+	const signalHandlers: Array<{ signal: string; handler: () => void }> = []
 
 	function checkDrained(): void {
 		if (inFlightCount === 0 && drainResolve) {
@@ -39,31 +42,40 @@ export function createShutdownManager(config?: ShutdownConfig): ShutdownManager 
 	}
 
 	async function shutdown(): Promise<void> {
-		if (shuttingDown) return
+		if (shutdownPromise) return shutdownPromise
 		shuttingDown = true
 
-		config?.onDrainStart?.()
+		shutdownPromise = (async () => {
+			config?.onDrainStart?.()
 
-		if (inFlightCount === 0) {
-			config?.onDrainComplete?.()
-			return
-		}
+			if (inFlightCount === 0) {
+				config?.onDrainComplete?.()
+				return
+			}
 
-		const drainPromise = new Promise<void>((resolve) => {
-			drainResolve = resolve
-		})
+			const drainPromise = new Promise<void>((resolve) => {
+				drainResolve = resolve
+			})
 
-		const timeoutPromise = new Promise<'timeout'>((resolve) => {
-			setTimeout(() => resolve('timeout'), drainTimeoutMs)
-		})
+			let drainTimer: ReturnType<typeof setTimeout> | undefined
+			const timeoutPromise = new Promise<'timeout'>((resolve) => {
+				drainTimer = setTimeout(() => resolve('timeout'), drainTimeoutMs)
+			})
 
-		const result = await Promise.race([drainPromise.then(() => 'drained' as const), timeoutPromise])
+			const result = await Promise.race([
+				drainPromise.then(() => 'drained' as const),
+				timeoutPromise,
+			])
+			if (drainTimer !== undefined) clearTimeout(drainTimer)
 
-		if (result === 'timeout') {
-			config?.onForceShutdown?.()
-		} else {
-			config?.onDrainComplete?.()
-		}
+			if (result === 'timeout') {
+				config?.onForceShutdown?.()
+			} else {
+				config?.onDrainComplete?.()
+			}
+		})()
+
+		return shutdownPromise
 	}
 
 	const manager: ShutdownManager = {
@@ -94,14 +106,23 @@ export function createShutdownManager(config?: ShutdownConfig): ShutdownManager 
 		},
 
 		shutdown,
+
+		dispose(): void {
+			for (const { signal, handler } of signalHandlers) {
+				process.removeListener(signal, handler)
+			}
+			signalHandlers.length = 0
+		},
 	}
 
 	// Register signal handlers for graceful shutdown
 	if (typeof process !== 'undefined' && process.on) {
 		for (const signal of signals) {
-			process.on(signal, () => {
+			const handler = () => {
 				manager.shutdown()
-			})
+			}
+			signalHandlers.push({ signal, handler })
+			process.on(signal, handler)
 		}
 	}
 

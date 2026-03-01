@@ -50,7 +50,7 @@ export function createSpan(
 	const id = generateId('spn')
 	const traceId = options.traceId ?? generateId('trc')
 	const kind = options.kind ?? 'custom'
-	const startTime = performance.now()
+	const startTime = Date.now()
 
 	const metadata: Record<string, unknown> = {}
 	const events: SpanEvent[] = []
@@ -66,7 +66,7 @@ export function createSpan(
 		addEvent(eventName: string, data?: Record<string, unknown>) {
 			events.push({
 				name: eventName,
-				timestamp: performance.now(),
+				timestamp: Date.now(),
 				data,
 			})
 		},
@@ -80,11 +80,14 @@ export function createSpan(
 		end(result) {
 			if (endTime !== undefined) return
 
-			endTime = performance.now()
+			endTime = Date.now()
 			status = result?.status ?? 'ok'
 
 			if (result?.metadata) {
-				Object.assign(metadata, result.metadata)
+				for (const [key, value] of Object.entries(result.metadata)) {
+					if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue
+					metadata[key] = value
+				}
 			}
 
 			options.onEnd?.(span.toJSON())

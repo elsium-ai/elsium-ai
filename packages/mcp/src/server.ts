@@ -171,17 +171,46 @@ export function createMCPServer(config: MCPServerConfig): MCPServer {
 			if (running) return
 			running = true
 
+			const MAX_BUFFER_SIZE = 1024 * 1024 // 1MB
 			process.stdin.setEncoding('utf-8')
 			let buffer = ''
+			let processing = false
+			const pendingChunks: string[] = []
 
-			process.stdin.on('data', async (chunk: string) => {
-				buffer += chunk
-				const lines = buffer.split('\n')
-				buffer = lines.pop() ?? ''
+			async function drainPendingChunks() {
+				while (pendingChunks.length > 0) {
+					const chunk = pendingChunks[0]
+					pendingChunks.shift()
+					buffer += chunk
 
-				for (const line of lines) {
-					await processRequestLine(line)
+					if (buffer.length > MAX_BUFFER_SIZE) {
+						console.error('MCP server: buffer size limit exceeded, resetting')
+						buffer = ''
+						continue
+					}
+
+					const lines = buffer.split('\n')
+					buffer = lines.pop() ?? ''
+
+					for (const line of lines) {
+						await processRequestLine(line)
+					}
 				}
+			}
+
+			async function processQueue() {
+				if (processing) return
+				processing = true
+				try {
+					await drainPendingChunks()
+				} finally {
+					processing = false
+				}
+			}
+
+			process.stdin.on('data', (chunk: string) => {
+				pendingChunks.push(chunk)
+				processQueue()
 			})
 
 			process.stdin.on('end', () => {

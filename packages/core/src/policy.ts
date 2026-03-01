@@ -1,5 +1,6 @@
 import { ElsiumError } from './errors'
 import type { Middleware, MiddlewareContext, MiddlewareNext } from './types'
+import { extractText } from './utils'
 
 export type PolicyDecision = 'allow' | 'deny'
 
@@ -78,10 +79,15 @@ export function createPolicySet(policies: PolicyConfig[]): PolicySet {
 
 export function policyMiddleware(policySet: PolicySet): Middleware {
 	return async (ctx: MiddlewareContext, next: MiddlewareNext) => {
+		const requestContent = ctx.request.messages.map((m) => extractText(m.content)).join('\n')
+		const tokenCount = Math.ceil(requestContent.length / 4)
+
 		const policyCtx: PolicyContext = {
 			model: ctx.model,
 			provider: ctx.provider,
 			metadata: ctx.metadata,
+			requestContent,
+			tokenCount,
 		}
 
 		const denials = policySet.evaluate(policyCtx)
@@ -106,7 +112,10 @@ export function modelAccessPolicy(allowedModels: string[]): PolicyConfig {
 				if (!ctx.model)
 					return { decision: 'allow', reason: 'No model specified', policyName: 'model-access' }
 				const model = ctx.model
-				const allowed = allowedModels.some((m) => model === m || model.startsWith(m))
+				const allowed = allowedModels.some((m) => {
+					if (m.endsWith('*')) return model.startsWith(m.slice(0, -1))
+					return model === m
+				})
 				return {
 					decision: allowed ? 'allow' : 'deny',
 					reason: allowed ? 'Model is allowed' : `Model "${ctx.model}" is not in allowed list`,

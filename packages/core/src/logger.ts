@@ -37,10 +37,10 @@ export function createLogger(options: LoggerOptions = {}): Logger {
 		if (LOG_LEVELS[logLevel] < minLevel) return
 
 		const entry: LogEntry = {
+			...context,
 			level: logLevel,
 			message,
 			timestamp: new Date().toISOString(),
-			...context,
 			...(data ? { data } : {}),
 		}
 

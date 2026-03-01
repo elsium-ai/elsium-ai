@@ -6,7 +6,7 @@ import type {
 	ProviderConfig,
 	XRayData,
 } from '@elsium-ai/core'
-import { ElsiumError, type ElsiumStream, generateTraceId } from '@elsium-ai/core'
+import { ElsiumError, type ElsiumStream, createStream, generateTraceId } from '@elsium-ai/core'
 import type { z } from 'zod'
 import { composeMiddleware, xrayMiddleware } from './middleware'
 import type { XRayStore } from './middleware'
@@ -118,6 +118,41 @@ export function gateway(config: GatewayConfig): Gateway {
 
 		stream(request: CompletionRequest): ElsiumStream {
 			const req = { ...request, model: request.model ?? defaultModel }
+
+			// Run pre-call middleware (security, policy) before the stream starts
+			if (composedMiddleware) {
+				const ctx: MiddlewareContext = {
+					request: req,
+					provider: provider.name,
+					model: req.model ?? defaultModel,
+					traceId: generateTraceId(),
+					startTime: performance.now(),
+					metadata: request.metadata ?? {},
+				}
+
+				// Return a stream that first validates via middleware, then streams
+				return createStream(async (emit) => {
+					await composedMiddleware(ctx, async (c) => {
+						const stream = provider.stream(c.request)
+						for await (const event of stream) {
+							emit(event)
+						}
+						// Return a dummy LLMResponse to satisfy middleware chain type
+						return {
+							id: '',
+							message: { role: 'assistant' as const, content: '' },
+							usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+							cost: { inputCost: 0, outputCost: 0, totalCost: 0, currency: 'USD' as const },
+							model: c.model,
+							provider: provider.name,
+							stopReason: 'end_turn' as const,
+							latencyMs: 0,
+							traceId: ctx.traceId,
+						}
+					})
+				})
+			}
+
 			return provider.stream(req)
 		},
 

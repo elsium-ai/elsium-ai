@@ -67,13 +67,14 @@ export function createRoutes(deps: RoutesDeps): Hono {
 	app.post('/chat', async (c) => {
 		totalRequests++
 
-		// M13 fix: Enforce body size limit
-		const contentLength = Number(c.req.header('Content-Length') ?? '0')
-		if (contentLength > 1_048_576) {
+		// Enforce body size limit on actual body, not Content-Length header
+		const MAX_BODY_SIZE = 1_048_576
+		const rawText = await c.req.text()
+		if (rawText.length > MAX_BODY_SIZE) {
 			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
 		}
 
-		const body = await c.req.json<ChatRequest>()
+		const body = JSON.parse(rawText) as ChatRequest
 
 		if (!body.message) {
 			return c.json({ error: 'message is required' }, 400)
@@ -123,13 +124,14 @@ export function createRoutes(deps: RoutesDeps): Hono {
 	app.post('/complete', async (c) => {
 		totalRequests++
 
-		// M13 fix: Enforce body size limit
-		const contentLength = Number(c.req.header('Content-Length') ?? '0')
-		if (contentLength > 1_048_576) {
+		// Enforce body size limit on actual body, not Content-Length header
+		const MAX_BODY_SIZE = 1_048_576
+		const rawText = await c.req.text()
+		if (rawText.length > MAX_BODY_SIZE) {
 			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
 		}
 
-		const body = await c.req.json<CompleteRequest>()
+		const body = JSON.parse(rawText) as CompleteRequest
 
 		if (!body.messages?.length) {
 			return c.json({ error: 'messages array is required' }, 400)

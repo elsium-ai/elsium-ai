@@ -29,6 +29,7 @@ export interface AuditStorageAdapter {
 	query(filter: AuditQueryFilter): AuditEvent[] | Promise<AuditEvent[]>
 	count(): number | Promise<number>
 	verifyIntegrity(): AuditIntegrityResult | Promise<AuditIntegrityResult>
+	getLastHash?(): string | Promise<string>
 }
 
 export interface AuditQueryFilter {
@@ -51,6 +52,7 @@ export interface AuditTrailConfig {
 	storage?: AuditStorageAdapter | 'memory'
 	hashChain?: boolean
 	maxEvents?: number
+	onError?: (error: unknown) => void
 }
 
 export interface AuditTrail {
@@ -143,6 +145,11 @@ class InMemoryAuditStorage implements AuditStorageAdapter {
 
 		return { valid: true, totalEvents: this.events.length }
 	}
+
+	getLastHash(): string {
+		if (this.events.length === 0) return '0'.repeat(64)
+		return this.events[this.events.length - 1].hash
+	}
 }
 
 export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
@@ -188,7 +195,10 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			}
 
 			eventCount++
-			storage.append(finalEvent)
+			const result = storage.append(finalEvent)
+			if (result && typeof (result as Promise<void>).catch === 'function') {
+				;(result as Promise<void>).catch((err) => config?.onError?.(err))
+			}
 		},
 
 		async query(filter: AuditQueryFilter): Promise<AuditEvent[]> {

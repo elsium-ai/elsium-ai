@@ -129,6 +129,9 @@ export function observe(config: TracerConfig = {}): Tracer {
 		trackLLMCall(data) {
 			if (!costTracking) return
 			llmCalls.push(data)
+			if (llmCalls.length > maxSpans) {
+				llmCalls.shift()
+			}
 		},
 
 		reset() {

@@ -64,12 +64,14 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 	function formatToolResultContents(msg: Message): GeminiContent[] {
 		const results: GeminiContent[] = []
 		for (const tr of msg.toolResults ?? []) {
+			// Use toolCallId as name fallback; Gemini expects the function name, not the call ID
+			const name = (tr as { toolName?: string }).toolName ?? tr.toolCallId
 			results.push({
-				role: 'model',
+				role: 'user',
 				parts: [
 					{
 						functionResponse: {
-							name: tr.toolCallId,
+							name,
 							response: { content: tr.content },
 						},
 					},
@@ -166,16 +168,6 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 		return { textParts, toolCalls }
 	}
 
-	function mapGeminiStopReason(
-		finishReason: string | undefined,
-		hasToolCalls: boolean,
-	): LLMResponse['stopReason'] {
-		if (finishReason === 'STOP') return 'end_turn'
-		if (finishReason === 'MAX_TOKENS') return 'max_tokens'
-		if (finishReason === 'TOOL_CALLS' || hasToolCalls) return 'tool_use'
-		return 'end_turn'
-	}
-
 	function parseResponse(raw: GeminiResponse, model: string, latencyMs: number): LLMResponse {
 		const traceId = generateTraceId()
 		const candidate = raw.candidates?.[0]
@@ -250,11 +242,14 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 
 			const startTime = performance.now()
 
-			const raw = await retry(() => googleRequest(baseUrl, model, apiKey, body, timeout), {
-				maxRetries,
-				baseDelayMs: 1000,
-				shouldRetry: (e) => e instanceof ElsiumError && e.retryable,
-			})
+			const raw = await retry(
+				() => googleRequest(baseUrl, model, apiKey, body, timeout, req.signal),
+				{
+					maxRetries,
+					baseDelayMs: 1000,
+					shouldRetry: (e) => e instanceof ElsiumError && e.retryable,
+				},
+			)
 
 			const latencyMs = Math.round(performance.now() - startTime)
 			return parseResponse(raw, model, latencyMs)
@@ -269,7 +264,9 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 				const timer = setTimeout(() => controller.abort(), timeout)
 
 				try {
-					const response = await fetchGoogleStream(baseUrl, model, apiKey, body, controller.signal)
+					const signals = [controller.signal, req.signal].filter(Boolean) as AbortSignal[]
+					const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+					const response = await fetchGoogleStream(baseUrl, model, apiKey, body, mergedSignal)
 
 					emit({ type: 'message_start', id: generateId('msg'), model })
 
@@ -289,6 +286,16 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 			]
 		},
 	}
+}
+
+function mapGeminiStopReason(
+	finishReason: string | undefined,
+	hasToolCalls = false,
+): LLMResponse['stopReason'] {
+	if (finishReason === 'STOP') return 'end_turn'
+	if (finishReason === 'MAX_TOKENS') return 'max_tokens'
+	if (finishReason === 'TOOL_CALLS' || hasToolCalls) return 'tool_use'
+	return 'end_turn'
 }
 
 async function handleGoogleErrorResponse(response: Response): Promise<never> {
@@ -314,17 +321,20 @@ async function googleRequest(
 	apiKey: string,
 	body: Record<string, unknown>,
 	timeout: number,
+	reqSignal?: AbortSignal,
 ): Promise<GeminiResponse> {
 	const controller = new AbortController()
 	const timer = setTimeout(() => controller.abort(), timeout)
 
 	try {
+		const signals = [controller.signal, reqSignal].filter(Boolean) as AbortSignal[]
+		const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
 		const url = `${baseUrl}/v1beta/models/${model}:generateContent`
 		const response = await fetch(url, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
 			body: JSON.stringify(body),
-			signal: controller.signal,
+			signal: mergedSignal,
 		})
 
 		if (!response.ok) {
@@ -403,7 +413,7 @@ function emitGeminiFinishEvent(event: GeminiResponse, emit: (event: StreamEvent)
 	emit({
 		type: 'message_end',
 		usage,
-		stopReason: finishReason === 'STOP' ? 'end_turn' : 'end_turn',
+		stopReason: mapGeminiStopReason(finishReason, false),
 	})
 }
 

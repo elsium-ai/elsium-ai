@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import { defineTool } from './define'
 
-// C3 fix: Block requests to private/internal networks
+// C3 fix: Block requests to private/internal networks (including IPv4-mapped IPv6, octal, decimal representations)
 const BLOCKED_HOSTS =
-	/^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[::1\]|\[fd[0-9a-f]{2}:)/i
+	/^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|0+\.0+\.0+\.0+|\[::1\]|\[::ffff:127\.\d+\.\d+\.\d+\]|::ffff:127\.\d+\.\d+\.\d+|0177\.\d+\.\d+\.\d+|2130706433|\[fd[0-9a-f]{2}:)/i
 
 function validateUrl(urlString: string): void {
 	const parsed = new URL(urlString)
@@ -34,7 +34,16 @@ export const httpFetchTool = defineTool({
 		const response = await fetch(url, {
 			headers,
 			signal: context.signal,
+			redirect: 'manual',
 		})
+
+		// Validate redirect Location header against blocked hosts before following
+		if (response.status >= 300 && response.status < 400) {
+			const location = response.headers.get('Location')
+			if (location) {
+				validateUrl(new URL(location, url).toString())
+			}
+		}
 
 		const body = await response.text()
 		const contentType = response.headers.get('content-type') ?? 'text/plain'
@@ -200,11 +209,12 @@ function parseTerm(tokens: Token[], pos: { i: number }): number {
 }
 
 function parseExponent(tokens: Token[], pos: { i: number }): number {
-	let base = parseUnary(tokens, pos)
-	while (pos.i < tokens.length && tokens[pos.i]?.type === 'op' && tokens[pos.i].value === '**') {
+	const base = parseUnary(tokens, pos)
+	if (pos.i < tokens.length && tokens[pos.i]?.type === 'op' && tokens[pos.i].value === '**') {
 		pos.i++
-		const exp = parseUnary(tokens, pos)
-		base = base ** exp
+		// Right-associative: 2**3**2 = 2**(3**2) = 512
+		const exp = parseExponent(tokens, pos)
+		return base ** exp
 	}
 	return base
 }

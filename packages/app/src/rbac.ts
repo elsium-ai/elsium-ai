@@ -25,6 +25,7 @@ export interface RBACConfig {
 	roles: Role[]
 	defaultRole?: string
 	roleExtractor?: (c: Context) => string | undefined
+	trustRoleHeader?: boolean
 }
 
 export interface RBAC {
@@ -118,7 +119,10 @@ export function createRBAC(config: RBACConfig): RBAC {
 				const extractor =
 					config.roleExtractor ??
 					((ctx: Context) => {
-						return ctx.req.header('X-Role') ?? config.defaultRole
+						if (config.trustRoleHeader) {
+							return ctx.req.header('X-Role') ?? config.defaultRole ?? 'viewer'
+						}
+						return config.defaultRole ?? 'viewer'
 					})
 
 				const roleName = extractor(c)

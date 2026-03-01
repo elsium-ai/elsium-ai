@@ -52,9 +52,10 @@ describe('createConfidenceScorer', () => {
 			}
 
 			const result = await scorer.score('input', 'output', semanticResult)
-			// hallucinationRisk = 1 - 0.8 = 0.2, relevanceScore = 0.6
-			// overall = (0.2 + 0.6) / 2 = 0.4
-			expect(result.overall).toBeCloseTo(0.4)
+			// hallucinationRisk = 1 - 0.8 = 0.2 (risk), normalized for overall = 1 - 0.2 = 0.8 (confidence)
+			// relevanceScore = 0.6 (already higher = better)
+			// overall = (0.8 + 0.6) / 2 = 0.7
+			expect(result.overall).toBeCloseTo(0.7)
 		})
 	})
 

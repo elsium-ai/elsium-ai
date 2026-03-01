@@ -186,7 +186,7 @@ describe('Utils', () => {
 				if (attempts < 3) throw new Error('fail')
 				return 'success'
 			},
-			{ maxRetries: 3, baseDelayMs: 10 },
+			{ maxRetries: 3, baseDelayMs: 10, shouldRetry: () => true },
 		)
 		expect(result).toBe('success')
 		expect(attempts).toBe(3)
@@ -205,7 +205,7 @@ describe('Utils', () => {
 				}
 				return 'success'
 			},
-			{ maxRetries: 3, baseDelayMs: 1000 },
+			{ maxRetries: 3, baseDelayMs: 1000, shouldRetry: () => true },
 		)
 		const elapsed = Date.now() - startTime
 		expect(result).toBe('success')

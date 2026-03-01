@@ -115,6 +115,10 @@ export function dedupMiddleware(config?: DedupConfig): Middleware {
 			system: ctx.request.system,
 			temperature: ctx.request.temperature,
 			seed: ctx.request.seed,
+			maxTokens: ctx.request.maxTokens,
+			topP: ctx.request.topP,
+			stopSequences: ctx.request.stopSequences,
+			tools: ctx.request.tools,
 		})
 
 		return dedup.deduplicate(key, () => next(ctx))

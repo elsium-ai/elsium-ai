@@ -35,7 +35,10 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 
 // ─── In-Memory Vector Store ──────────────────────────────────────
 
-export function createInMemoryStore(): VectorStore {
+export function createInMemoryStore(options?: {
+	maxChunks?: number
+}): VectorStore {
+	const maxChunks = options?.maxChunks ?? 100_000
 	const entries = new Map<string, EmbeddedChunk>()
 
 	return {
@@ -44,6 +47,11 @@ export function createInMemoryStore(): VectorStore {
 		async upsert(chunks: EmbeddedChunk[]): Promise<void> {
 			for (const chunk of chunks) {
 				entries.set(chunk.id, chunk)
+			}
+			// Evict oldest entries if over limit
+			while (entries.size > maxChunks) {
+				const firstKey = entries.keys().next().value
+				if (firstKey !== undefined) entries.delete(firstKey)
 			}
 		},
 

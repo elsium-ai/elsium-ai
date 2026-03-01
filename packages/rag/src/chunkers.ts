@@ -14,6 +14,10 @@ export function fixedSizeChunker(options?: {
 	const maxSize = options?.maxChunkSize ?? 512
 	const overlap = options?.overlap ?? 0
 
+	if (overlap >= maxSize) {
+		throw new Error('overlap must be less than maxChunkSize')
+	}
+
 	return {
 		chunk(document: Document): Chunk[] {
 			const { content } = document
@@ -63,6 +67,10 @@ export function recursiveChunker(options?: {
 	const maxSize = options?.maxChunkSize ?? 512
 	const overlap = options?.overlap ?? 0
 	const separators = options?.separators ?? DEFAULT_SEPARATORS
+
+	if (overlap >= maxSize) {
+		throw new Error('overlap must be less than maxChunkSize')
+	}
 
 	function fixedSizeSplit(text: string): string[] {
 		const parts: string[] = []

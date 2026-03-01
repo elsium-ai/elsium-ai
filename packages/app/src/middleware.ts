@@ -21,6 +21,7 @@ export function corsMiddleware(config: CorsConfig | boolean = true) {
 
 		if (allowedOrigin) {
 			c.res.headers.set('Access-Control-Allow-Origin', allowedOrigin)
+			c.res.headers.set('Vary', 'Origin')
 		}
 		c.res.headers.set(
 			'Access-Control-Allow-Methods',
@@ -75,6 +76,15 @@ export function authMiddleware(config: AuthConfig) {
 
 // ─── Rate Limiting ───────────────────────────────────────────────
 
+function cleanupExpiredEntries(
+	requests: Map<string, { count: number; resetTime: number }>,
+	now: number,
+): void {
+	for (const [key, entry] of requests) {
+		if (now > entry.resetTime) requests.delete(key)
+	}
+}
+
 // H3 fix: Don't trust X-Forwarded-For from untrusted clients
 export function rateLimitMiddleware(config: RateLimitConfig) {
 	const requests = new Map<string, { count: number; resetTime: number }>()
@@ -84,6 +94,16 @@ export function rateLimitMiddleware(config: RateLimitConfig) {
 		// Do NOT trust X-Forwarded-For as it's client-controlled
 		const clientId = c.req.header('CF-Connecting-IP') ?? c.req.header('X-Real-IP') ?? 'anonymous'
 		const now = Date.now()
+
+		// Periodic cleanup: evict expired entries when map grows large
+		if (requests.size > 10_000) {
+			cleanupExpiredEntries(requests, now)
+		}
+
+		// DoS protection: hard cap on map size
+		if (requests.size > 100_000) {
+			return c.json({ error: 'Too many requests', retryAfterMs: config.windowMs }, 429)
+		}
 
 		let record = requests.get(clientId)
 

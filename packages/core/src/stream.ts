@@ -52,12 +52,17 @@ function* emitErrorEvent(
 
 export class ElsiumStream implements AsyncIterable<StreamEvent> {
 	private readonly source: AsyncIterable<StreamEvent>
+	private iterating = false
 
 	constructor(source: AsyncIterable<StreamEvent>) {
 		this.source = source
 	}
 
 	async *[Symbol.asyncIterator](): AsyncIterableIterator<StreamEvent> {
+		if (this.iterating) {
+			throw new Error('ElsiumStream supports only a single consumer')
+		}
+		this.iterating = true
 		yield* this.source
 	}
 
@@ -93,11 +98,14 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 				const remaining = deadline - Date.now()
 				if (remaining <= 0) break
 
-				const timeoutPromise = new Promise<{ value: undefined; done: true }>((resolve) =>
-					setTimeout(() => resolve({ value: undefined, done: true }), remaining),
-				)
+				let timer: ReturnType<typeof setTimeout> | undefined
+				const timeoutPromise = new Promise<{ value: undefined; done: true }>((resolve) => {
+					timer = setTimeout(() => resolve({ value: undefined, done: true }), remaining)
+				})
 
 				const result = await Promise.race([iterator.next(), timeoutPromise])
+				if (timer !== undefined) clearTimeout(timer)
+
 				if (result.done) break
 
 				const event = result.value as StreamEvent
@@ -107,6 +115,8 @@ export class ElsiumStream implements AsyncIterable<StreamEvent> {
 			}
 		} catch (err) {
 			if (parts.length === 0) throw err
+		} finally {
+			await iterator.return?.()
 		}
 
 		return parts.join('')
@@ -192,6 +202,7 @@ export function createStream(
 	const buffer: StreamEvent[] = []
 	let done = false
 	let error: Error | null = null
+	let dropped = 0
 
 	const source: AsyncIterable<StreamEvent> = {
 		[Symbol.asyncIterator]() {
@@ -223,13 +234,20 @@ export function createStream(
 		} else {
 			if (buffer.length < MAX_BUFFER_SIZE) {
 				buffer.push(event)
+			} else {
+				dropped++
 			}
-			// Drop events if buffer is full (backpressure)
 		}
 	}
 
 	executor(emit)
 		.then(() => {
+			if (dropped > 0) {
+				emit({
+					type: 'error',
+					error: new Error(`Stream buffer overflow: ${dropped} events dropped`),
+				})
+			}
 			done = true
 			if (resolve) {
 				const r = resolve

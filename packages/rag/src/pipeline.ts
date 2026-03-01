@@ -52,6 +52,10 @@ export function rag(config: RAGPipelineConfig): RAGPipeline {
 		strategy: 'similarity',
 	}
 
+	if (config.store) {
+		throw new Error('External vector store not yet implemented. Use in-memory store.')
+	}
+
 	const loader = getLoader(loaderType)
 	const chunker = getChunker(chunkingConfig)
 	const embeddingProvider = getEmbeddingProvider(config.embeddings)

@@ -1,4 +1,5 @@
 import type { Message } from '@elsium-ai/core'
+import { extractText } from '@elsium-ai/core'
 import type { Agent } from './agent'
 import type { AgentResult, AgentRunOptions } from './types'
 
@@ -20,7 +21,7 @@ export async function runSequential(
 		const result = await agent.run(currentInput, options)
 		results.push(result)
 
-		const outputText = typeof result.message.content === 'string' ? result.message.content : ''
+		const outputText = extractText(result.message.content)
 		currentInput = outputText
 	}
 

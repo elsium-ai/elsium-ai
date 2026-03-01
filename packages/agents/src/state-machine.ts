@@ -1,8 +1,9 @@
 import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-ai/core'
-import { ElsiumError, generateTraceId } from '@elsium-ai/core'
+import { ElsiumError, extractText, generateTraceId } from '@elsium-ai/core'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
 import type { AgentDependencies } from './agent'
+import { createAgentSecurity } from './security'
 import type { AgentConfig, AgentResult, AgentRunOptions } from './types'
 import type { StateDefinition, StateHistoryEntry, StateMachineResult } from './types'
 
@@ -21,6 +22,7 @@ function handleToolCallsAndContinue(
 	toolMap: Map<string, Tool>,
 	toolCallHistory: AgentResult['toolCalls'],
 	conversationMessages: Message[],
+	signal?: AbortSignal,
 ): Promise<void> | null {
 	const toolCalls = response.message.toolCalls
 	if (!toolCalls?.length || response.stopReason !== 'tool_use') {
@@ -28,7 +30,7 @@ function handleToolCallsAndContinue(
 	}
 
 	return (async () => {
-		const toolResults = await executeToolCalls(toolCalls, toolMap, toolCallHistory)
+		const toolResults = await executeToolCalls(toolCalls, toolMap, toolCallHistory, signal)
 		const toolMessage: Message = {
 			role: 'tool',
 			content: '',
@@ -118,6 +120,34 @@ function buildAgentResult(
 	}
 }
 
+function applyOutputGuardrails(
+	response: LLMResponse,
+	outputValidator: (text: string) => boolean | string,
+	agentSecurity: ReturnType<typeof createAgentSecurity> | null,
+): LLMResponse {
+	const outputText = extractText(response.message.content)
+	const validation = outputValidator(outputText)
+	if (validation !== true) {
+		const errorMsg = typeof validation === 'string' ? validation : 'Output validation failed'
+		throw ElsiumError.validation(errorMsg)
+	}
+	if (!agentSecurity) return response
+	const secResult = agentSecurity.sanitizeOutput(outputText)
+	if (!secResult.safe && secResult.redactedOutput) {
+		return {
+			...response,
+			message: { ...response.message, content: secResult.redactedOutput },
+		}
+	}
+	return response
+}
+
+function checkTokenBudget(totalTokens: number, maxBudget: number): void {
+	if (totalTokens > maxBudget) {
+		throw ElsiumError.budgetExceeded(totalTokens, maxBudget)
+	}
+}
+
 async function runStateMachine(
 	baseConfig: AgentConfig,
 	stateConfig: { states: Record<string, StateDefinition>; initialState: string },
@@ -146,6 +176,12 @@ async function runStateMachine(
 		})
 	}
 
+	const agentSecurity = baseConfig.guardrails?.security
+		? createAgentSecurity(baseConfig.guardrails.security)
+		: null
+	const maxTokenBudget = guardrails?.maxTokenBudget ?? 500_000
+	const outputValidator = guardrails?.outputValidator ?? (() => true)
+
 	const conversationMessages: Message[] = [{ role: 'user', content: input }]
 
 	while (iterations < maxIterations) {
@@ -165,11 +201,17 @@ async function runStateMachine(
 			stateTools,
 			stateSystem,
 		)
-		const response = await deps.complete(request)
+		let response = await deps.complete(request)
 
 		totalInputTokens += response.usage.inputTokens
 		totalOutputTokens += response.usage.outputTokens
 		totalCost += response.cost.totalCost
+
+		// Token budget check
+		checkTokenBudget(totalInputTokens + totalOutputTokens, maxTokenBudget)
+
+		// Apply output validation and security sanitization
+		response = applyOutputGuardrails(response, outputValidator, agentSecurity)
 
 		conversationMessages.push(response.message)
 
@@ -179,6 +221,7 @@ async function runStateMachine(
 			toolMap,
 			toolCallHistory,
 			conversationMessages,
+			options.signal,
 		)
 		if (toolCallAction) {
 			await toolCallAction
@@ -227,6 +270,7 @@ async function executeToolCalls(
 	toolCalls: ToolCall[],
 	toolMap: Map<string, Tool>,
 	history: AgentResult['toolCalls'],
+	signal?: AbortSignal,
 ) {
 	const results = []
 
@@ -244,7 +288,7 @@ async function executeToolCalls(
 			continue
 		}
 
-		const result = await tool.execute(tc.arguments, { toolCallId: tc.id })
+		const result = await tool.execute(tc.arguments, { toolCallId: tc.id, signal })
 		history.push({ name: tc.name, arguments: tc.arguments, result })
 		results.push(formatToolResult(result))
 	}

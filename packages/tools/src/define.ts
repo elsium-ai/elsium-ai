@@ -22,6 +22,7 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
 	readonly description: string
 	readonly inputSchema: z.ZodType<TInput>
 	readonly outputSchema?: z.ZodType<TOutput>
+	readonly rawSchema?: Record<string, unknown>
 	readonly timeoutMs: number
 
 	execute(input: unknown, context?: Partial<ToolContext>): Promise<ToolExecutionResult<TOutput>>
@@ -131,34 +132,37 @@ export function defineTool<TInput, TOutput>(
  * since Zod does not expose a public schema introspection API.
  * Pin Zod minor version in package.json to guard against internal changes.
  */
+function zodObjectToJsonSchema(def: Record<string, unknown>): Record<string, unknown> {
+	const shape =
+		typeof def.shape === 'function'
+			? (def.shape as () => Record<string, unknown>)()
+			: (def.shape as Record<string, unknown>)
+	const properties: Record<string, unknown> = {}
+	const required: string[] = []
+
+	for (const [key, value] of Object.entries(shape)) {
+		const fieldSchema = value as z.ZodType
+		properties[key] = zodToJsonSchema(fieldSchema)
+		const fieldDef = fieldSchema._def as Record<string, unknown>
+		if (fieldDef.typeName !== 'ZodOptional' && fieldDef.typeName !== 'ZodDefault') {
+			required.push(key)
+		}
+		if (fieldDef.description) {
+			;(properties[key] as Record<string, unknown>).description = fieldDef.description
+		}
+	}
+
+	return { type: 'object', properties, required }
+}
+
 function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 	if (!('_def' in schema)) return { type: 'object' }
 
 	const def = schema._def as Record<string, unknown>
 
 	switch (def.typeName) {
-		case 'ZodObject': {
-			const shape =
-				typeof def.shape === 'function'
-					? (def.shape as () => Record<string, unknown>)()
-					: (def.shape as Record<string, unknown>)
-			const properties: Record<string, unknown> = {}
-			const required: string[] = []
-
-			for (const [key, value] of Object.entries(shape)) {
-				const fieldSchema = value as z.ZodType
-				properties[key] = zodToJsonSchema(fieldSchema)
-				const fieldDef = fieldSchema._def as Record<string, unknown>
-				if (fieldDef.typeName !== 'ZodOptional' && fieldDef.typeName !== 'ZodDefault') {
-					required.push(key)
-				}
-				if (fieldDef.description) {
-					;(properties[key] as Record<string, unknown>).description = fieldDef.description
-				}
-			}
-
-			return { type: 'object', properties, required }
-		}
+		case 'ZodObject':
+			return zodObjectToJsonSchema(def)
 		case 'ZodString':
 			return { type: 'string' }
 		case 'ZodNumber':
@@ -186,7 +190,21 @@ function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 			const options = (def.options as z.ZodType[]).map(zodToJsonSchema)
 			return { anyOf: options }
 		}
+		case 'ZodRecord':
+			return {
+				type: 'object',
+				additionalProperties: def.valueType
+					? zodToJsonSchema(def.valueType as z.ZodType)
+					: { type: 'string' },
+			}
+		case 'ZodTuple': {
+			const items = ((def.items as z.ZodType[]) ?? []).map(zodToJsonSchema)
+			return { type: 'array', prefixItems: items, minItems: items.length, maxItems: items.length }
+		}
+		case 'ZodDate':
+			return { type: 'string', format: 'date-time' }
 		default:
+			console.warn(`zodToJsonSchema: unsupported type ${def.typeName}, defaulting to string`)
 			return { type: 'string' }
 	}
 }

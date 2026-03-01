@@ -97,9 +97,14 @@ export function createConfidenceScorer(config: ConfidenceConfig): {
 			}
 		}
 
+		// When averaging, invert hallucinationRisk (lower risk = higher confidence)
 		const overall =
 			base.checks.length > 0
-				? base.checks.reduce((sum, c) => sum + c.score, 0) / base.checks.length
+				? base.checks.reduce((sum, c) => {
+						const mapping = Object.values(SEMANTIC_MAP).find((m) => m.outName === c.name)
+						const normalized = mapping?.invert ? 1 - c.score : c.score
+						return sum + normalized
+					}, 0) / base.checks.length
 				: 0
 
 		return {

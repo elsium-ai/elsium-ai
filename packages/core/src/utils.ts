@@ -64,9 +64,9 @@ export function retry<T>(
 		maxDelayMs = 30000,
 		shouldRetry = (error: unknown) => {
 			if (error && typeof error === 'object' && 'retryable' in error) {
-				return (error as { retryable: boolean }).retryable !== false
+				return (error as { retryable: boolean }).retryable === true
 			}
-			return true
+			return false
 		},
 	} = options
 

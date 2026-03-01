@@ -261,7 +261,9 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 					const timer = setTimeout(() => controller.abort(), timeout)
 
 					try {
-						const resp = await request('/chat/completions', body, controller.signal)
+						const signals = [controller.signal, req.signal].filter(Boolean) as AbortSignal[]
+						const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+						const resp = await request('/chat/completions', body, mergedSignal)
 						return (await resp.json()) as OpenAIResponse
 					} finally {
 						clearTimeout(timer)
@@ -291,6 +293,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 				messages,
 				max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
 				stream: true,
+				stream_options: { include_usage: true },
 				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
 				...(req.seed !== undefined ? { seed: req.seed } : {}),
 				...(req.topP !== undefined ? { top_p: req.topP } : {}),
@@ -305,7 +308,9 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 				const timer = setTimeout(() => controller.abort(), timeout)
 
 				try {
-					const resp = await request('/chat/completions', body, controller.signal)
+					const signals = [controller.signal, req.signal].filter(Boolean) as AbortSignal[]
+					const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+					const resp = await request('/chat/completions', body, mergedSignal)
 
 					if (!resp.body)
 						throw new ElsiumError({
@@ -351,10 +356,28 @@ function emitOpenAIToolCallEvents(
 	}
 }
 
+interface OpenAISSEState {
+	endEmitted: boolean
+	usage: TokenUsage
+}
+
 function processOpenAISSEChunk(
 	event: Record<string, unknown>,
 	emit: (event: StreamEvent) => void,
+	state: OpenAISSEState,
 ): void {
+	// Parse usage from final chunk (stream_options: { include_usage: true })
+	const eventUsage = event.usage as
+		| { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+		| undefined
+	if (eventUsage) {
+		state.usage = {
+			inputTokens: eventUsage.prompt_tokens ?? 0,
+			outputTokens: eventUsage.completion_tokens ?? 0,
+			totalTokens: eventUsage.total_tokens ?? 0,
+		}
+	}
+
 	const delta = (
 		event.choices as Array<{ delta?: Record<string, unknown>; finish_reason?: string }>
 	)?.[0]?.delta
@@ -371,30 +394,38 @@ function processOpenAISSEChunk(
 	}
 
 	const finishReason = (event.choices as Array<{ finish_reason?: string }>)?.[0]?.finish_reason
-	if (finishReason === 'tool_calls') {
+	if (finishReason === 'tool_calls' && !state.endEmitted) {
+		state.endEmitted = true
 		emit({
 			type: 'message_end',
-			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+			usage: state.usage,
 			stopReason: 'tool_use',
 		})
 	}
 }
 
-function processOpenAISSELine(line: string, emit: (event: StreamEvent) => void): void {
+function processOpenAISSELine(
+	line: string,
+	emit: (event: StreamEvent) => void,
+	state: OpenAISSEState,
+): void {
 	if (!line.startsWith('data: ')) return
 	const data = line.slice(6).trim()
 	if (data === '[DONE]') {
-		emit({
-			type: 'message_end',
-			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-			stopReason: 'end_turn',
-		})
+		if (!state.endEmitted) {
+			state.endEmitted = true
+			emit({
+				type: 'message_end',
+				usage: state.usage,
+				stopReason: 'end_turn',
+			})
+		}
 		return
 	}
 
 	try {
 		const event = JSON.parse(data)
-		processOpenAISSEChunk(event, emit)
+		processOpenAISSEChunk(event, emit, state)
 	} catch (err) {
 		emit({ type: 'error', error: err instanceof Error ? err : new Error(String(err)) })
 	}
@@ -407,6 +438,10 @@ async function processOpenAISSEStream(
 	const reader = body.getReader()
 	const decoder = new TextDecoder()
 	let buffer = ''
+	const state: OpenAISSEState = {
+		endEmitted: false,
+		usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+	}
 
 	while (true) {
 		const { done, value } = await reader.read()
@@ -417,7 +452,7 @@ async function processOpenAISSEStream(
 		buffer = lines.pop() ?? ''
 
 		for (const line of lines) {
-			processOpenAISSELine(line, emit)
+			processOpenAISSELine(line, emit, state)
 		}
 	}
 }

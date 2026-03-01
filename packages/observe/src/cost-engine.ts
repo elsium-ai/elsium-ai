@@ -141,8 +141,11 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 	const recentCalls: CallRecord[] = []
 	const alertedThresholds = new Set<string>()
 
+	const maxAlerts = 1_000
+
 	function emitAlert(alert: CostAlert) {
 		alerts.push(alert)
+		if (alerts.length > maxAlerts) alerts.shift()
 		config.onAlert?.(alert)
 	}
 
@@ -297,6 +300,21 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 				const agent = ctx.metadata.agentName as string | undefined
 				const user = ctx.metadata.userId as string | undefined
 				const feature = ctx.metadata.feature as string | undefined
+
+				// Pre-call budget estimation
+				if (config.totalBudget) {
+					const inputText = ctx.request.messages
+						.map((m) => (typeof m.content === 'string' ? m.content : ''))
+						.join('')
+					const estimatedTokens = Math.ceil(inputText.length / 4)
+					const modelTier = MODEL_TIERS[ctx.model]
+					if (modelTier) {
+						const estimatedCost = (estimatedTokens / 1_000_000) * modelTier.costPerMToken
+						if (totalSpend + estimatedCost > config.totalBudget) {
+							throw ElsiumError.validation('Budget would be exceeded')
+						}
+					}
+				}
 
 				const response = await next(ctx)
 				trackCall(response, { agent, user, feature })

@@ -14,7 +14,8 @@ export interface MetricEntry {
 	timestamp: number
 }
 
-export function createMetrics(): MetricsCollector {
+export function createMetrics(options?: { maxEntries?: number }): MetricsCollector {
+	const maxEntries = options?.maxEntries ?? 50_000
 	const entries: MetricEntry[] = []
 	const counters = new Map<string, number>()
 	const gauges = new Map<string, number>()
@@ -40,6 +41,7 @@ export function createMetrics(): MetricsCollector {
 				tags: tags ?? {},
 				timestamp: Date.now(),
 			})
+			if (entries.length > maxEntries) entries.shift()
 		},
 
 		gauge(name: string, value: number, tags?: Record<string, string>) {
@@ -52,6 +54,7 @@ export function createMetrics(): MetricsCollector {
 				tags: tags ?? {},
 				timestamp: Date.now(),
 			})
+			if (entries.length > maxEntries) entries.shift()
 		},
 
 		histogram(name: string, value: number, tags?: Record<string, string>) {
@@ -62,6 +65,7 @@ export function createMetrics(): MetricsCollector {
 				tags: tags ?? {},
 				timestamp: Date.now(),
 			})
+			if (entries.length > maxEntries) entries.shift()
 		},
 
 		getMetrics(): MetricEntry[] {

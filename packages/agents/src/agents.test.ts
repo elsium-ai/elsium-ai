@@ -469,9 +469,7 @@ describe('defineAgent - chat()', () => {
 		expect(result.message.content).toBe('I remember the context')
 	})
 
-	it('does not run input validation (unlike run())', async () => {
-		const deps = mockDeps([{ message: { role: 'assistant', content: 'OK' } }])
-
+	it('validates user-role messages in chat()', async () => {
 		const agent = defineAgent(
 			{
 				name: 'strict',
@@ -480,12 +478,10 @@ describe('defineAgent - chat()', () => {
 					inputValidator: () => 'Input too short',
 				},
 			},
-			deps,
+			mockDeps([{ message: { role: 'assistant', content: 'OK' } }]),
 		)
 
-		// chat() bypasses the inputValidator since it takes raw messages
-		const result = await agent.chat([{ role: 'user', content: 'Hi' }])
-
-		expect(result.message.content).toBe('OK')
+		// chat() now validates user-role messages (fix 4.2)
+		await expect(agent.chat([{ role: 'user', content: 'Hi' }])).rejects.toThrow('Input too short')
 	})
 })

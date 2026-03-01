@@ -67,6 +67,7 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 	let failureTimestamps: number[] = []
 	let lastOpenedAt = 0
 	let halfOpenAttempts = 0
+	let halfOpenInFlight = 0
 
 	function transition(to: CircuitState): void {
 		if (currentState === to) return
@@ -92,6 +93,7 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 		if (currentState === 'half-open') {
 			failureTimestamps = []
 			halfOpenAttempts = 0
+			halfOpenInFlight = 0
 			transition('closed')
 		}
 	}
@@ -122,7 +124,7 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 				})
 			}
 
-			if (state === 'half-open' && halfOpenAttempts >= halfOpenMaxAttempts) {
+			if (state === 'half-open' && halfOpenInFlight >= halfOpenMaxAttempts) {
 				lastOpenedAt = Date.now()
 				transition('open')
 				throw new ElsiumError({
@@ -134,6 +136,7 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 
 			if (state === 'half-open') {
 				halfOpenAttempts++
+				halfOpenInFlight++
 			}
 
 			try {
@@ -145,12 +148,17 @@ export function createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBrea
 					recordFailure()
 				}
 				throw error
+			} finally {
+				if (state === 'half-open') {
+					halfOpenInFlight = Math.max(0, halfOpenInFlight - 1)
+				}
 			}
 		},
 
 		reset(): void {
 			failureTimestamps = []
 			halfOpenAttempts = 0
+			halfOpenInFlight = 0
 			transition('closed')
 		},
 	}

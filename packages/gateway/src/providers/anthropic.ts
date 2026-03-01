@@ -289,7 +289,9 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 					const timer = setTimeout(() => controller.abort(), timeout)
 
 					try {
-						const resp = await request('/messages', body, controller.signal)
+						const signals = [controller.signal, req.signal].filter(Boolean) as AbortSignal[]
+						const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+						const resp = await request('/messages', body, mergedSignal)
 						return (await resp.json()) as AnthropicResponse
 					} finally {
 						clearTimeout(timer)
@@ -330,7 +332,9 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 				const timer = setTimeout(() => controller.abort(), timeout)
 
 				try {
-					const resp = await request('/messages', body, controller.signal)
+					const signals = [controller.signal, req.signal].filter(Boolean) as AbortSignal[]
+					const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+					const resp = await request('/messages', body, mergedSignal)
 
 					if (!resp.body)
 						throw new ElsiumError({
