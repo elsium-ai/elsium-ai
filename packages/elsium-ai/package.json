@@ -1,6 +1,6 @@
 {
 	"name": "elsium-ai",
-	"version": "0.1.7",
+	"version": "0.2.0",
 	"description": "ElsiumAI — A high-performance, TypeScript-first AI framework",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",

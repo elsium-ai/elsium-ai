@@ -1,5 +1,16 @@
 # @elsium-ai/tools
 
+## 0.2.0
+
+### Minor Changes
+
+- a1af089: Switch build target from `--target bun` to `--target node` for cross-runtime compatibility (Node.js, Bun, Deno). Replace `Bun.serve()` with `@hono/node-server`. Replace `bun-types` with `@types/node`. Remove `priority` field from `ProviderEntry` — array order now determines provider priority.
+
+### Patch Changes
+
+- Updated dependencies [a1af089]
+  - @elsium-ai/core@0.2.0
+
 ## 0.1.7
 
 ### Patch Changes
