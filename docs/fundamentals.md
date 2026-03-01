@@ -9,9 +9,9 @@ A comprehensive guide to every core feature in ElsiumAI, with real-world example
 
 ## The Philosophy
 
-Every AI framework helps you call an LLM. None of them help you **trust** the result.
+Every AI framework helps you call an LLM. ElsiumAI helps you **trust** the result.
 
-ElsiumAI is built on **three pillars** that most frameworks ignore entirely:
+ElsiumAI is built on **three pillars** that the ecosystem hasn't prioritized yet:
 
 | Pillar | The guarantee |
 |--------|--------------|
