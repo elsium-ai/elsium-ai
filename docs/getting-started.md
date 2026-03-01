@@ -4,7 +4,7 @@ A quick guide to building your first AI application with ElsiumAI.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) v1.3+
+- [Node.js](https://nodejs.org) v20+ (or [Bun](https://bun.sh) v1.3+)
 - An API key from [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/), or [Google](https://aistudio.google.com/)
 
 ## Create a Project
@@ -13,7 +13,7 @@ The fastest way to get started:
 
 ```bash
 # Install the CLI globally
-bun add -g @elsium-ai/cli
+npm install -g @elsium-ai/cli
 
 # Scaffold a new project
 elsium init my-app
@@ -24,10 +24,10 @@ cp .env.example .env
 # Edit .env and add your ANTHROPIC_API_KEY
 
 # Install dependencies
-bun install
+npm install
 
 # Start development
-bun run dev
+npm run dev
 ```
 
 This creates a project with:
@@ -70,10 +70,10 @@ If you prefer to set things up yourself:
 
 ```bash
 mkdir my-app && cd my-app
-bun init -y
+npm init -y
 
-bun add @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents @elsium-ai/tools @elsium-ai/app @elsium-ai/mcp
-bun add -d @elsium-ai/testing typescript
+npm install @elsium-ai/core @elsium-ai/gateway @elsium-ai/agents @elsium-ai/tools @elsium-ai/app @elsium-ai/mcp
+npm install -D @elsium-ai/testing typescript
 ```
 
 ## Your First Agent
@@ -114,7 +114,7 @@ console.log(llm.lastCall())  // { traceId, provider, model, latencyMs, request, 
 Run it:
 
 ```bash
-bun src/index.ts
+npx tsx src/index.ts
 ```
 
 ## Adding Tools
@@ -473,8 +473,8 @@ import { createProviderMesh } from '@elsium-ai/gateway'
 
 const mesh = createProviderMesh({
   providers: [
-    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') }, priority: 1 },
-    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') }, priority: 2 },
+    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') } },
+    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') } },
   ],
   strategy: 'fallback', // or 'cost-optimized', 'latency-optimized', 'capability-aware'
 })
