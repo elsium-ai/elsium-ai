@@ -11,3 +11,4 @@ coverage/
 *.log
 .claude/
 examples/integration-test/.tmp/
+benchmarks/results/latest.json

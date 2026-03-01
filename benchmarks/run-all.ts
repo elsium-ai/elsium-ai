@@ -12,6 +12,7 @@ const benchmarks = [
 	{ name: 'Throughput', file: 'throughput.ts' },
 	{ name: 'Memory', file: 'memory.ts' },
 	{ name: 'Bundle Size', file: 'bundle-size.ts' },
+	{ name: 'Framework Overhead', file: 'framework-overhead.ts' },
 ]
 
 function runBenchmark(file: string): Promise<number> {

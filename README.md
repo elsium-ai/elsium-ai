@@ -254,9 +254,35 @@ Beyond agents, tools, RAG, and multi-provider routing, ElsiumAI ships production
 
 ## Performance
 
-| Cold Start | Overhead | Throughput | Bundle |
-|:---:|:---:|:---:|:---:|
-| ~2ms | ~0.003ms | ~400K ops/sec | 77 KB |
+Measured with zero-latency mock provider to isolate framework cost. Full methodology and reproduction steps in [`benchmarks/`](./benchmarks/).
+
+### Framework Cost (Isolated)
+
+| Metric | P50 | P95 | Conditions |
+|---|:---:|:---:|---|
+| Core completion path | 2.3μs | 5.5μs | Agent, no middleware |
+| Full governance stack | 6.2μs | 9.5μs | Security + audit + policy + cost + xray + logging |
+| Under concurrency | 5.0μs | 6.4μs | 100 parallel requests, full stack |
+
+### Real-World Context
+
+| | |
+|---|---|
+| Typical LLM network latency | 200–800ms |
+| ElsiumAI overhead at P95 | <10μs |
+| Framework cost contribution | <0.01% of total request time |
+
+### Resource Footprint
+
+| Metric | Value |
+|---|---|
+| Cold start | <3ms |
+| Bundle size (minified) | 77 KB |
+| Memory per 10K requests | ~10 MB (full stack + tracing + audit, all in-memory, capped) |
+| Per-request heap growth | ~1 KB |
+| Circuit breaker throughput | >5M ops/sec |
+
+Baselines are frozen per release and checked for regressions in CI. See [`benchmarks/results/`](./benchmarks/results/) for historical data.
 
 ---
 
