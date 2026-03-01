@@ -7,6 +7,42 @@ A comprehensive guide to every core feature in ElsiumAI, with real-world example
 
 ---
 
+## The Philosophy
+
+Every AI framework helps you call an LLM. None of them help you **trust** the result.
+
+ElsiumAI is built on **three pillars** that most frameworks ignore entirely:
+
+| Pillar | The guarantee |
+|--------|--------------|
+| **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown, retry with backoff |
+| **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail, PII detection |
+| **Deterministic AI** | Same input, same output, provably — seed propagation, output pinning, determinism assertions, provenance tracking |
+
+It also does everything you'd expect — multi-provider gateway, agents, tools, RAG, workflows, MCP, streaming, cost tracking. But those are table stakes. **The three pillars are what make ElsiumAI different.**
+
+> **AI systems must fail predictably.**
+> **AI systems must be auditable.**
+> **AI systems must be reproducible.**
+> **AI systems must be governed by policy, not hope.**
+>
+> Every feature in ElsiumAI exists to serve one of these principles. If it doesn't, it doesn't ship.
+
+```
+Three Pillars — where each feature lives:
+
+  Reliability             Governance              Determinism
+  ───────────             ──────────              ───────────
+  circuit breaker  [core] policy engine    [core] seed propagation [gw]
+  request dedup    [core] RBAC             [app]  output pinning   [test]
+  shutdown manager [core] approval gates   [agt]  determinism test [test]
+  retry + backoff  [core] audit trail      [obs]  provenance       [obs]
+  bulkhead         [gw]   PII detection    [gw]   req-match fixts  [test]
+  provider mesh    [gw]   content classify [gw]   crypto hashing   [test]
+```
+
+---
+
 ## Table of Contents
 
 - [Core Utilities](#core-utilities)
@@ -1486,6 +1522,19 @@ step('process-payment', {
 
 ## Reliability
 
+> **Pillar 1: Your system stays up when providers break.**
+
+Providers go down. Rate limits hit. Costs spiral. ElsiumAI treats failure as a first-class concern. Every reliability feature is designed to keep your system running even when the LLM providers behind it are not.
+
+| Feature | What it does | Package |
+|---------|-------------|---------|
+| **Circuit Breaker** | Detects failing providers, stops sending traffic, auto-recovers | `core` |
+| **Bulkhead Isolation** | Bounds concurrency — one slow consumer can't starve the rest | `gateway` |
+| **Request Dedup** | Identical in-flight calls coalesce into one API request | `core` |
+| **Graceful Shutdown** | Drains in-flight operations before process exit | `core` |
+| **Retry with Backoff** | Exponential backoff with jitter, respects `Retry-After` headers | `core` |
+| **Provider Mesh** | Multi-provider routing with fallback, cost-optimized, and latency-racing strategies | `gateway` |
+
 ### Circuit Breaker
 
 Prevents cascading failures by stopping requests to a failing provider and auto-recovering:
@@ -1656,6 +1705,18 @@ app.post('/chat', async (c) => {
 ---
 
 ## Governance
+
+> **Pillar 2: You control who does what, and you can prove it.**
+
+Who called which model? Did they have permission? Can you prove the audit log hasn't been tampered with? ElsiumAI makes these questions answerable with built-in governance infrastructure.
+
+| Feature | What it does | Package |
+|---------|-------------|---------|
+| **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern | `core` |
+| **RBAC** | Role-based permissions with inheritance and wildcard matching | `app` |
+| **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations | `agents` |
+| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification | `observe` |
+| **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model | `gateway` |
 
 ### Policy Engine
 
@@ -1867,6 +1928,18 @@ console.log(integrity.brokenAt)     // undefined (no tampering detected)
 ---
 
 ## Deterministic AI
+
+> **Pillar 3: Same input, same output, provably.**
+
+LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, verify, and prove output consistency. This is what makes AI systems testable and trustworthy in production.
+
+| Feature | What it does | Package |
+|---------|-------------|---------|
+| **Seed Propagation** | Passes seed through the stack to OpenAI, Google, and Anthropic APIs | `gateway` |
+| **Output Pinning** | Locks expected outputs — model update changes your classifier? CI catches it | `testing` |
+| **Determinism Assertions** | Run N times, verify all outputs match, fail in CI if they don't | `testing` |
+| **Provenance Tracking** | SHA-256 hashes every prompt/config/input/output — full lineage per traceId | `observe` |
+| **Request-Matched Fixtures** | Replay test fixtures by content hash, not sequence order | `testing` |
 
 ### Seed Propagation
 
