@@ -1,11 +1,11 @@
 <p align="center">
-  <a href="https://github.com/ebutrera9103/elsium-ai" target="blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
+  <a href="https://github.com/elsium-ai/elsium-ai" target="blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
 </p>
 <h3 align="center">Reliability. Governance. Reproducible AI.</h3>
 <p align="center">The TypeScript framework for AI systems you can trust in production.</p>
 <p align="center">
-  <a href="https://github.com/ebutrera9103/elsium-ai/actions"><img src="https://github.com/ebutrera9103/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
-  <a href="https://github.com/ebutrera9103/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
+  <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/tests-569%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/bundle-77KB%20minified-blue" alt="Bundle Size">
 </p>
