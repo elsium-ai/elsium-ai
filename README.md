@@ -75,8 +75,8 @@ import { env } from '@elsium-ai/core'
 
 const mesh = createProviderMesh({
   providers: [
-    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') }, priority: 1 },
-    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') }, priority: 2 },
+    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') } },
+    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') } },
   ],
   strategy: 'fallback',
   circuitBreaker: {         // Provider failing? Circuit opens, traffic reroutes

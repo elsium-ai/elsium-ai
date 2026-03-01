@@ -38,8 +38,8 @@ describe('createProviderMesh', () => {
 	it('should use fallback strategy', async () => {
 		const mesh = createProviderMesh({
 			providers: [
-				{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 },
-				{ name: 'openai', config: { apiKey: 'key2' }, priority: 2 },
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
 			],
 			strategy: 'fallback',
 		})
@@ -55,7 +55,7 @@ describe('createProviderMesh', () => {
 
 	it('should expose strategy and providers', () => {
 		const mesh = createProviderMesh({
-			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
 			strategy: 'cost-optimized',
 		})
 
@@ -63,24 +63,24 @@ describe('createProviderMesh', () => {
 		expect(mesh.providers).toEqual(['anthropic'])
 	})
 
-	it('should sort providers by priority', async () => {
+	it('should preserve array order', () => {
 		const mesh = createProviderMesh({
 			providers: [
-				{ name: 'openai', config: { apiKey: 'key2' }, priority: 2 },
-				{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
 			],
 			strategy: 'fallback',
 		})
 
-		expect(mesh.providers[0]).toBe('anthropic')
-		expect(mesh.providers[1]).toBe('openai')
+		expect(mesh.providers[0]).toBe('openai')
+		expect(mesh.providers[1]).toBe('anthropic')
 	})
 
 	it('should use cost-optimized strategy with simple requests', async () => {
 		const mesh = createProviderMesh({
 			providers: [
-				{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 },
-				{ name: 'openai', config: { apiKey: 'key2' }, priority: 2 },
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
 			],
 			strategy: 'cost-optimized',
 			costOptimizer: {
@@ -99,7 +99,7 @@ describe('createProviderMesh', () => {
 
 	it('should use cost-optimized strategy with complex requests', async () => {
 		const mesh = createProviderMesh({
-			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
 			strategy: 'cost-optimized',
 			costOptimizer: {
 				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
@@ -124,7 +124,7 @@ describe('createProviderMesh', () => {
 
 	it('should route reasoning keywords to complex model', async () => {
 		const mesh = createProviderMesh({
-			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
 			strategy: 'cost-optimized',
 			costOptimizer: {
 				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
@@ -141,7 +141,7 @@ describe('createProviderMesh', () => {
 
 	it('should route math keywords to complex model', async () => {
 		const mesh = createProviderMesh({
-			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
 			strategy: 'cost-optimized',
 			costOptimizer: {
 				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
@@ -158,7 +158,7 @@ describe('createProviderMesh', () => {
 
 	it('should route code keywords to complex model', async () => {
 		const mesh = createProviderMesh({
-			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
 			strategy: 'cost-optimized',
 			costOptimizer: {
 				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
@@ -175,7 +175,7 @@ describe('createProviderMesh', () => {
 
 	it('should keep simple greetings on simple model', async () => {
 		const mesh = createProviderMesh({
-			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
 			strategy: 'cost-optimized',
 			costOptimizer: {
 				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
@@ -192,7 +192,7 @@ describe('createProviderMesh', () => {
 
 	it('should detect keywords in structured content blocks', async () => {
 		const mesh = createProviderMesh({
-			providers: [{ name: 'anthropic', config: { apiKey: 'key1' }, priority: 1 }],
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
 			strategy: 'cost-optimized',
 			costOptimizer: {
 				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
@@ -221,7 +221,7 @@ describe('createProviderMesh', () => {
 					priority: 1,
 					capabilities: ['tools', 'vision'],
 				},
-				{ name: 'openai', config: { apiKey: 'key2' }, priority: 2, capabilities: ['tools'] },
+				{ name: 'openai', config: { apiKey: 'key2' }, capabilities: ['tools'] },
 			],
 			strategy: 'capability-aware',
 		})

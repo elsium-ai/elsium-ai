@@ -20,7 +20,6 @@ export interface ProviderEntry {
 	name: string
 	config: { apiKey: string; baseUrl?: string }
 	model?: string
-	priority?: number
 	capabilities?: string[]
 }
 
@@ -103,9 +102,7 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		})
 	}
 
-	const sortedProviders = [...config.providers].sort(
-		(a, b) => (a.priority ?? 99) - (b.priority ?? 99),
-	)
+	const sortedProviders = [...config.providers]
 
 	const gateways = new Map<string, Gateway>()
 	const circuitBreakers = new Map<string, CircuitBreaker>()

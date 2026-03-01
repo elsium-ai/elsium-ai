@@ -148,7 +148,7 @@ Cost budgets prevent a single runaway query from blowing your monthly spend. Loo
 Being honest about scope builds trust. ElsiumAI is not the right choice if:
 
 - **You're building a quick prototype** — if you just need a wrapper around one API and don't care about failover, governance, or reproducibility, a lighter library will get you there faster
-- **You need a Python framework** — ElsiumAI is TypeScript-only, built on Bun
+- **You need a Python framework** — ElsiumAI is TypeScript-only
 - **You don't need the three pillars** — if governance, reliability, and reproducibility aren't concerns for your use case, the overhead isn't worth it
 
 ---

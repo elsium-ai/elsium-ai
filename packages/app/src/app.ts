@@ -4,6 +4,7 @@ import { type Gateway, gateway } from '@elsium-ai/gateway'
 import { type Tracer, observe } from '@elsium-ai/observe'
 
 const log = createLogger()
+import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { authMiddleware, corsMiddleware, rateLimitMiddleware } from './middleware'
 import { createRoutes } from './routes'
@@ -91,10 +92,10 @@ export function createApp(config: AppConfig): ElsiumApp {
 			const listenPort = port ?? serverConfig.port ?? 3000
 			const hostname = serverConfig.hostname ?? '0.0.0.0'
 
-			const server = Bun.serve({
+			const server = serve({
+				fetch: app.fetch,
 				port: listenPort,
 				hostname,
-				fetch: app.fetch,
 			})
 
 			log.info('ElsiumAI server started', {
@@ -103,9 +104,9 @@ export function createApp(config: AppConfig): ElsiumApp {
 			})
 
 			return {
-				port: server.port as number,
+				port: listenPort,
 				stop: () => {
-					server.stop()
+					server.close()
 				},
 			}
 		},

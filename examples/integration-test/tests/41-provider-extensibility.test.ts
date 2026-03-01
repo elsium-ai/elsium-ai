@@ -95,8 +95,8 @@ describe('41 — Provider Extensibility', () => {
 
 		const mesh = createProviderMesh({
 			providers: [
-				{ name: 'acme-ai', config: { apiKey: 'k1' }, priority: 1 },
-				{ name: 'beta-ai', config: { apiKey: 'k2' }, priority: 2 },
+				{ name: 'acme-ai', config: { apiKey: 'k1' } },
+				{ name: 'beta-ai', config: { apiKey: 'k2' } },
 			],
 			strategy: 'capability-aware',
 		})

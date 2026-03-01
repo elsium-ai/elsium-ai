@@ -95,7 +95,7 @@ function packageJsonContent(projectName: string): string {
 			devDependencies: {
 				'@elsium-ai/testing': '^0.1.0',
 				'@biomejs/biome': '^1.9.0',
-				'bun-types': '^1.3.0',
+				'@types/node': '^22.0.0',
 				typescript: '^5.7.0',
 				vitest: '^3.0.0',
 			},
@@ -115,7 +115,7 @@ function tsconfigContent(): string {
 				strict: true,
 				esModuleInterop: true,
 				skipLibCheck: true,
-				types: ['bun-types'],
+				types: ['node'],
 			},
 			include: ['src', 'evals', 'test', 'elsium.config.ts'],
 		},
@@ -205,8 +205,8 @@ import { env } from '@elsium-ai/core'
 
 export const mesh = createProviderMesh({
 \tproviders: [
-\t\t{ name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') }, priority: 1 },
-\t\t{ name: 'openai', config: { apiKey: env('OPENAI_API_KEY') }, priority: 2 },
+\t\t{ name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') } },
+\t\t{ name: 'openai', config: { apiKey: env('OPENAI_API_KEY') } },
 \t],
 \tstrategy: 'fallback',
 \tcircuitBreaker: {

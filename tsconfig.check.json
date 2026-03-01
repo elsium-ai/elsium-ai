@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ESNext"],
-    "types": ["bun-types"],
+    "types": ["node"],
     "typeRoots": ["./packages/core/node_modules/@types", "./packages/core/node_modules"],
     "strict": true,
     "esModuleInterop": true,

@@ -40,8 +40,8 @@ const response = await llm.complete({
 // Multi-provider with fallback
 const mesh = createProviderMesh({
   providers: [
-    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') }, priority: 1 },
-    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') }, priority: 2 },
+    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') } },
+    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') } },
   ],
   strategy: 'fallback',
   circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 30_000 },
