@@ -6,7 +6,7 @@
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/elsium-ai/elsium-ai",
+		"url": "git+https://github.com/elsium-ai/elsium-ai.git",
 		"directory": "packages/elsium-ai"
 	},
 	"type": "module",
