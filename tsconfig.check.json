@@ -5,7 +5,7 @@
     "moduleResolution": "bundler",
     "lib": ["ESNext"],
     "types": ["node"],
-    "typeRoots": ["./packages/core/node_modules/@types", "./packages/core/node_modules"],
+    "typeRoots": ["./node_modules/@types", "./packages/core/node_modules/@types", "./packages/core/node_modules"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
