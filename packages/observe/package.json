@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/observe",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "Observability, tracing, and cost tracking for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
