@@ -1,0 +1,28 @@
+{
+  "name": "@elsium-ai/integration-test",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "npx vitest run",
+    "test:watch": "npx vitest"
+  },
+  "dependencies": {
+    "@elsium-ai/core": "workspace:*",
+    "@elsium-ai/gateway": "workspace:*",
+    "@elsium-ai/agents": "workspace:*",
+    "@elsium-ai/tools": "workspace:*",
+    "@elsium-ai/workflows": "workspace:*",
+    "@elsium-ai/observe": "workspace:*",
+    "@elsium-ai/rag": "workspace:*",
+    "@elsium-ai/testing": "workspace:*",
+    "@elsium-ai/app": "workspace:*",
+    "@elsium-ai/mcp": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.0",
+    "vitest": "^3.0.0",
+    "typescript": "^5.7.0"
+  }
+}

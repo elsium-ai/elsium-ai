@@ -33,8 +33,15 @@ const PRICING: Record<string, ModelPricing> = {
 	'gemini-2.5-flash-preview-04-17': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
 }
 
+function resolveModelName(model: string): string {
+	if (PRICING[model]) return model
+	const base = model.replace(/-\d{4}-\d{2}-\d{2}$/, '')
+	if (base !== model && PRICING[base]) return base
+	return model
+}
+
 export function calculateCost(model: string, usage: TokenUsage): CostBreakdown {
-	const pricing = PRICING[model]
+	const pricing = PRICING[resolveModelName(model)]
 
 	if (!pricing) {
 		// L3 fix: Warn when an unknown model is used — pricing data may be missing

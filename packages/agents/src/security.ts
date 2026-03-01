@@ -111,8 +111,9 @@ function matchPatterns(
 	severity: 'low' | 'medium' | 'high',
 ): AgentSecurityResult['violations'] {
 	const violations: AgentSecurityResult['violations'] = []
+	const normalized = text.normalize('NFKC')
 	for (const { pattern, detail } of patterns) {
-		if (pattern.test(text)) {
+		if (pattern.test(normalized)) {
 			violations.push({ type, detail, severity })
 		}
 	}

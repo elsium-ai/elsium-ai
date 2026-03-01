@@ -18,6 +18,28 @@
         "zod": "^4.3.6",
       },
     },
+    "examples/integration-test": {
+      "name": "@elsium-ai/integration-test",
+      "version": "0.0.0",
+      "dependencies": {
+        "@elsium-ai/agents": "workspace:*",
+        "@elsium-ai/app": "workspace:*",
+        "@elsium-ai/core": "workspace:*",
+        "@elsium-ai/gateway": "workspace:*",
+        "@elsium-ai/mcp": "workspace:*",
+        "@elsium-ai/observe": "workspace:*",
+        "@elsium-ai/rag": "workspace:*",
+        "@elsium-ai/testing": "workspace:*",
+        "@elsium-ai/tools": "workspace:*",
+        "@elsium-ai/workflows": "workspace:*",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "dotenv": "^16.4.0",
+        "typescript": "^5.7.0",
+        "vitest": "^3.0.0",
+      },
+    },
     "packages/agents": {
       "name": "@elsium-ai/agents",
       "version": "0.1.0",
@@ -295,6 +317,8 @@
 
     "@elsium-ai/gateway": ["@elsium-ai/gateway@workspace:packages/gateway"],
 
+    "@elsium-ai/integration-test": ["@elsium-ai/integration-test@workspace:examples/integration-test"],
+
     "@elsium-ai/mcp": ["@elsium-ai/mcp@workspace:packages/mcp"],
 
     "@elsium-ai/observe": ["@elsium-ai/observe@workspace:packages/observe"],
@@ -540,6 +564,8 @@
     "dir-glob": ["dir-glob@3.0.1", "", { "dependencies": { "path-type": "^4.0.0" } }, "sha512-WkrWp9GR4KXfKGYzOLmTuGVi1UWFfws377n9cc55/tb6DuqyF6pcQ5AbiHEshaDpY9v6oaSr2XCDidGmMwdzIA=="],
 
     "dot-prop": ["dot-prop@5.3.0", "", { "dependencies": { "is-obj": "^2.0.0" } }, "sha512-QM8q3zDe58hqUqjraQOmzZ1LIH9SWQJTlEKCH4kJ2oQvLZk7RbQXvtDM2XEq3fwkV9CCvvH4LA0AV+ogFsBM2Q=="],
+
+    "dotenv": ["dotenv@16.6.1", "", {}, "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="],
 
     "eastasianwidth": ["eastasianwidth@0.2.0", "", {}, "sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA=="],
 

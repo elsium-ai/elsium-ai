@@ -218,20 +218,36 @@ function schemaToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 	return { type: 'string' }
 }
 
+function zodDefKind(def: Record<string, unknown>): string | undefined {
+	return typeof def.type === 'string' ? (def.type as string) : (def.typeName as string | undefined)
+}
+
 function convertZodDef(def: Record<string, unknown>): Record<string, unknown> | null {
-	switch (def.typeName) {
+	const kind = zodDefKind(def)
+	switch (kind) {
+		case 'object':
 		case 'ZodObject':
 			return convertZodObject(def)
+		case 'string':
 		case 'ZodString':
 			return { type: 'string' }
+		case 'number':
 		case 'ZodNumber':
 			return { type: 'number' }
+		case 'boolean':
 		case 'ZodBoolean':
 			return { type: 'boolean' }
+		case 'array':
 		case 'ZodArray':
 			return convertZodArray(def)
-		case 'ZodEnum':
-			return { type: 'string', enum: def.values }
+		case 'enum':
+		case 'ZodEnum': {
+			const values =
+				(def.values as string[]) ??
+				(def.entries ? Object.values(def.entries as Record<string, string>) : [])
+			return { type: 'string', enum: values }
+		}
+		case 'optional':
 		case 'ZodOptional':
 			return convertZodOptional(def)
 		default:
@@ -252,7 +268,8 @@ function convertZodObject(def: Record<string, unknown>): Record<string, unknown>
 	for (const [key, value] of Object.entries(shape)) {
 		properties[key] = schemaToJsonSchema(value as z.ZodType)
 		const valDef = (value as z.ZodType)._def as Record<string, unknown>
-		if (valDef.typeName !== 'ZodOptional') {
+		const valKind = zodDefKind(valDef)
+		if (valKind !== 'optional' && valKind !== 'ZodOptional') {
 			required.push(key)
 		}
 	}
@@ -263,7 +280,7 @@ function convertZodObject(def: Record<string, unknown>): Record<string, unknown>
 function convertZodArray(def: Record<string, unknown>): Record<string, unknown> {
 	return {
 		type: 'array',
-		items: schemaToJsonSchema((def.type as z.ZodType) ?? (def as Record<string, unknown>).type),
+		items: schemaToJsonSchema((def.element ?? def.type) as z.ZodType),
 	}
 }
 

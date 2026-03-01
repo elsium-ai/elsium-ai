@@ -132,6 +132,10 @@ export function defineTool<TInput, TOutput>(
  * since Zod does not expose a public schema introspection API.
  * Pin Zod minor version in package.json to guard against internal changes.
  */
+function zodDefKind(def: Record<string, unknown>): string | undefined {
+	return typeof def.type === 'string' ? (def.type as string) : (def.typeName as string | undefined)
+}
+
 function zodObjectToJsonSchema(def: Record<string, unknown>): Record<string, unknown> {
 	const shape =
 		typeof def.shape === 'function'
@@ -144,7 +148,13 @@ function zodObjectToJsonSchema(def: Record<string, unknown>): Record<string, unk
 		const fieldSchema = value as z.ZodType
 		properties[key] = zodToJsonSchema(fieldSchema)
 		const fieldDef = fieldSchema._def as Record<string, unknown>
-		if (fieldDef.typeName !== 'ZodOptional' && fieldDef.typeName !== 'ZodDefault') {
+		const fieldKind = zodDefKind(fieldDef)
+		if (
+			fieldKind !== 'optional' &&
+			fieldKind !== 'ZodOptional' &&
+			fieldKind !== 'default' &&
+			fieldKind !== 'ZodDefault'
+		) {
 			required.push(key)
 		}
 		if (fieldDef.description) {
@@ -159,27 +169,41 @@ function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 	if (!('_def' in schema)) return { type: 'object' }
 
 	const def = schema._def as Record<string, unknown>
+	const kind = zodDefKind(def)
 
-	switch (def.typeName) {
+	switch (kind) {
+		case 'object':
 		case 'ZodObject':
 			return zodObjectToJsonSchema(def)
+		case 'string':
 		case 'ZodString':
 			return { type: 'string' }
+		case 'number':
 		case 'ZodNumber':
 			return { type: 'number' }
+		case 'boolean':
 		case 'ZodBoolean':
 			return { type: 'boolean' }
+		case 'array':
 		case 'ZodArray':
 			return {
 				type: 'array',
-				items: zodToJsonSchema(def.type as z.ZodType),
+				items: zodToJsonSchema((def.element ?? def.type) as z.ZodType),
 			}
-		case 'ZodEnum':
-			return { type: 'string', enum: def.values }
+		case 'enum':
+		case 'ZodEnum': {
+			const values =
+				(def.values as string[]) ??
+				(def.entries ? Object.values(def.entries as Record<string, string>) : [])
+			return { type: 'string', enum: values }
+		}
+		case 'optional':
 		case 'ZodOptional':
 			return zodToJsonSchema(def.innerType as z.ZodType)
+		case 'default':
 		case 'ZodDefault':
 			return zodToJsonSchema(def.innerType as z.ZodType)
+		case 'nullable':
 		case 'ZodNullable': {
 			const inner = zodToJsonSchema(def.innerType as z.ZodType)
 			return { ...inner, nullable: true }
@@ -204,7 +228,7 @@ function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 		case 'ZodDate':
 			return { type: 'string', format: 'date-time' }
 		default:
-			console.warn(`zodToJsonSchema: unsupported type ${def.typeName}, defaulting to string`)
+			console.warn(`zodToJsonSchema: unsupported type ${kind}, defaulting to string`)
 			return { type: 'string' }
 	}
 }
