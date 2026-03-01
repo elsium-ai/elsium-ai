@@ -1,5 +1,19 @@
 # @elsium-ai/app
 
+## 0.2.1
+
+### Patch Changes
+
+- Fix publish pipeline: resolve `workspace:*` to real versions before npm publish. v0.2.0 shipped with unresolved `workspace:*` dependencies making it uninstallable outside the monorepo.
+- Updated dependencies
+  - @elsium-ai/core@0.2.1
+  - @elsium-ai/gateway@0.2.1
+  - @elsium-ai/agents@0.2.1
+  - @elsium-ai/tools@0.2.1
+  - @elsium-ai/workflows@0.2.1
+  - @elsium-ai/observe@0.2.1
+  - @elsium-ai/rag@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

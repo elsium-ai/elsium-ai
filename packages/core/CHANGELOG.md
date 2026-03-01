@@ -1,5 +1,11 @@
 # @elsium-ai/core
 
+## 0.2.1
+
+### Patch Changes
+
+- Fix publish pipeline: resolve `workspace:*` to real versions before npm publish. v0.2.0 shipped with unresolved `workspace:*` dependencies making it uninstallable outside the monorepo.
+
 ## 0.2.0
 
 ### Minor Changes
