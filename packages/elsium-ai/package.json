@@ -1,6 +1,6 @@
 {
 	"name": "elsium-ai",
-	"version": "0.1.5",
+	"version": "0.1.6",
 	"description": "ElsiumAI — A high-performance, TypeScript-first AI framework built on Bun",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
