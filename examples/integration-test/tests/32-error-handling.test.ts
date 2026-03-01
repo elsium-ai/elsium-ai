@@ -24,10 +24,10 @@ describeWithLLM('32 — Error Handling (Real LLM)', () => {
 				maxTokens: 5,
 			})
 			expect.fail('Should have thrown')
-		} catch (error) {
+		} catch (error: unknown) {
 			const elapsed = Date.now() - start
-			expect(error).toBeInstanceOf(ElsiumError)
-			const e = error as InstanceType<typeof ElsiumError>
+			const e = error as { name: string; code: string; retryable: boolean }
+			expect(e.name).toBe('ElsiumError')
 			expect(e.code).toBe('AUTH_ERROR')
 			expect(e.retryable).toBe(false)
 			// Auth errors should fail fast, not retry 3x

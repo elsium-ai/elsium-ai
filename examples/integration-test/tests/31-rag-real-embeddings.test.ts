@@ -64,8 +64,9 @@ describeWithLLM('31 — RAG with Real Embeddings', () => {
 		const vectors = await embedder.embedBatch(['hello', 'world'])
 		expect(vectors).toHaveLength(2)
 		for (const vec of vectors) {
-			expect(vec).toHaveLength(256)
-			expect(typeof vec[0]).toBe('number')
+			expect(vec.dimensions).toBe(256)
+			expect(vec.values).toHaveLength(256)
+			expect(typeof vec.values[0]).toBe('number')
 		}
 	})
 })
