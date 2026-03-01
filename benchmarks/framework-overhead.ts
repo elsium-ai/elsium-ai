@@ -17,7 +17,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { defineAgent } from '@elsium-ai/agents'
-import type { CompletionRequest, LLMResponse, Middleware } from '@elsium-ai/core'
+import type { CompletionRequest, LLMResponse, Logger, Middleware } from '@elsium-ai/core'
 import {
 	createCircuitBreaker,
 	createPolicySet,
@@ -67,7 +67,7 @@ function noopProvider() {
 
 // ─── Silent logger (suppresses output during benchmarks) ────────
 
-const silentLogger = {
+const silentLogger: Logger = {
 	debug: () => {},
 	info: () => {},
 	warn: () => {},
@@ -146,7 +146,7 @@ function buildMiddlewareStack(layers: string[]): { middleware: Middleware; descr
 	for (const layer of layers) {
 		switch (layer) {
 			case 'logging':
-				stack.push(loggingMiddleware(silentLogger as any))
+				stack.push(loggingMiddleware(silentLogger))
 				break
 			case 'cost':
 				stack.push(costTrackingMiddleware())
@@ -205,7 +205,9 @@ async function scenarioDirectGateway(): Promise<Stats> {
 		messages: [{ role: 'user', content: 'Hello, respond briefly.' }],
 	}
 
-	return measure('Direct gateway', () => provider.complete(request) as Promise<any>)
+	return measure('Direct gateway', async () => {
+		await provider.complete(request)
+	})
 }
 
 // ─── Scenario: With Middleware Stack ────────────────────────────
@@ -296,7 +298,9 @@ async function scenarioMiddlewareScaling(): Promise<Map<number, Stats>> {
 			const request: CompletionRequest = {
 				messages: [{ role: 'user', content: 'Hello.' }],
 			}
-			const stats = await measure('no-middleware', () => provider.complete(request) as Promise<any>)
+			const stats = await measure('no-middleware', async () => {
+				await provider.complete(request)
+			})
 			results.set(count, stats)
 		} else {
 			const { middleware } = buildMiddlewareStack(layers)
