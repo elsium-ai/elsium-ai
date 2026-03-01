@@ -122,7 +122,7 @@ const agent = defineAgent(
     name: 'weather-assistant',
     system: 'You help users check the weather. Use the get_weather tool when asked.',
     model: 'claude-sonnet-4-6',
-    tools: tools.definitions(),
+    tools: [...tools.tools],
   },
   {
     complete: (req) => llm.complete(req),
@@ -403,28 +403,28 @@ const pipeline = defineWorkflow({
   name: 'content-pipeline',
   steps: [
     step('research', {
-      handler: async (ctx) => {
-        const result = await agent.run(`Research: ${ctx.input}`)
+      handler: async (input) => {
+        const result = await agent.run(`Research: ${input}`)
         return result.message.content
       },
     }),
     step('draft', {
-      handler: async (ctx) => {
-        const result = await agent.run(`Write a draft based on: ${ctx.input}`)
+      handler: async (input) => {
+        const result = await agent.run(`Write a draft based on: ${input}`)
         return result.message.content
       },
     }),
     step('review', {
-      handler: async (ctx) => {
-        const result = await agent.run(`Review and improve: ${ctx.input}`)
+      handler: async (input) => {
+        const result = await agent.run(`Review and improve: ${input}`)
         return result.message.content
       },
     }),
   ],
 })
 
-const result = await pipeline.execute('AI in healthcare')
-console.log(result.output)
+const result = await pipeline.run('AI in healthcare')
+console.log(result.outputs['review'])
 ```
 
 ## Multi-Provider Support
