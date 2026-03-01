@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Helper to capture console output
 function captureConsole() {
@@ -28,23 +28,21 @@ describe('CLI - init command', () => {
 	beforeEach(() => {
 		testDir = join(tmpdir(), `elsium-cli-test-${Date.now()}`)
 		mkdirSync(testDir, { recursive: true })
+		vi.spyOn(process, 'cwd').mockReturnValue(testDir)
 	})
 
 	afterEach(() => {
+		vi.restoreAllMocks()
 		rmSync(testDir, { recursive: true, force: true })
 	})
 
 	it('should scaffold a new project', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const { initCommand } = await import('../commands/init')
 		const output = captureConsole()
 		try {
 			await initCommand(['test-app'])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		const p = join(testDir, 'test-app')
@@ -81,24 +79,18 @@ describe('CLI - init command', () => {
 	})
 
 	it('should use default name if none provided', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const { initCommand } = await import('../commands/init')
 		const output = captureConsole()
 		try {
 			await initCommand([])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		expect(existsSync(join(testDir, 'my-elsium-app'))).toBe(true)
 	})
 
 	it('should fail if directory exists', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
 		mkdirSync(join(testDir, 'existing-app'))
 
 		const { initCommand } = await import('../commands/init')
@@ -114,7 +106,6 @@ describe('CLI - init command', () => {
 		} finally {
 			output.restore()
 			process.exit = origExit
-			process.chdir(origCwd)
 		}
 
 		expect(exitCode).toBe(1)
@@ -122,16 +113,12 @@ describe('CLI - init command', () => {
 	})
 
 	it('should generate valid package.json with correct dependencies', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const { initCommand } = await import('../commands/init')
 		const output = captureConsole()
 		try {
 			await initCommand(['dep-check'])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		const pkg = JSON.parse(readFileSync(join(testDir, 'dep-check/package.json'), 'utf-8'))
@@ -151,16 +138,12 @@ describe('CLI - init command', () => {
 	})
 
 	it('should generate source files with correct imports', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const { initCommand } = await import('../commands/init')
 		const output = captureConsole()
 		try {
 			await initCommand(['import-check'])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		const root = join(testDir, 'import-check')
@@ -219,16 +202,12 @@ describe('CLI - init command', () => {
 	})
 
 	it('should generate files for all three pillars', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const { initCommand } = await import('../commands/init')
 		const output = captureConsole()
 		try {
 			await initCommand(['pillars-check'])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		const root = join(testDir, 'pillars-check')
@@ -260,32 +239,27 @@ describe('CLI - cost command', () => {
 	beforeEach(() => {
 		testDir = join(tmpdir(), `elsium-cost-test-${Date.now()}`)
 		mkdirSync(testDir, { recursive: true })
+		vi.spyOn(process, 'cwd').mockReturnValue(testDir)
 	})
 
 	afterEach(() => {
+		vi.restoreAllMocks()
 		rmSync(testDir, { recursive: true, force: true })
 	})
 
 	it('should show message when no cost report exists', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const { costCommand } = await import('../commands/cost')
 		const output = captureConsole()
 		try {
 			await costCommand([])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		expect(output.logs.some((l) => l.includes('No cost report found'))).toBe(true)
 	})
 
 	it('should display cost report', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		mkdirSync(join(testDir, '.elsium'), { recursive: true })
 		writeFileSync(
 			join(testDir, '.elsium/cost-report.json'),
@@ -308,7 +282,6 @@ describe('CLI - cost command', () => {
 			await costCommand([])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		expect(output.logs.some((l) => l.includes('Cost Report'))).toBe(true)
@@ -324,32 +297,27 @@ describe('CLI - trace command', () => {
 	beforeEach(() => {
 		testDir = join(tmpdir(), `elsium-trace-test-${Date.now()}`)
 		mkdirSync(testDir, { recursive: true })
+		vi.spyOn(process, 'cwd').mockReturnValue(testDir)
 	})
 
 	afterEach(() => {
+		vi.restoreAllMocks()
 		rmSync(testDir, { recursive: true, force: true })
 	})
 
 	it('should show message when no traces directory exists', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const { traceCommand } = await import('../commands/trace')
 		const output = captureConsole()
 		try {
 			await traceCommand([])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		expect(output.logs.some((l) => l.includes('No traces found'))).toBe(true)
 	})
 
 	it('should list recent traces', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const tracesDir = join(testDir, '.elsium/traces')
 		mkdirSync(tracesDir, { recursive: true })
 		writeFileSync(
@@ -376,7 +344,6 @@ describe('CLI - trace command', () => {
 			await traceCommand([])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		expect(output.logs.some((l) => l.includes('Recent Traces'))).toBe(true)
@@ -385,9 +352,6 @@ describe('CLI - trace command', () => {
 	})
 
 	it('should inspect a specific trace', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		const tracesDir = join(testDir, '.elsium/traces')
 		mkdirSync(tracesDir, { recursive: true })
 		writeFileSync(
@@ -427,7 +391,6 @@ describe('CLI - trace command', () => {
 			await traceCommand(['trc_002'])
 		} finally {
 			output.restore()
-			process.chdir(origCwd)
 		}
 
 		expect(output.logs.some((l) => l.includes('Trace: trc_002'))).toBe(true)
@@ -437,9 +400,6 @@ describe('CLI - trace command', () => {
 	})
 
 	it('should error for non-existent trace', async () => {
-		const origCwd = process.cwd()
-		process.chdir(testDir)
-
 		mkdirSync(join(testDir, '.elsium/traces'), { recursive: true })
 
 		const { traceCommand } = await import('../commands/trace')
@@ -455,7 +415,6 @@ describe('CLI - trace command', () => {
 		} finally {
 			output.restore()
 			process.exit = origExit
-			process.chdir(origCwd)
 		}
 
 		expect(exitCode).toBe(1)
