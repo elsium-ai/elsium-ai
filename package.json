@@ -23,7 +23,7 @@
     "format": "biome format --write .",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "bun run build && changeset publish",
+    "release": "bun run build && bun scripts/publish.ts --registry npm",
     "bench": "bun benchmarks/run-all.ts",
     "bench:overhead": "bun benchmarks/framework-overhead.ts",
     "bench:check": "bun benchmarks/framework-overhead.ts && bun benchmarks/check-regression.ts",

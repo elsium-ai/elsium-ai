@@ -86,8 +86,7 @@ function showTrace(tracesPath: string, traceId: string) {
 	const traceFile = join(tracesPath, `${traceId}.json`)
 
 	if (!existsSync(traceFile)) {
-		console.error(`Trace not found: ${traceId}`)
-		process.exit(1)
+		throw new Error(`Trace not found: ${traceId}`)
 	}
 
 	try {
@@ -104,8 +103,7 @@ function showTrace(tracesPath: string, traceId: string) {
 
 		console.log()
 	} catch (err) {
-		console.error('Failed to read trace:', err instanceof Error ? err.message : err)
-		process.exit(1)
+		throw err instanceof Error ? err : new Error(String(err))
 	}
 }
 
@@ -119,8 +117,7 @@ export async function traceCommand(args: string[]) {
 	}
 
 	if (!/^[a-zA-Z0-9_-]+$/.test(traceId)) {
-		console.error('Invalid trace ID format')
-		process.exit(1)
+		throw new Error('Invalid trace ID format')
 	}
 
 	showTrace(tracesPath, traceId)

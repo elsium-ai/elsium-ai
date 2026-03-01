@@ -32,7 +32,7 @@ const PUBLISH_ORDER = [
 	'cli',
 	'testing',
 	'app',
-	// 'elsium-ai' — unscoped, skip for GitHub Packages
+	'elsium-ai',
 ]
 
 const args = process.argv.slice(2)
