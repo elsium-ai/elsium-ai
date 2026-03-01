@@ -47,15 +47,35 @@ describe('CLI - init command', () => {
 			process.chdir(origCwd)
 		}
 
-		const projectDir = join(testDir, 'test-app')
-		expect(existsSync(projectDir)).toBe(true)
-		expect(existsSync(join(projectDir, 'package.json'))).toBe(true)
-		expect(existsSync(join(projectDir, 'tsconfig.json'))).toBe(true)
-		expect(existsSync(join(projectDir, '.env.example'))).toBe(true)
-		expect(existsSync(join(projectDir, '.gitignore'))).toBe(true)
-		expect(existsSync(join(projectDir, 'src/index.ts'))).toBe(true)
+		const p = join(testDir, 'test-app')
+		expect(existsSync(p)).toBe(true)
 
-		const pkg = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf-8'))
+		// All 18 scaffold files
+		const expectedFiles = [
+			'package.json',
+			'tsconfig.json',
+			'biome.json',
+			'.env.example',
+			'.gitignore',
+			'elsium.config.ts',
+			'src/index.ts',
+			'src/gateway/mesh.ts',
+			'src/policies/default.ts',
+			'src/tools/example.ts',
+			'src/agents/assistant.ts',
+			'src/workflows/example.ts',
+			'evals/quality.eval.ts',
+			'evals/determinism.eval.ts',
+			'test/agents/assistant.test.ts',
+			'.elsium/baselines/.gitkeep',
+			'.elsium/recordings/.gitkeep',
+			'README.md',
+		]
+		for (const file of expectedFiles) {
+			expect(existsSync(join(p, file))).toBe(true)
+		}
+
+		const pkg = JSON.parse(readFileSync(join(p, 'package.json'), 'utf-8'))
 		expect(pkg.name).toBe('test-app')
 		expect(pkg.dependencies['@elsium-ai/core']).toBeDefined()
 	})
@@ -119,11 +139,18 @@ describe('CLI - init command', () => {
 		expect(pkg.dependencies['@elsium-ai/gateway']).toBe('^0.1.0')
 		expect(pkg.dependencies['@elsium-ai/agents']).toBe('^0.1.0')
 		expect(pkg.dependencies['@elsium-ai/tools']).toBe('^0.1.0')
+		expect(pkg.dependencies['@elsium-ai/workflows']).toBe('^0.1.0')
+		expect(pkg.dependencies['@elsium-ai/observe']).toBe('^0.1.0')
 		expect(pkg.dependencies['@elsium-ai/app']).toBe('^0.1.0')
+		expect(pkg.dependencies.zod).toBe('^3.23.0')
 		expect(pkg.devDependencies['@elsium-ai/testing']).toBe('^0.1.0')
+		expect(pkg.devDependencies['@biomejs/biome']).toBe('^1.9.0')
+		expect(pkg.scripts.dev).toBe('elsium dev')
+		expect(pkg.scripts.eval).toBeDefined()
+		expect(pkg.scripts.lint).toBeDefined()
 	})
 
-	it('should generate src/index.ts with correct imports', async () => {
+	it('should generate source files with correct imports', async () => {
 		const origCwd = process.cwd()
 		process.chdir(testDir)
 
@@ -136,12 +163,94 @@ describe('CLI - init command', () => {
 			process.chdir(origCwd)
 		}
 
-		const src = readFileSync(join(testDir, 'import-check/src/index.ts'), 'utf-8')
-		expect(src).toContain("from '@elsium-ai/app'")
-		expect(src).toContain("from '@elsium-ai/agents'")
-		expect(src).toContain("from '@elsium-ai/gateway'")
-		expect(src).toContain('createApp')
-		expect(src).toContain('defineAgent')
+		const root = join(testDir, 'import-check')
+
+		// elsium.config.ts
+		const configSrc = readFileSync(join(root, 'elsium.config.ts'), 'utf-8')
+		expect(configSrc).toContain("from '@elsium-ai/core'")
+
+		// src/index.ts
+		const indexSrc = readFileSync(join(root, 'src/index.ts'), 'utf-8')
+		expect(indexSrc).toContain("from '@elsium-ai/app'")
+		expect(indexSrc).toContain("from './agents/assistant'")
+		expect(indexSrc).toContain('createApp')
+
+		// src/gateway/mesh.ts
+		const meshSrc = readFileSync(join(root, 'src/gateway/mesh.ts'), 'utf-8')
+		expect(meshSrc).toContain("from '@elsium-ai/gateway'")
+		expect(meshSrc).toContain('createProviderMesh')
+
+		// src/policies/default.ts
+		const policySrc = readFileSync(join(root, 'src/policies/default.ts'), 'utf-8')
+		expect(policySrc).toContain("from '@elsium-ai/core'")
+		expect(policySrc).toContain('createPolicySet')
+		expect(policySrc).toContain('modelAccessPolicy')
+		expect(policySrc).toContain('costLimitPolicy')
+
+		// src/agents/assistant.ts
+		const agentSrc = readFileSync(join(root, 'src/agents/assistant.ts'), 'utf-8')
+		expect(agentSrc).toContain("from '@elsium-ai/agents'")
+		expect(agentSrc).toContain("from '../gateway/mesh'")
+		expect(agentSrc).toContain("from '../tools/example'")
+
+		// src/tools/example.ts
+		const toolSrc = readFileSync(join(root, 'src/tools/example.ts'), 'utf-8')
+		expect(toolSrc).toContain("from '@elsium-ai/tools'")
+		expect(toolSrc).toContain("from 'zod'")
+
+		// src/workflows/example.ts
+		const workflowSrc = readFileSync(join(root, 'src/workflows/example.ts'), 'utf-8')
+		expect(workflowSrc).toContain("from '@elsium-ai/workflows'")
+		expect(workflowSrc).toContain("from '../agents/assistant'")
+
+		// evals/quality.eval.ts
+		const evalSrc = readFileSync(join(root, 'evals/quality.eval.ts'), 'utf-8')
+		expect(evalSrc).toContain("from '@elsium-ai/testing'")
+
+		// evals/determinism.eval.ts
+		const detSrc = readFileSync(join(root, 'evals/determinism.eval.ts'), 'utf-8')
+		expect(detSrc).toContain("from '@elsium-ai/testing'")
+		expect(detSrc).toContain('assertDeterministic')
+
+		// test/agents/assistant.test.ts
+		const testSrc = readFileSync(join(root, 'test/agents/assistant.test.ts'), 'utf-8')
+		expect(testSrc).toContain('mockProvider')
+		expect(testSrc).toContain('createReplayRecorder')
+	})
+
+	it('should generate files for all three pillars', async () => {
+		const origCwd = process.cwd()
+		process.chdir(testDir)
+
+		const { initCommand } = await import('../commands/init')
+		const output = captureConsole()
+		try {
+			await initCommand(['pillars-check'])
+		} finally {
+			output.restore()
+			process.chdir(origCwd)
+		}
+
+		const root = join(testDir, 'pillars-check')
+
+		// Reliability: provider mesh with circuit breaker
+		const meshSrc = readFileSync(join(root, 'src/gateway/mesh.ts'), 'utf-8')
+		expect(meshSrc).toContain('circuitBreaker')
+		expect(meshSrc).toContain("strategy: 'fallback'")
+
+		// Governance: policy sets with model allowlist and cost limit
+		const policySrc = readFileSync(join(root, 'src/policies/default.ts'), 'utf-8')
+		expect(policySrc).toContain('modelAccessPolicy')
+		expect(policySrc).toContain('costLimitPolicy')
+
+		// Reproducibility: evals + determinism + replay testing
+		const evalSrc = readFileSync(join(root, 'evals/quality.eval.ts'), 'utf-8')
+		expect(evalSrc).toContain('EvalSuiteConfig')
+		const detSrc = readFileSync(join(root, 'evals/determinism.eval.ts'), 'utf-8')
+		expect(detSrc).toContain('assertDeterministic')
+		const testSrc = readFileSync(join(root, 'test/agents/assistant.test.ts'), 'utf-8')
+		expect(testSrc).toContain('createReplayRecorder')
+		expect(testSrc).toContain('createReplayPlayer')
 	})
 })
 

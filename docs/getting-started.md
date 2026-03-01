@@ -35,11 +35,33 @@ This creates a project with:
 ```
 my-app/
 ├── src/
-│   └── index.ts       # App entry point with example agent
-├── package.json
-├── tsconfig.json
+│   ├── index.ts                  # Entry point — boots server
+│   ├── agents/
+│   │   └── assistant.ts          # Agent with guardrails + confidence
+│   ├── tools/
+│   │   └── example.ts            # Calculator tool with Zod schema
+│   ├── policies/
+│   │   └── default.ts            # Policy set — model allowlist + cost limit
+│   ├── gateway/
+│   │   └── mesh.ts               # Provider mesh with circuit breaker
+│   └── workflows/
+│       └── example.ts            # 2-step workflow
+├── evals/
+│   ├── quality.eval.ts           # Quality eval suite
+│   └── determinism.eval.ts       # Determinism assertion
+├── test/
+│   └── agents/
+│       └── assistant.test.ts     # Unit test with mockProvider + replay
+├── .elsium/
+│   ├── baselines/.gitkeep
+│   └── recordings/.gitkeep
 ├── .env.example
-└── .gitignore
+├── .gitignore
+├── biome.json
+├── tsconfig.json
+├── package.json
+├── elsium.config.ts              # Central config (satisfies AppConfig)
+└── README.md
 ```
 
 ## Manual Setup
