@@ -6,7 +6,7 @@
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-569%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-584%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/bundle-77KB%20minified-blue" alt="Bundle Size">
 </p>
 

@@ -1086,7 +1086,7 @@ console.log(inputResult.safe)         // false
 console.log(inputResult.violations)   // [{ type: 'prompt_injection', detail: '...', severity: 'high' }]
 
 const outputResult = security.sanitizeOutput('Your API key is sk-abc123xyz')
-console.log(outputResult.sanitized)   // 'Your API key is [REDACTED_API_KEY]'
+console.log(outputResult.redactedOutput)   // 'Your API key is [REDACTED_API_KEY]'
 console.log(outputResult.violations)  // [{ type: 'secret_detected', ... }]
 
 // Semantic validation (hallucination, relevance, grounding)
