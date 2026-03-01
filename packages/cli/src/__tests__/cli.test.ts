@@ -295,6 +295,7 @@ describe('CLI - trace command', () => {
 	let testDir: string
 
 	beforeEach(() => {
+		vi.resetModules()
 		testDir = join(tmpdir(), `elsium-trace-test-${Date.now()}`)
 		mkdirSync(testDir, { recursive: true })
 		vi.spyOn(process, 'cwd').mockReturnValue(testDir)
@@ -403,22 +404,8 @@ describe('CLI - trace command', () => {
 		mkdirSync(join(testDir, '.elsium/traces'), { recursive: true })
 
 		const { traceCommand } = await import('../commands/trace')
-		const output = captureConsole()
-		const origExit = process.exit
-		let exitCode: number | undefined
-		process.exit = ((code: number) => {
-			exitCode = code
-		}) as never
 
-		try {
-			await traceCommand(['nonexistent'])
-		} finally {
-			output.restore()
-			process.exit = origExit
-		}
-
-		expect(exitCode).toBe(1)
-		expect(output.errors.some((e) => e.includes('Trace not found'))).toBe(true)
+		await expect(traceCommand(['nonexistent'])).rejects.toThrow('Trace not found')
 	})
 })
 
