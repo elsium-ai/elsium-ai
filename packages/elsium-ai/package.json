@@ -1,41 +1,43 @@
 {
-  "name": "elsium-ai",
-  "version": "0.1.0",
-  "description": "ElsiumAI — A high-performance, TypeScript-first AI framework built on Bun",
-  "license": "MIT",
-  "author": "Eric Utrera <ebutrera9103@gmail.com>",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ebutrera9103/elsium-ai",
-    "directory": "packages/elsium-ai"
-  },
-  "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "exports": {
-    ".": {
-      "import": "./src/index.ts",
-      "types": "./src/index.ts"
-    }
-  },
-  "files": ["src"],
-  "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun x tsc -p tsconfig.build.json --emitDeclarationOnly"
-  },
-  "dependencies": {
-    "@elsium-ai/core": "workspace:*",
-    "@elsium-ai/gateway": "workspace:*",
-    "@elsium-ai/agents": "workspace:*",
-    "@elsium-ai/tools": "workspace:*",
-    "@elsium-ai/rag": "workspace:*",
-    "@elsium-ai/workflows": "workspace:*",
-    "@elsium-ai/observe": "workspace:*",
-    "@elsium-ai/app": "workspace:*",
-    "@elsium-ai/testing": "workspace:*",
-    "@elsium-ai/mcp": "workspace:*"
-  },
-  "devDependencies": {
-    "bun-types": "^1.3.0",
-    "typescript": "^5.7.0"
-  }
+	"name": "elsium-ai",
+	"version": "0.1.1",
+	"description": "ElsiumAI — A high-performance, TypeScript-first AI framework built on Bun",
+	"license": "MIT",
+	"author": "Eric Utrera <ebutrera9103@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/ebutrera9103/elsium-ai",
+		"directory": "packages/elsium-ai"
+	},
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": {
+			"import": "./src/index.ts",
+			"types": "./src/index.ts"
+		}
+	},
+	"files": [
+		"src"
+	],
+	"scripts": {
+		"build": "bun build ./src/index.ts --outdir ./dist --target bun && bun x tsc -p tsconfig.build.json --emitDeclarationOnly"
+	},
+	"dependencies": {
+		"@elsium-ai/core": "workspace:*",
+		"@elsium-ai/gateway": "workspace:*",
+		"@elsium-ai/agents": "workspace:*",
+		"@elsium-ai/tools": "workspace:*",
+		"@elsium-ai/rag": "workspace:*",
+		"@elsium-ai/workflows": "workspace:*",
+		"@elsium-ai/observe": "workspace:*",
+		"@elsium-ai/app": "workspace:*",
+		"@elsium-ai/testing": "workspace:*",
+		"@elsium-ai/mcp": "workspace:*"
+	},
+	"devDependencies": {
+		"bun-types": "^1.3.0",
+		"typescript": "^5.7.0"
+	}
 }
