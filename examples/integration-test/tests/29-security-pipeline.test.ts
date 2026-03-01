@@ -7,7 +7,7 @@ import { mockProvider } from '@elsium-ai/testing'
  * Verifies: securityMiddleware blocks injections, redacts secrets, custom patterns, NFKC
  */
 import { describe, expect, it } from 'vitest'
-import { createTestGateway, describeWithLLM, registerMockProviderFactory } from '../lib/helpers'
+import { describeWithLLM, registerMockProviderFactory } from '../lib/helpers'
 
 describe('29 — Security Pipeline (Framework)', () => {
 	it('securityMiddleware blocks prompt injection', async () => {

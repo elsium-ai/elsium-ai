@@ -1,5 +1,4 @@
-import type { CompletionRequest, LLMResponse, ProviderConfig, StreamEvent } from '@elsium-ai/core'
-import type { ElsiumStream } from '@elsium-ai/core'
+import type { CompletionRequest, ElsiumStream, LLMResponse, ProviderConfig } from '@elsium-ai/core'
 
 export interface ModelPricing {
 	inputPerMillion: number

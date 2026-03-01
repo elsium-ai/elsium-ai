@@ -1,12 +1,12 @@
 import type {
 	LLMResponse,
+	Logger,
 	Middleware,
 	MiddlewareContext,
 	MiddlewareNext,
 	XRayData,
 } from '@elsium-ai/core'
 import { createLogger } from '@elsium-ai/core'
-import type { Logger } from '@elsium-ai/core'
 import { getProviderMetadata } from './provider'
 
 export function composeMiddleware(middlewares: Middleware[]): Middleware {

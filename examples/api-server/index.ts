@@ -20,7 +20,6 @@ import { createApp } from '@elsium-ai/app'
 import { env } from '@elsium-ai/core'
 import { gateway } from '@elsium-ai/gateway'
 import { createToolkit, defineTool } from '@elsium-ai/tools'
-import { defineWorkflow, step } from '@elsium-ai/workflows'
 import { z } from 'zod'
 
 // ─── Tools ──────────────────────────────────────────────────────

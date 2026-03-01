@@ -1,4 +1,4 @@
-import type { CompletionRequest, LLMResponse, Message } from '@elsium-ai/core'
+import type { CompletionRequest, LLMResponse } from '@elsium-ai/core'
 import { defineTool } from '@elsium-ai/tools'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'

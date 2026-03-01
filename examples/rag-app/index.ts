@@ -12,7 +12,7 @@
 import { defineAgent } from '@elsium-ai/agents'
 import { env } from '@elsium-ai/core'
 import { gateway } from '@elsium-ai/gateway'
-import { createInMemoryStore, createMockEmbeddings, rag } from '@elsium-ai/rag'
+import { rag } from '@elsium-ai/rag'
 
 // Sample knowledge base
 const documents = [

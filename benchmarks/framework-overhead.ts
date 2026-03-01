@@ -17,7 +17,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { defineAgent } from '@elsium-ai/agents'
-import type { CompletionRequest, LLMResponse, Middleware, MiddlewareContext } from '@elsium-ai/core'
+import type { CompletionRequest, LLMResponse, Middleware } from '@elsium-ai/core'
 import {
 	createCircuitBreaker,
 	createPolicySet,

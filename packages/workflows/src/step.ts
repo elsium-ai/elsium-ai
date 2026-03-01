@@ -1,5 +1,4 @@
 import { ElsiumError, sleep } from '@elsium-ai/core'
-import type { z } from 'zod'
 import type { RetryConfig, StepConfig, StepContext, StepResult } from './types'
 
 export function step<TInput, TOutput>(

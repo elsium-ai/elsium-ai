@@ -1,5 +1,4 @@
-import type { CompletionRequest, LLMResponse, Message } from '@elsium-ai/core'
-import type { Span } from '@elsium-ai/observe'
+import type { Message } from '@elsium-ai/core'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import type { ApprovalCallback, ApprovalGateConfig } from './approval'
 import type { ConfidenceConfig, ConfidenceResult } from './confidence'

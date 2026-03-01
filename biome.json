@@ -10,6 +10,9 @@
 			"complexity": {
 				"noExcessiveCognitiveComplexity": "warn"
 			},
+			"correctness": {
+				"noUnusedImports": "error"
+			},
 			"performance": {
 				"noAccumulatingSpread": "error"
 			},

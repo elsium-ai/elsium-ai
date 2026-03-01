@@ -1,4 +1,3 @@
-import type { Message } from '@elsium-ai/core'
 import { extractText } from '@elsium-ai/core'
 import type { Agent } from './agent'
 import type { AgentResult, AgentRunOptions } from './types'

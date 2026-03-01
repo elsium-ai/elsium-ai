@@ -4,7 +4,7 @@ import { createOpenAIEmbeddings, rag } from '@elsium-ai/rag'
  * Verifies: real OpenAI embeddings for ingest, query, and embedBatch
  */
 import { expect, it } from 'vitest'
-import { assertNonEmptyString, describeWithLLM } from '../lib/helpers'
+import { describeWithLLM } from '../lib/helpers'
 
 const EMBEDDING_CONFIG = {
 	provider: 'openai' as const,

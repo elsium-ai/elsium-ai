@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { createRBAC } from './rbac'
-import type { Permission } from './rbac'
 
 describe('RBAC', () => {
 	it('creates RBAC with custom roles', () => {

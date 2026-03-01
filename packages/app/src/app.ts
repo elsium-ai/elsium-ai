@@ -7,7 +7,7 @@ const log = createLogger()
 import { Hono } from 'hono'
 import { authMiddleware, corsMiddleware, rateLimitMiddleware } from './middleware'
 import { createRoutes } from './routes'
-import type { AppConfig, ServerConfig } from './types'
+import type { AppConfig } from './types'
 
 export interface ElsiumApp {
 	readonly hono: Hono

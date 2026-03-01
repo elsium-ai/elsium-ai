@@ -1,13 +1,6 @@
-import { ElsiumError } from '@elsium-ai/core'
-import type {
-	CompletionRequest,
-	LLMResponse,
-	Middleware,
-	MiddlewareContext,
-	MiddlewareNext,
-} from '@elsium-ai/core'
+import type { CompletionRequest, LLMResponse, Middleware, MiddlewareContext } from '@elsium-ai/core'
 import { type ElsiumStream, createStream } from '@elsium-ai/core'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import {
 	calculateCost,

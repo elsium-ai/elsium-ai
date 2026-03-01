@@ -1,4 +1,4 @@
-import type { CompletionRequest, LLMResponse, ProviderConfig } from '@elsium-ai/core'
+import type { CompletionRequest, LLMResponse } from '@elsium-ai/core'
 import {
 	type CircuitBreaker,
 	type CircuitBreakerConfig,
@@ -8,7 +8,6 @@ import {
 } from '@elsium-ai/core'
 import { gateway } from './gateway'
 import type { Gateway } from './gateway'
-import { calculateCost } from './pricing'
 import { getProviderMetadata } from './provider'
 
 export type RoutingStrategy =
