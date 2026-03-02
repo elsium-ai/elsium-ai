@@ -45,7 +45,14 @@ export function envBool(name: string, fallback?: boolean): boolean {
 	const raw = getEnvVar(name)
 	if (raw !== undefined) {
 		const normalized = raw.toLowerCase()
-		return normalized === 'true' || normalized === '1' || normalized === 'yes'
+		if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true
+		if (normalized === 'false' || normalized === '0' || normalized === 'no') return false
+		throw new ElsiumError({
+			code: 'CONFIG_ERROR',
+			message: `Environment variable ${name} has unrecognized boolean value: ${raw}. Expected one of: true, false, 1, 0, yes, no`,
+			retryable: false,
+			metadata: { variable: name, value: raw },
+		})
 	}
 	if (fallback !== undefined) return fallback
 	throw new ElsiumError({

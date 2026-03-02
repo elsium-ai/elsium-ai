@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
+import { type Logger, createLogger, generateId } from '@elsium-ai/core'
 import type { Context, Next } from 'hono'
 import type { AuthConfig, CorsConfig, RateLimitConfig } from './types'
 
@@ -6,7 +7,7 @@ import type { AuthConfig, CorsConfig, RateLimitConfig } from './types'
 
 export function corsMiddleware(config: CorsConfig | boolean = true) {
 	const opts: CorsConfig =
-		typeof config === 'boolean' ? { origin: [], methods: ['GET', 'POST', 'OPTIONS'] } : config
+		typeof config === 'boolean' ? { origin: '*', methods: ['GET', 'POST', 'OPTIONS'] } : config
 
 	return async (c: Context, next: Next) => {
 		const requestOrigin = c.req.header('Origin') ?? ''
@@ -123,5 +124,40 @@ export function rateLimitMiddleware(config: RateLimitConfig) {
 		}
 
 		await next()
+	}
+}
+
+// ─── Request ID ──────────────────────────────────────────────────
+
+export function requestIdMiddleware() {
+	return async (c: Context, next: Next) => {
+		const raw = c.req.header('X-Request-ID')
+		const id = raw && /^[\w\-.:]{1,128}$/.test(raw) ? raw : generateId('req')
+		c.set('requestId', id)
+
+		await next()
+
+		c.res.headers.set('X-Request-ID', id)
+	}
+}
+
+// ─── Request Logger ──────────────────────────────────────────────
+
+export function requestLoggerMiddleware(logger?: Logger) {
+	const log = logger ?? createLogger()
+
+	return async (c: Context, next: Next) => {
+		const start = Date.now()
+
+		await next()
+
+		const duration = Date.now() - start
+		log.info(`${c.req.method} ${c.req.path}`, {
+			method: c.req.method,
+			path: c.req.path,
+			status: c.res.status,
+			durationMs: duration,
+			requestId: c.get('requestId'),
+		})
 	}
 }

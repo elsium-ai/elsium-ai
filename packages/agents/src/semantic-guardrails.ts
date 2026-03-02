@@ -106,9 +106,9 @@ Only respond with JSON, nothing else.`,
 			return null
 		}
 
-		const score = (parsed.score as number) ?? 0.5
+		const score = typeof parsed.score === 'number' ? parsed.score : 0.5
 		const threshold = config.hallucination?.threshold ?? 0.7
-		const claims = (parsed.hallucinated_claims as string[]) ?? []
+		const claims = Array.isArray(parsed.hallucinated_claims) ? parsed.hallucinated_claims : []
 		return {
 			passed: score >= threshold,
 			score,
@@ -200,14 +200,17 @@ Only respond with JSON, nothing else.`,
 			return null
 		}
 
-		const score = (parsed.score as number) ?? 0.5
+		const score = typeof parsed.score === 'number' ? parsed.score : 0.5
 		const threshold = config.relevance?.threshold ?? 0.5
 		return {
 			passed: score >= threshold,
 			score,
 			reason:
-				(parsed.reason as string) ??
-				(score >= threshold ? 'Output is relevant' : 'Output lacks relevance'),
+				typeof parsed.reason === 'string'
+					? parsed.reason
+					: score >= threshold
+						? 'Output is relevant'
+						: 'Output lacks relevance',
 		}
 	}
 
@@ -283,8 +286,8 @@ Only respond with JSON, nothing else.`,
 			return null
 		}
 
-		const score = (parsed.score as number) ?? 0.5
-		const claims = (parsed.ungrounded_claims as string[]) ?? []
+		const score = typeof parsed.score === 'number' ? parsed.score : 0.5
+		const claims = Array.isArray(parsed.ungrounded_claims) ? parsed.ungrounded_claims : []
 		return {
 			passed: score >= 0.7,
 			score,

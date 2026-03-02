@@ -1,12 +1,23 @@
 import type { Agent } from '@elsium-ai/agents'
-import { createLogger } from '@elsium-ai/core'
+import {
+	ElsiumError,
+	type ShutdownManager,
+	createLogger,
+	createShutdownManager,
+} from '@elsium-ai/core'
 import { type Gateway, gateway } from '@elsium-ai/gateway'
 import { type Tracer, observe } from '@elsium-ai/observe'
 
 const log = createLogger()
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
-import { authMiddleware, corsMiddleware, rateLimitMiddleware } from './middleware'
+import {
+	authMiddleware,
+	corsMiddleware,
+	rateLimitMiddleware,
+	requestIdMiddleware,
+	requestLoggerMiddleware,
+} from './middleware'
 import { createRoutes } from './routes'
 import type { AppConfig } from './types'
 
@@ -14,11 +25,26 @@ export interface ElsiumApp {
 	readonly hono: Hono
 	readonly gateway: Gateway
 	readonly tracer: Tracer
-	listen(port?: number): { port: number; stop: () => void }
+	listen(port?: number): { port: number; stop: () => Promise<void> }
 }
 
 export function createApp(config: AppConfig): ElsiumApp {
 	const app = new Hono()
+
+	// ─── Global Error Handler ─────────────────────────────────
+
+	app.onError((err, c) => {
+		const statusCode = err instanceof ElsiumError ? (err.statusCode ?? 500) : 500
+		const code = err instanceof ElsiumError ? err.code : 'UNKNOWN'
+		log.error('Unhandled error', { error: err.message, code, path: c.req.path })
+		return c.json({ error: err.message, code }, statusCode as 500)
+	})
+
+	// ─── Not Found Handler ────────────────────────────────────
+
+	app.notFound((c) => {
+		return c.json({ error: 'Not found' }, 404)
+	})
 
 	// ─── Gateway ──────────────────────────────────────────────
 
@@ -43,6 +69,9 @@ export function createApp(config: AppConfig): ElsiumApp {
 	// ─── Middleware ────────────────────────────────────────────
 
 	const serverConfig = config.server ?? {}
+
+	app.use('*', requestIdMiddleware())
+	app.use('*', requestLoggerMiddleware(log))
 
 	if (serverConfig.cors) {
 		app.use('*', corsMiddleware(serverConfig.cors))
@@ -75,7 +104,7 @@ export function createApp(config: AppConfig): ElsiumApp {
 		defaultAgent,
 		tracer,
 		startTime: Date.now(),
-		version: '0.1.0',
+		version: config.version ?? '0.2.2',
 		providers: providerNames,
 	})
 
@@ -88,7 +117,7 @@ export function createApp(config: AppConfig): ElsiumApp {
 		gateway: gw,
 		tracer,
 
-		listen(port?: number): { port: number; stop: () => void } {
+		listen(port?: number): { port: number; stop: () => Promise<void> } {
 			const listenPort = port ?? serverConfig.port ?? 3000
 			const hostname = serverConfig.hostname ?? '0.0.0.0'
 
@@ -98,6 +127,19 @@ export function createApp(config: AppConfig): ElsiumApp {
 				hostname,
 			})
 
+			let shutdownManager: ShutdownManager | undefined
+			if (serverConfig.gracefulShutdown) {
+				const drainTimeoutMs =
+					typeof serverConfig.gracefulShutdown === 'object'
+						? serverConfig.gracefulShutdown.drainTimeoutMs
+						: undefined
+				shutdownManager = createShutdownManager({
+					drainTimeoutMs,
+					onDrainStart: () => log.info('Draining connections...'),
+					onDrainComplete: () => log.info('Drain complete'),
+				})
+			}
+
 			log.info('ElsiumAI server started', {
 				url: `http://${hostname}:${listenPort}`,
 				routes: ['POST /chat', 'POST /complete', 'GET /health', 'GET /metrics', 'GET /agents'],
@@ -105,7 +147,10 @@ export function createApp(config: AppConfig): ElsiumApp {
 
 			return {
 				port: listenPort,
-				stop: () => {
+				stop: async () => {
+					if (shutdownManager) {
+						await shutdownManager.shutdown()
+					}
 					server.close()
 				},
 			}

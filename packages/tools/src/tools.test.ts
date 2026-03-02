@@ -1,3 +1,4 @@
+import { ElsiumError } from '@elsium-ai/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
@@ -157,6 +158,18 @@ describe('createToolkit', () => {
 		expect(defs).toHaveLength(2)
 		expect(defs.map((d) => d.name)).toEqual(['tool_a', 'tool_b'])
 	})
+
+	it('throws CONFIG_ERROR for duplicate tool names', () => {
+		const dupTool = defineTool({
+			name: 'tool_a',
+			description: 'Duplicate of tool_a',
+			input: z.object({}),
+			handler: async () => ({}),
+		})
+
+		expect(() => createToolkit('dup-kit', [toolA, dupTool])).toThrow(ElsiumError)
+		expect(() => createToolkit('dup-kit', [toolA, dupTool])).toThrow('Duplicate tool name "tool_a"')
+	})
 })
 
 // ─── Format ──────────────────────────────────────────────────────
@@ -303,7 +316,7 @@ describe('httpFetchTool', () => {
 		expect(data.contentType).toBe('text/html')
 	})
 
-	it('passes custom headers', async () => {
+	it('passes safe custom headers and strips sensitive ones', async () => {
 		globalThis.fetch = vi.fn().mockResolvedValue({
 			status: 200,
 			text: async () => '{"ok": true}',
@@ -312,13 +325,15 @@ describe('httpFetchTool', () => {
 
 		const result = await httpFetchTool.execute({
 			url: 'https://api.example.com/data',
-			headers: { Authorization: 'Bearer token123' },
+			headers: { 'X-Custom': 'value', Authorization: 'Bearer secret', Cookie: 'session=abc' },
 		})
 
 		expect(result.success).toBe(true)
 
 		const fetchCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
-		expect(fetchCall[1].headers.Authorization).toBe('Bearer token123')
+		expect(fetchCall[1].headers['X-Custom']).toBe('value')
+		expect(fetchCall[1].headers.Authorization).toBeUndefined()
+		expect(fetchCall[1].headers.Cookie).toBeUndefined()
 	})
 
 	it('truncates large response bodies', async () => {
@@ -357,5 +372,57 @@ describe('httpFetchTool', () => {
 		expect(def.name).toBe('http_fetch')
 		expect(def.description).toContain('Fetch content from a URL')
 		expect(def.inputSchema).toBeDefined()
+	})
+
+	it('blocks requests to localhost', async () => {
+		const result = await httpFetchTool.execute({ url: 'https://localhost/secret' })
+		expect(result.success).toBe(false)
+		expect(result.error).toContain('private/internal')
+	})
+
+	it('blocks requests to 127.x.x.x', async () => {
+		const result = await httpFetchTool.execute({ url: 'https://127.0.0.1/secret' })
+		expect(result.success).toBe(false)
+		expect(result.error).toContain('private/internal')
+	})
+
+	it('blocks requests to 10.x.x.x', async () => {
+		const result = await httpFetchTool.execute({ url: 'https://10.0.0.1/data' })
+		expect(result.success).toBe(false)
+		expect(result.error).toContain('private/internal')
+	})
+
+	it('blocks requests to 192.168.x.x', async () => {
+		const result = await httpFetchTool.execute({ url: 'https://192.168.1.1/admin' })
+		expect(result.success).toBe(false)
+		expect(result.error).toContain('private/internal')
+	})
+
+	it('blocks requests to IPv6 loopback ::1', async () => {
+		const result = await httpFetchTool.execute({ url: 'https://[::1]/secret' })
+		expect(result.success).toBe(false)
+		expect(result.error).toContain('private/internal')
+	})
+
+	it('blocks requests to IPv6 link-local fe80:', async () => {
+		const result = await httpFetchTool.execute({ url: 'https://[fe80::1]/data' })
+		expect(result.success).toBe(false)
+		expect(result.error).toContain('private/internal')
+	})
+
+	it('blocks requests to IPv6 ULA fc/fd addresses', async () => {
+		const result1 = await httpFetchTool.execute({ url: 'https://[fd12::1]/data' })
+		expect(result1.success).toBe(false)
+		expect(result1.error).toContain('private/internal')
+
+		const result2 = await httpFetchTool.execute({ url: 'https://[fc00::1]/data' })
+		expect(result2.success).toBe(false)
+		expect(result2.error).toContain('private/internal')
+	})
+
+	it('blocks non-http protocols', async () => {
+		const result = await httpFetchTool.execute({ url: 'file:///etc/passwd' })
+		expect(result.success).toBe(false)
+		expect(result.error).toContain('Blocked protocol')
 	})
 })

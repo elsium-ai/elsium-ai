@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { createRequire } from 'node:module'
 import { costCommand } from './commands/cost'
 import { devCommand } from './commands/dev'
 import { evalCommand } from './commands/eval'
@@ -8,7 +9,9 @@ import { promptCommand } from './commands/prompt'
 import { traceCommand } from './commands/trace'
 import { xrayCommand } from './commands/xray'
 
-const VERSION = '0.1.0'
+const _require = createRequire(import.meta.url)
+const pkg = _require('../package.json') as { version: string }
+const VERSION = pkg.version
 
 const HELP = `
   ElsiumAI CLI v${VERSION}

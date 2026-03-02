@@ -1,4 +1,6 @@
+import { ElsiumStream } from '@elsium-ai/core'
 import { describe, expect, it, vi } from 'vitest'
+import * as gatewayModule from './gateway'
 import { createProviderMesh } from './router'
 
 // Mock the gateway module
@@ -232,5 +234,86 @@ describe('createProviderMesh', () => {
 		})
 
 		expect(result).toBeDefined()
+	})
+})
+
+describe('ProviderMesh stream() circuit breaker integration', () => {
+	it('should call the gateway stream when circuit breaker is closed', () => {
+		const mockStream = new ElsiumStream(
+			(async function* () {
+				yield { type: 'text_delta' as const, text: 'hello' }
+			})(),
+		)
+
+		const streamMock = vi.fn().mockReturnValue(mockStream)
+		vi.mocked(gatewayModule.gateway).mockImplementationOnce((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: streamMock,
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
+			strategy: 'fallback',
+			circuitBreaker: true,
+		})
+
+		const result = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+
+		expect(streamMock).toHaveBeenCalledOnce()
+		expect(result).toBeInstanceOf(ElsiumStream)
+	})
+
+	it('should return an error stream when circuit breaker is open', async () => {
+		vi.mocked(gatewayModule.gateway).mockImplementationOnce((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn().mockRejectedValue(new Error('provider down')),
+				stream: vi.fn().mockReturnValue(
+					new ElsiumStream(
+						(async function* () {
+							yield { type: 'text_delta' as const, text: 'ok' }
+						})(),
+					),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
+			strategy: 'fallback',
+			// Low threshold so one failure opens the breaker
+			circuitBreaker: { failureThreshold: 1, resetTimeoutMs: 60_000 },
+		})
+
+		// Trip the circuit breaker via complete()
+		await expect(mesh.complete({ messages: [{ role: 'user', content: 'Hi' }] })).rejects.toThrow(
+			'provider down',
+		)
+
+		// Now the circuit breaker is open — stream() should return an error stream
+		const errorStream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		expect(errorStream).toBeInstanceOf(ElsiumStream)
+
+		const events: unknown[] = []
+		for await (const event of errorStream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({
+			type: 'error',
+			error: expect.objectContaining({ message: 'Circuit breaker is open' }),
+		})
 	})
 })

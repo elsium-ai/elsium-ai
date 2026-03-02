@@ -3,15 +3,26 @@ import { ElsiumError, extractText, generateTraceId } from '@elsium-ai/core'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
 import type { AgentDependencies } from './agent'
+import { type ApprovalGate, createApprovalGate, shouldRequireApproval } from './approval'
 import { createAgentSecurity } from './security'
 import type {
 	AgentConfig,
+	AgentHooks,
 	AgentResult,
 	AgentRunOptions,
 	StateDefinition,
 	StateHistoryEntry,
 	StateMachineResult,
 } from './types'
+
+async function safeHook<T>(fn: (() => T | Promise<T>) | undefined): Promise<void> {
+	if (!fn) return
+	try {
+		await fn()
+	} catch (_) {
+		/* hook errors are intentionally swallowed to protect the agent loop */
+	}
+}
 
 export function executeStateMachine(
 	baseConfig: AgentConfig,
@@ -29,6 +40,9 @@ function handleToolCallsAndContinue(
 	toolCallHistory: AgentResult['toolCalls'],
 	conversationMessages: Message[],
 	signal?: AbortSignal,
+	hooks?: AgentHooks,
+	approvalGate?: ApprovalGate | null,
+	approvalConfig?: AgentConfig['guardrails'],
 ): Promise<void> | null {
 	const toolCalls = response.message.toolCalls
 	if (!toolCalls?.length || response.stopReason !== 'tool_use') {
@@ -36,7 +50,15 @@ function handleToolCallsAndContinue(
 	}
 
 	return (async () => {
-		const toolResults = await executeToolCalls(toolCalls, toolMap, toolCallHistory, signal)
+		const toolResults = await executeToolCalls(
+			toolCalls,
+			toolMap,
+			toolCallHistory,
+			signal,
+			hooks,
+			approvalGate,
+			approvalConfig,
+		)
 		const toolMessage: Message = {
 			role: 'tool',
 			content: '',
@@ -185,6 +207,9 @@ async function runStateMachine(
 	const agentSecurity = baseConfig.guardrails?.security
 		? createAgentSecurity(baseConfig.guardrails.security)
 		: null
+	const approvalGate: ApprovalGate | null = baseConfig.guardrails?.approval
+		? createApprovalGate(baseConfig.guardrails.approval)
+		: null
 	const maxTokenBudget = guardrails?.maxTokenBudget ?? 500_000
 	const outputValidator = guardrails?.outputValidator ?? (() => true)
 
@@ -220,6 +245,8 @@ async function runStateMachine(
 
 		conversationMessages.push(response.message)
 
+		await safeHook(() => baseConfig.hooks?.onMessage?.(response.message))
+
 		// Handle tool calls within current state
 		const toolCallAction = handleToolCallsAndContinue(
 			response,
@@ -227,6 +254,9 @@ async function runStateMachine(
 			toolCallHistory,
 			conversationMessages,
 			options.signal,
+			baseConfig.hooks,
+			approvalGate,
+			baseConfig.guardrails,
 		)
 		if (toolCallAction) {
 			await toolCallAction
@@ -276,10 +306,39 @@ async function executeToolCalls(
 	toolMap: Map<string, Tool>,
 	history: AgentResult['toolCalls'],
 	signal?: AbortSignal,
+	hooks?: AgentHooks,
+	approvalGate?: ApprovalGate | null,
+	approvalConfig?: AgentConfig['guardrails'],
 ) {
 	const results = []
 
 	for (const tc of toolCalls) {
+		await safeHook(() => hooks?.onToolCall?.({ name: tc.name, arguments: tc.arguments }))
+
+		if (
+			approvalGate &&
+			shouldRequireApproval(approvalConfig?.approval?.requireApprovalFor, {
+				toolName: tc.name,
+			})
+		) {
+			const decision = await approvalGate.requestApproval('tool_call', `Execute tool: ${tc.name}`, {
+				toolName: tc.name,
+				arguments: tc.arguments,
+			})
+			if (!decision.approved) {
+				const deniedResult: ToolExecutionResult = {
+					success: false,
+					error: `Tool call denied: ${decision.reason ?? 'Approval denied'}`,
+					toolCallId: tc.id,
+					durationMs: 0,
+				}
+				await safeHook(() => hooks?.onToolResult?.(deniedResult))
+				history.push({ name: tc.name, arguments: tc.arguments, result: deniedResult })
+				results.push(formatToolResult(deniedResult))
+				continue
+			}
+		}
+
 		const tool = toolMap.get(tc.name)
 		if (!tool) {
 			const errorResult: ToolExecutionResult = {
@@ -288,12 +347,14 @@ async function executeToolCalls(
 				toolCallId: tc.id,
 				durationMs: 0,
 			}
+			await safeHook(() => hooks?.onToolResult?.(errorResult))
 			history.push({ name: tc.name, arguments: tc.arguments, result: errorResult })
 			results.push(formatToolResult(errorResult))
 			continue
 		}
 
 		const result = await tool.execute(tc.arguments, { toolCallId: tc.id, signal })
+		await safeHook(() => hooks?.onToolResult?.(result))
 		history.push({ name: tc.name, arguments: tc.arguments, result })
 		results.push(formatToolResult(result))
 	}

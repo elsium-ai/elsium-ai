@@ -3,7 +3,7 @@ import {
 	type CircuitBreaker,
 	type CircuitBreakerConfig,
 	ElsiumError,
-	type ElsiumStream,
+	ElsiumStream,
 	createCircuitBreaker,
 } from '@elsium-ai/core'
 import { gateway } from './gateway'
@@ -318,7 +318,35 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 			const available = sortedProviders.find((e) => isProviderAvailable(e.name))
 			const entry = available ?? sortedProviders[0]
 			const gw = getGateway(entry.name)
-			return gw.stream({ ...request, model: request.model ?? entry.model })
+
+			// Wrap the stream call through the circuit breaker. The cb.execute()
+			// takes a Promise-returning fn; we resolve immediately with the stream
+			// so that the open/half-open gate runs before the stream is created,
+			// and any synchronous throw from gw.stream() is counted as a failure.
+			let resolvedStream: ElsiumStream | null = null
+			callWithCircuitBreaker(entry.name, () => {
+				resolvedStream = gw.stream({ ...request, model: request.model ?? entry.model })
+				return Promise.resolve(resolvedStream)
+			}).catch(() => {
+				// Rejection means the circuit breaker gate rejected the call (open
+				// state). The error stream returned below surfaces it to the consumer.
+			})
+
+			if (resolvedStream === null) {
+				// Circuit breaker is open — surface a stream-level error event
+				const err = new ElsiumError({
+					code: 'PROVIDER_ERROR',
+					message: 'Circuit breaker is open',
+					retryable: true,
+				})
+				return new ElsiumStream(
+					(async function* () {
+						yield { type: 'error' as const, error: err }
+					})(),
+				)
+			}
+
+			return resolvedStream
 		},
 	}
 }

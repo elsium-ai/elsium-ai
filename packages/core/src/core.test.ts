@@ -302,6 +302,18 @@ describe('Config', () => {
 		expect(envBool('TEST_BOOL_1')).toBe(false)
 		process.env.TEST_BOOL_1 = undefined
 	})
+
+	it('envBool throws CONFIG_ERROR for unrecognized values', () => {
+		process.env.TEST_BOOL_GARBAGE = 'maybe'
+		expect(() => envBool('TEST_BOOL_GARBAGE')).toThrow('unrecognized boolean value')
+		process.env.TEST_BOOL_GARBAGE = 'on'
+		expect(() => envBool('TEST_BOOL_GARBAGE')).toThrow('unrecognized boolean value')
+		process.env.TEST_BOOL_GARBAGE = 'off'
+		expect(() => envBool('TEST_BOOL_GARBAGE')).toThrow('unrecognized boolean value')
+		process.env.TEST_BOOL_GARBAGE = 'enabled'
+		expect(() => envBool('TEST_BOOL_GARBAGE')).toThrow('unrecognized boolean value')
+		process.env.TEST_BOOL_GARBAGE = undefined
+	})
 })
 
 // ─── Stream ──────────────────────────────────────────────────────

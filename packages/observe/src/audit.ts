@@ -62,6 +62,8 @@ export interface AuditTrail {
 		data: Record<string, unknown>,
 		options?: { actor?: string; traceId?: string },
 	): void
+	/** Resolves once async initialization (e.g. getLastHash) has completed. */
+	ready(): Promise<void>
 	query(filter: AuditQueryFilter): Promise<AuditEvent[]>
 	verifyIntegrity(): Promise<AuditIntegrityResult>
 	readonly count: number
@@ -165,14 +167,59 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	let idCounter = 0
 	let previousHash = '0'.repeat(64)
 
+	// readyPromise ensures that any log() calls arriving before an async
+	// getLastHash resolves are queued and processed only after the initial
+	// previousHash is known, preserving hash-chain integrity.
+	// When the adapter is synchronous, isReady stays true so that log() can
+	// append entries immediately without deferring to a microtask.
+	let isReady = true
+	let readyPromise: Promise<void> = Promise.resolve()
+
 	if (useHashChain && storage.getLastHash) {
 		const lastHash = storage.getLastHash()
 		if (typeof lastHash === 'string') {
 			previousHash = lastHash
-		} else if (lastHash && typeof (lastHash as Promise<string>).then === 'function') {
-			;(lastHash as Promise<string>).then((hash) => {
+		} else {
+			isReady = false
+			readyPromise = (lastHash as Promise<string>).then((hash) => {
 				if (typeof hash === 'string') previousHash = hash
+				isReady = true
 			})
+		}
+	}
+
+	function appendEntry(
+		type: AuditEventType,
+		data: Record<string, unknown>,
+		options?: { actor?: string; traceId?: string },
+	): void {
+		sequenceId++
+		idCounter++
+
+		const event: Omit<AuditEvent, 'hash'> & { hash?: string; previousHash: string } = {
+			id: `audit_${idCounter.toString(36)}_${Date.now().toString(36)}`,
+			sequenceId,
+			type,
+			timestamp: Date.now(),
+			actor: options?.actor,
+			traceId: options?.traceId,
+			data,
+			previousHash: useHashChain ? previousHash : '0'.repeat(64),
+		}
+
+		const hash = useHashChain
+			? computeEventHash(event as Omit<AuditEvent, 'hash'>, event.previousHash)
+			: createHash('sha256').update(JSON.stringify(event)).digest('hex')
+
+		const finalEvent: AuditEvent = { ...(event as Omit<AuditEvent, 'hash'>), hash }
+
+		if (useHashChain) {
+			previousHash = hash
+		}
+
+		const result = storage.append(finalEvent)
+		if (result && typeof (result as Promise<void>).catch === 'function') {
+			;(result as Promise<void>).catch((err) => config?.onError?.(err))
 		}
 	}
 
@@ -182,34 +229,19 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			data: Record<string, unknown>,
 			options?: { actor?: string; traceId?: string },
 		): void {
-			sequenceId++
-			idCounter++
-
-			const event: Omit<AuditEvent, 'hash'> & { hash?: string; previousHash: string } = {
-				id: `audit_${idCounter.toString(36)}_${Date.now().toString(36)}`,
-				sequenceId,
-				type,
-				timestamp: Date.now(),
-				actor: options?.actor,
-				traceId: options?.traceId,
-				data,
-				previousHash: useHashChain ? previousHash : '0'.repeat(64),
+			if (isReady) {
+				// Synchronous path: adapter was synchronous (or had no getLastHash),
+				// so the initial hash is already set — append immediately.
+				appendEntry(type, data, options)
+			} else {
+				// Async path: chain onto readyPromise so entries are serialised and
+				// processed in arrival order once the initial hash resolves.
+				readyPromise = readyPromise.then(() => appendEntry(type, data, options))
 			}
+		},
 
-			const hash = useHashChain
-				? computeEventHash(event as Omit<AuditEvent, 'hash'>, event.previousHash)
-				: createHash('sha256').update(JSON.stringify(event)).digest('hex')
-
-			const finalEvent: AuditEvent = { ...(event as Omit<AuditEvent, 'hash'>), hash }
-
-			if (useHashChain) {
-				previousHash = hash
-			}
-
-			const result = storage.append(finalEvent)
-			if (result && typeof (result as Promise<void>).catch === 'function') {
-				;(result as Promise<void>).catch((err) => config?.onError?.(err))
-			}
+		ready(): Promise<void> {
+			return readyPromise
 		},
 
 		async query(filter: AuditQueryFilter): Promise<AuditEvent[]> {

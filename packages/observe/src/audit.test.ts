@@ -213,10 +213,11 @@ describe('AuditTrail', () => {
 
 		const trail = createAuditTrail({ storage: adapter, hashChain: true })
 
-		// Wait for the async getLastHash to resolve
-		await new Promise((r) => setTimeout(r, 10))
-
+		// Log before awaiting ready() — the entry must still use the correct hash
 		trail.log('llm_call', { model: 'test' })
+
+		// Await initialization; this also drains all queued log() calls
+		await trail.ready()
 
 		expect(events).toHaveLength(1)
 		expect(events[0].previousHash).toBe(preExistingHash)

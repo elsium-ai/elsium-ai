@@ -1,3 +1,4 @@
+import { ElsiumError } from '@elsium-ai/core'
 import type { ToolDefinition } from '@elsium-ai/core'
 import type { Tool, ToolContext, ToolExecutionResult } from './define'
 
@@ -15,6 +16,18 @@ export interface Toolkit {
 }
 
 export function createToolkit(name: string, tools: Tool[]): Toolkit {
+	const seen = new Set<string>()
+	for (const tool of tools) {
+		if (seen.has(tool.name)) {
+			throw new ElsiumError({
+				code: 'CONFIG_ERROR',
+				message: `Duplicate tool name "${tool.name}" in toolkit "${name}"`,
+				retryable: false,
+				metadata: { toolkit: name, tool: tool.name },
+			})
+		}
+		seen.add(tool.name)
+	}
 	const toolMap = new Map(tools.map((t) => [t.name, t]))
 
 	return {

@@ -1,13 +1,18 @@
 import type { Agent } from '@elsium-ai/agents'
-import type { LLMResponse } from '@elsium-ai/core'
-import { createStream } from '@elsium-ai/core'
+import { ElsiumError, type LLMResponse, createStream } from '@elsium-ai/core'
 import type { Gateway } from '@elsium-ai/gateway'
 import { registerProviderFactory } from '@elsium-ai/gateway'
 import { observe } from '@elsium-ai/observe'
 import { Hono } from 'hono'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app'
-import { authMiddleware, corsMiddleware, rateLimitMiddleware } from './middleware'
+import {
+	authMiddleware,
+	corsMiddleware,
+	rateLimitMiddleware,
+	requestIdMiddleware,
+	requestLoggerMiddleware,
+} from './middleware'
 import { type RoutesDeps, createRoutes } from './routes'
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -99,6 +104,14 @@ function req(method: string, path: string, body?: unknown): Request {
 	return new Request(`http://localhost${path}`, init)
 }
 
+function rawReq(method: string, path: string, rawBody: string): Request {
+	return new Request(`http://localhost${path}`, {
+		method,
+		headers: { 'Content-Type': 'application/json' },
+		body: rawBody,
+	})
+}
+
 // ─── Health ──────────────────────────────────────────────────────
 
 describe('GET /health', () => {
@@ -182,6 +195,64 @@ describe('POST /chat', () => {
 
 		expect(res.status).toBe(404)
 	})
+
+	it('returns 400 for malformed JSON', async () => {
+		const app = setupRoutes()
+		const res = await app.fetch(rawReq('POST', '/chat', '{not json'))
+		const json = await res.json()
+
+		expect(res.status).toBe(400)
+		expect(json.error).toBe('Invalid JSON in request body')
+	})
+
+	it('returns structured error when agent.run() throws ElsiumError', async () => {
+		const failingAgent: Agent = {
+			name: 'failing',
+			config: { name: 'failing', system: 'Fail' },
+			async run() {
+				throw ElsiumError.rateLimit('test-provider', 5000)
+			},
+			async chat() {
+				return this.run('')
+			},
+			resetMemory() {},
+		}
+
+		const app = setupRoutes({
+			agents: new Map([['failing', failingAgent]]),
+			defaultAgent: failingAgent,
+		})
+		const res = await app.fetch(req('POST', '/chat', { message: 'Hi' }))
+		const json = await res.json()
+
+		expect(res.status).toBe(429)
+		expect(json.code).toBe('RATE_LIMIT')
+		expect(json.error).toContain('Rate limited')
+	})
+
+	it('returns 500 when agent.run() throws generic Error', async () => {
+		const failingAgent: Agent = {
+			name: 'failing',
+			config: { name: 'failing', system: 'Fail' },
+			async run() {
+				throw new Error('Something broke')
+			},
+			async chat() {
+				return this.run('')
+			},
+			resetMemory() {},
+		}
+
+		const app = setupRoutes({
+			agents: new Map([['failing', failingAgent]]),
+			defaultAgent: failingAgent,
+		})
+		const res = await app.fetch(req('POST', '/chat', { message: 'Hi' }))
+		const json = await res.json()
+
+		expect(res.status).toBe(500)
+		expect(json.error).toBe('Agent execution failed')
+	})
 })
 
 // ─── Complete ────────────────────────────────────────────────────
@@ -207,6 +278,51 @@ describe('POST /complete', () => {
 		const res = await app.fetch(req('POST', '/complete', {}))
 
 		expect(res.status).toBe(400)
+	})
+
+	it('returns 400 for malformed JSON', async () => {
+		const app = setupRoutes()
+		const res = await app.fetch(rawReq('POST', '/complete', 'not-json'))
+		const json = await res.json()
+
+		expect(res.status).toBe(400)
+		expect(json.error).toBe('Invalid JSON in request body')
+	})
+
+	it('returns structured error when gateway.complete() throws ElsiumError', async () => {
+		const failingGw = mockGateway()
+		failingGw.complete = async () => {
+			throw ElsiumError.authError('test-provider')
+		}
+
+		const app = setupRoutes({ gateway: failingGw })
+		const res = await app.fetch(
+			req('POST', '/complete', {
+				messages: [{ role: 'user', content: 'Hello' }],
+			}),
+		)
+		const json = await res.json()
+
+		expect(res.status).toBe(401)
+		expect(json.code).toBe('AUTH_ERROR')
+	})
+
+	it('returns 500 when gateway.complete() throws generic Error', async () => {
+		const failingGw = mockGateway()
+		failingGw.complete = async () => {
+			throw new Error('Connection lost')
+		}
+
+		const app = setupRoutes({ gateway: failingGw })
+		const res = await app.fetch(
+			req('POST', '/complete', {
+				messages: [{ role: 'user', content: 'Hello' }],
+			}),
+		)
+		const json = await res.json()
+
+		expect(res.status).toBe(500)
+		expect(json.error).toBe('Completion failed')
 	})
 })
 
@@ -253,6 +369,19 @@ describe('corsMiddleware', () => {
 
 		const res = await app.fetch(req('OPTIONS', '/test'))
 		expect(res.status).toBe(200)
+	})
+
+	it('allows all origins when config is true', async () => {
+		const app = new Hono()
+		app.use('*', corsMiddleware(true))
+		app.get('/test', (c) => c.text('ok'))
+
+		const corsReq = new Request('http://localhost/test', {
+			method: 'GET',
+			headers: { Origin: 'http://any-origin.com' },
+		})
+		const res = await app.fetch(corsReq)
+		expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*')
 	})
 })
 
@@ -327,6 +456,65 @@ describe('rateLimitMiddleware', () => {
 		expect(res.status).toBe(429)
 		const json = await res.json()
 		expect(json.error).toContain('Too many requests')
+	})
+})
+
+// ─── Request ID Middleware ───────────────────────────────────────
+
+describe('requestIdMiddleware', () => {
+	it('generates a request ID when none is sent', async () => {
+		const app = new Hono()
+		app.use('*', requestIdMiddleware())
+		app.get('/test', (c) => c.json({ requestId: c.get('requestId') }))
+
+		const res = await app.fetch(req('GET', '/test'))
+		const json = await res.json()
+
+		expect(res.headers.get('X-Request-ID')).toMatch(/^req_/)
+		expect(json.requestId).toMatch(/^req_/)
+	})
+
+	it('passes through incoming X-Request-ID', async () => {
+		const app = new Hono()
+		app.use('*', requestIdMiddleware())
+		app.get('/test', (c) => c.json({ requestId: c.get('requestId') }))
+
+		const r = new Request('http://localhost/test', {
+			headers: { 'X-Request-ID': 'custom-id-123' },
+		})
+		const res = await app.fetch(r)
+		const json = await res.json()
+
+		expect(res.headers.get('X-Request-ID')).toBe('custom-id-123')
+		expect(json.requestId).toBe('custom-id-123')
+	})
+
+	it('rejects malicious X-Request-ID and generates a new one', async () => {
+		const app = new Hono()
+		app.use('*', requestIdMiddleware())
+		app.get('/test', (c) => c.json({ requestId: c.get('requestId') }))
+
+		const r = new Request('http://localhost/test', {
+			headers: { 'X-Request-ID': '<script>alert(1)</script>' },
+		})
+		const res = await app.fetch(r)
+		const json = await res.json()
+
+		expect(json.requestId).toMatch(/^req_/)
+		expect(res.headers.get('X-Request-ID')).toMatch(/^req_/)
+	})
+})
+
+// ─── Request Logger Middleware ───────────────────────────────────
+
+describe('requestLoggerMiddleware', () => {
+	it('runs without error', async () => {
+		const app = new Hono()
+		app.use('*', requestLoggerMiddleware())
+		app.get('/test', (c) => c.text('ok'))
+
+		const res = await app.fetch(req('GET', '/test'))
+		expect(res.status).toBe(200)
 	})
 })
 
@@ -466,5 +654,46 @@ describe('createApp', () => {
 		})
 
 		expect(app.listen).toBeTypeOf('function')
+	})
+
+	it('health endpoint returns configured version', async () => {
+		const app = createApp({
+			gateway: {
+				providers: { 'mock-app': { apiKey: 'key' } },
+			},
+			version: '1.2.3',
+		})
+
+		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const json = await res.json()
+
+		expect(json.version).toBe('1.2.3')
+	})
+
+	it('health endpoint uses default version when not configured', async () => {
+		const app = createApp({
+			gateway: {
+				providers: { 'mock-app': { apiKey: 'key' } },
+			},
+		})
+
+		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const json = await res.json()
+
+		expect(json.version).toBe('0.2.2')
+	})
+
+	it('returns JSON 404 for unknown routes', async () => {
+		const app = createApp({
+			gateway: {
+				providers: { 'mock-app': { apiKey: 'key' } },
+			},
+		})
+
+		const res = await app.hono.fetch(new Request('http://localhost/nonexistent', { method: 'GET' }))
+		const json = await res.json()
+
+		expect(res.status).toBe(404)
+		expect(json.error).toBe('Not found')
 	})
 })

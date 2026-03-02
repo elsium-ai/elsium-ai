@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs'
 import { createLogger, generateId } from '@elsium-ai/core'
 
 const log = createLogger()
@@ -16,6 +17,7 @@ export type TracerOutput = 'console' | 'json-file' | TracerExporter
 export interface TracerExporter {
 	name: string
 	export(spans: SpanData[]): void | Promise<void>
+	shutdown?(): void | Promise<void>
 }
 
 export interface CostReport {
@@ -73,7 +75,19 @@ export function observe(config: TracerConfig = {}): Tracer {
 		if (out === 'console') {
 			handlers.push(consoleHandler)
 		} else if (out === 'json-file') {
-			// json-file export happens on flush
+			exporters.push({
+				name: 'json-file',
+				export(spansToExport: SpanData[]) {
+					const filename = `.elsium/traces-${Date.now()}.json`
+					try {
+						writeFileSync(filename, JSON.stringify(spansToExport, null, 2))
+					} catch (err) {
+						log.error('Failed to write trace file', {
+							error: err instanceof Error ? err.message : String(err),
+						})
+					}
+				},
+			})
 		} else {
 			exporters.push(out)
 		}
