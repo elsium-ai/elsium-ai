@@ -1,20 +1,9 @@
-<p align="center">
-  <a href="https://github.com/elsium-ai/elsium-ai" target="blank"><img src="https://raw.githubusercontent.com/elsium-ai/elsium-ai/main/assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
-</p>
-<h3 align="center">Reliability. Governance. Reproducible AI.</h3>
-<p align="center">The TypeScript framework for AI systems you can trust in production.</p>
-<p align="center">
-  <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
-  <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <a href="https://www.npmjs.com/package/elsium-ai"><img src="https://img.shields.io/npm/v/elsium-ai.svg" alt="npm"></a>
-</p>
+# elsium-ai
 
----
+Single import for the entire ElsiumAI framework.
 
-> **AI systems must fail predictably.**
-> **AI systems must be auditable.**
-> **AI systems must be reproducible.**
-> **AI systems must be governed by policy, not hope.**
+[![npm](https://img.shields.io/npm/v/elsium-ai.svg)](https://www.npmjs.com/package/elsium-ai)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE)
 
 ---
 
@@ -22,72 +11,294 @@
 
 ```bash
 npm install elsium-ai
-# or
-bun add elsium-ai
 ```
 
-This umbrella package re-exports all ElsiumAI modules. You can also install individual packages for smaller bundles.
+---
 
-## Quick Start
+## Why use this package?
+
+`elsium-ai` is the umbrella package that re-exports every public API from all ElsiumAI sub-packages. Instead of installing and importing from many individual packages, you can import everything from a single entry point.
+
+**Before** -- importing from individual sub-packages:
 
 ```typescript
-import { gateway } from 'elsium-ai'
-import { defineAgent } from 'elsium-ai'
-import { env } from 'elsium-ai'
+import { env } from '@elsium-ai/core'
+import { gateway } from '@elsium-ai/gateway'
+import { defineAgent } from '@elsium-ai/agents'
+```
 
+**After** -- importing from the umbrella package:
+
+```typescript
+import { env, gateway, defineAgent } from 'elsium-ai'
+```
+
+Same APIs, one dependency, one import path.
+
+---
+
+## What's Included
+
+Every value and type listed below is available directly from `'elsium-ai'`.
+
+### `@elsium-ai/core`
+
+| Values | Types |
+|--------|-------|
+| `ElsiumError` | `Role` |
+| `ok` | `ContentPart` |
+| `err` | `TextContent` |
+| `isOk` | `ImageContent` |
+| `isErr` | `Message` |
+| `unwrap` | `ToolCall` |
+| `unwrapOr` | `ToolResult` |
+| `tryCatch` | `TokenUsage` |
+| `tryCatchSync` | `CostBreakdown` |
+| `createStream` | `StopReason` |
+| `createLogger` | `LLMResponse` |
+| `env` | `StreamEvent` |
+| `envNumber` | `XRayData` |
+| `envBool` | `StreamCheckpoint` |
+| `generateId` | `ProviderConfig` |
+| `generateTraceId` | `CompletionRequest` |
+| `extractText` | `ToolDefinition` |
+| `sleep` | `Middleware` |
+| `retry` | `Result` |
+| | `Ok` |
+| | `Err` |
+| | `ElsiumStream` |
+| | `ResilientStreamOptions` |
+| | `LogLevel` |
+| | `Logger` |
+| | `ErrorCode` |
+
+### `@elsium-ai/gateway`
+
+| Values | Types |
+|--------|-------|
+| `gateway` | `LLMProvider` |
+| `registerProviderFactory` | `ProviderFactory` |
+| `calculateCost` | `Gateway` |
+| `registerPricing` | `GatewayConfig` |
+| `composeMiddleware` | `XRayStore` |
+| `loggingMiddleware` | `ProviderMeshConfig` |
+| `costTrackingMiddleware` | `ProviderEntry` |
+| `xrayMiddleware` | `RoutingStrategy` |
+| `createAnthropicProvider` | `ProviderMesh` |
+| `createOpenAIProvider` | `SecurityMiddlewareConfig` |
+| `createGoogleProvider` | `SecurityViolation` |
+| `createProviderMesh` | `SecurityResult` |
+| `securityMiddleware` | |
+| `detectPromptInjection` | |
+| `detectJailbreak` | |
+| `redactSecrets` | |
+| `checkBlockedPatterns` | |
+
+### `@elsium-ai/agents`
+
+| Values | Types |
+|--------|-------|
+| `defineAgent` | `Agent` |
+| `runSequential` | `AgentDependencies` |
+| `runParallel` | `AgentConfig` |
+| `runSupervisor` | `AgentResult` |
+| `createMemory` | `AgentRunOptions` |
+| `createSemanticValidator` | `GuardrailConfig` |
+| `createAgentSecurity` | `AgentHooks` |
+| `createConfidenceScorer` | `Memory` |
+| `executeStateMachine` | `MemoryConfig` |
+| | `SemanticGuardrailConfig` |
+| | `SemanticCheck` |
+| | `SemanticCheckResult` |
+| | `SemanticValidationResult` |
+| | `SemanticValidator` |
+| | `AgentSecurityConfig` |
+| | `AgentSecurityResult` |
+| | `ConfidenceConfig` |
+| | `ConfidenceResult` |
+| | `StateDefinition` |
+| | `StateHistoryEntry` |
+| | `StateMachineResult` |
+
+### `@elsium-ai/tools`
+
+| Values | Types |
+|--------|-------|
+| `defineTool` | `Tool` |
+| `createToolkit` | `ToolConfig` |
+| `httpFetchTool` | `ToolContext` |
+| `calculatorTool` | `ToolExecutionResult` |
+| `jsonParseTool` | `Toolkit` |
+| `currentTimeTool` | |
+| `formatToolResult` | |
+| `formatToolResultAsText` | |
+
+### `@elsium-ai/rag`
+
+| Values | Types |
+|--------|-------|
+| `rag` | `RAGPipeline` |
+| `createInMemoryStore` | `RAGPipelineConfig` |
+| `createOpenAIEmbeddings` | `IngestResult` |
+| `createMockEmbeddings` | `Document` |
+| | `Chunk` |
+| | `EmbeddedChunk` |
+| | `RetrievalResult` |
+| | `QueryOptions` |
+| | `EmbeddingProvider` |
+| | `VectorStore` |
+
+### `@elsium-ai/workflows`
+
+| Values | Types |
+|--------|-------|
+| `defineWorkflow` | `Workflow` |
+| `defineParallelWorkflow` | `WorkflowConfig` |
+| `defineBranchWorkflow` | `WorkflowResult` |
+| `step` | `WorkflowRunOptions` |
+| | `StepConfig` |
+| | `StepContext` |
+| | `StepResult` |
+
+### `@elsium-ai/observe`
+
+| Values | Types |
+|--------|-------|
+| `observe` | `Tracer` |
+| `createSpan` | `TracerConfig` |
+| `createMetrics` | `TracerExporter` |
+| `createCostEngine` | `CostReport` |
+| `toOTelSpan` | `Span` |
+| `toOTelExportRequest` | `SpanData` |
+| `toTraceparent` | `SpanKind` |
+| `parseTraceparent` | `SpanStatus` |
+| `injectTraceContext` | `MetricsCollector` |
+| `extractTraceContext` | `MetricEntry` |
+| `createOTLPExporter` | `CostEngine` |
+| | `CostEngineConfig` |
+| | `CostAlert` |
+| | `CostDimension` |
+| | `CostIntelligenceReport` |
+| | `ModelSuggestion` |
+| | `OTelSpan` |
+| | `OTelExportRequest` |
+| | `TraceContext` |
+| | `OTLPExporterConfig` |
+
+### `@elsium-ai/app`
+
+| Values | Types |
+|--------|-------|
+| `createApp` | `AppConfig` |
+| | `ServerConfig` |
+| | `CorsConfig` |
+| | `AuthConfig` |
+| | `RateLimitConfig` |
+
+### `@elsium-ai/mcp`
+
+| Values | Types |
+|--------|-------|
+| `createMCPClient` | `MCPClient` |
+| `createMCPServer` | `MCPClientConfig` |
+| | `MCPToolInfo` |
+| | `MCPServer` |
+| | `MCPServerConfig` |
+
+### `@elsium-ai/testing`
+
+| Values | Types |
+|--------|-------|
+| `mockProvider` | `MockProviderOptions` |
+| `createFixture` | `MockResponseConfig` |
+| `loadFixture` | `MockProvider` |
+| `createRecorder` | `EvalSuiteConfig` |
+| `runEvalSuite` | `EvalCase` |
+| `formatEvalReport` | `EvalCriterion` |
+| `createSnapshotStore` | `EvalResult` |
+| `createPromptRegistry` | `EvalSuiteResult` |
+| `definePrompt` | `LLMJudge` |
+| `createRegressionSuite` | `SnapshotStore` |
+| `createReplayRecorder` | `PromptDefinition` |
+| `createReplayPlayer` | `PromptDiff` |
+| | `PromptRegistry` |
+| | `RegressionBaseline` |
+| | `RegressionResult` |
+| | `RegressionDetail` |
+| | `RegressionSuite` |
+| | `ReplayEntry` |
+| | `ReplayRecorder` |
+| | `ReplayPlayer` |
+
+---
+
+## Quick Example
+
+```typescript
+import {
+  env,
+  gateway,
+  defineAgent,
+  defineTool,
+  observe,
+  createCostEngine,
+} from 'elsium-ai'
+import { z } from 'zod'
+
+// Set up observability
+const tracer = observe({ serviceName: 'my-app' })
+const costEngine = createCostEngine({ budget: { daily: 10.0 } })
+
+// Create a gateway to an LLM provider
 const llm = gateway({
   provider: 'anthropic',
   model: 'claude-sonnet-4-6',
   apiKey: env('ANTHROPIC_API_KEY'),
 })
 
+// Define a tool
+const weatherTool = defineTool({
+  name: 'get_weather',
+  description: 'Get current weather for a city',
+  parameters: z.object({ city: z.string() }),
+  execute: async ({ city }) => ({ temp: 72, city }),
+})
+
+// Define an agent with the tool
 const agent = defineAgent(
-  { name: 'assistant', system: 'You are a helpful assistant.' },
+  {
+    name: 'assistant',
+    system: 'You are a helpful assistant.',
+    tools: [weatherTool],
+  },
   { complete: (req) => llm.complete(req) },
 )
 
-const result = await agent.run('What is TypeScript?')
+// Run the agent
+const result = await agent.run('What is the weather in Paris?')
+console.log(result.output)
 ```
 
-## Three Pillars
+---
 
-| Pillar | The guarantee |
-|--------|--------------|
-| **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown |
-| **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail |
-| **Reproducible AI** | Tools to measure, pin, and reproduce AI outputs — seed propagation, output pinning, provenance tracking, determinism assertions |
+## Individual Packages
 
-## Packages
+For full API documentation, see each sub-package README.
 
-| Package | Description |
-|---------|-------------|
-| [`@elsium-ai/core`](https://www.npmjs.com/package/@elsium-ai/core) | Types, errors, streaming, circuit breaker, dedup, policy engine, shutdown |
-| [`@elsium-ai/gateway`](https://www.npmjs.com/package/@elsium-ai/gateway) | Multi-provider gateway, X-Ray, provider mesh, bulkhead, PII detection |
-| [`@elsium-ai/agents`](https://www.npmjs.com/package/@elsium-ai/agents) | Agents, memory, guardrails, approval gates, multi-agent |
-| [`@elsium-ai/tools`](https://www.npmjs.com/package/@elsium-ai/tools) | Tool definitions with Zod validation |
-| [`@elsium-ai/rag`](https://www.npmjs.com/package/@elsium-ai/rag) | Document loading, chunking, embeddings, vector search |
-| [`@elsium-ai/workflows`](https://www.npmjs.com/package/@elsium-ai/workflows) | Sequential, parallel, and branching workflows |
-| [`@elsium-ai/observe`](https://www.npmjs.com/package/@elsium-ai/observe) | Tracing, cost intelligence, audit trail, provenance tracking |
-| [`@elsium-ai/mcp`](https://www.npmjs.com/package/@elsium-ai/mcp) | Bidirectional MCP client and server |
-| [`@elsium-ai/app`](https://www.npmjs.com/package/@elsium-ai/app) | HTTP server, CORS, auth, rate limiting, RBAC |
-| [`@elsium-ai/testing`](https://www.npmjs.com/package/@elsium-ai/testing) | Mocks, evals, pinning, determinism assertions, prompt versioning |
-| [`@elsium-ai/cli`](https://www.npmjs.com/package/@elsium-ai/cli) | Scaffolding, dev server, X-Ray inspection |
+| Package | npm | Description |
+|---------|-----|-------------|
+| `@elsium-ai/core` | [npm](https://www.npmjs.com/package/@elsium-ai/core) | Types, errors, result pattern, streaming, logger, config utilities |
+| `@elsium-ai/gateway` | [npm](https://www.npmjs.com/package/@elsium-ai/gateway) | Multi-provider LLM gateway, middleware, provider mesh, security |
+| `@elsium-ai/agents` | [npm](https://www.npmjs.com/package/@elsium-ai/agents) | Agent definitions, memory, guardrails, multi-agent orchestration |
+| `@elsium-ai/tools` | [npm](https://www.npmjs.com/package/@elsium-ai/tools) | Tool definitions with Zod validation, built-in tools |
+| `@elsium-ai/rag` | [npm](https://www.npmjs.com/package/@elsium-ai/rag) | Document ingestion, chunking, embeddings, vector search |
+| `@elsium-ai/workflows` | [npm](https://www.npmjs.com/package/@elsium-ai/workflows) | Sequential, parallel, and branching workflow definitions |
+| `@elsium-ai/observe` | [npm](https://www.npmjs.com/package/@elsium-ai/observe) | Tracing, metrics, cost intelligence, OpenTelemetry export |
+| `@elsium-ai/app` | [npm](https://www.npmjs.com/package/@elsium-ai/app) | HTTP server with CORS, auth, and rate limiting |
+| `@elsium-ai/mcp` | [npm](https://www.npmjs.com/package/@elsium-ai/mcp) | Model Context Protocol client and server |
+| `@elsium-ai/testing` | [npm](https://www.npmjs.com/package/@elsium-ai/testing) | Mocks, fixtures, evals, snapshot testing, prompt versioning, replay |
 
-## Performance
-
-Measured with zero-latency mock provider to isolate framework cost.
-
-| Metric | P50 | P95 | Conditions |
-|---|:---:|:---:|---|
-| Core completion path | 2.3us | 5.5us | Agent, no middleware |
-| Full governance stack | 6.2us | 9.5us | Security + audit + policy + cost + xray + logging |
-| Under concurrency | 5.0us | 6.4us | 100 parallel requests, full stack |
-
-Framework cost contribution: <0.01% of total request time.
-
-## Documentation
-
-Full documentation, architecture diagrams, and examples at [github.com/elsium-ai/elsium-ai](https://github.com/elsium-ai/elsium-ai).
+---
 
 ## License
 
