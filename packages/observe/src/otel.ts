@@ -332,5 +332,16 @@ export function createOTLPExporter(config: OTLPExporterConfig): TracerExporter {
 				startAutoFlush()
 			}
 		},
+
+		async shutdown(): Promise<void> {
+			if (flushTimer) {
+				clearInterval(flushTimer)
+				flushTimer = null
+			}
+			if (buffer.length > 0) {
+				const batch = buffer.splice(0, buffer.length)
+				await sendBatch(batch)
+			}
+		},
 	}
 }

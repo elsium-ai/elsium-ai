@@ -1,3 +1,4 @@
+import { ElsiumError } from '@elsium-ai/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createGoogleProvider } from './google'
 
@@ -20,6 +21,7 @@ describe('Google Provider', () => {
 			ok: false,
 			status: 403,
 			text: async () => 'Forbidden',
+			headers: new Headers(),
 		})
 		vi.stubGlobal('fetch', mockFetch)
 
@@ -28,6 +30,54 @@ describe('Google Provider', () => {
 		await expect(
 			provider.complete({ messages: [{ role: 'user', content: 'Hello' }] }),
 		).rejects.toThrow()
+
+		vi.unstubAllGlobals()
+	})
+
+	it('should parse retry-after header on 429', async () => {
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 429,
+			text: async () => 'Too Many Requests',
+			headers: new Headers({ 'retry-after': '30' }),
+		})
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createGoogleProvider({ apiKey: 'test-key', maxRetries: 0 })
+
+		try {
+			await provider.complete({ messages: [{ role: 'user', content: 'Hello' }] })
+			expect.fail('Should have thrown')
+		} catch (error) {
+			expect(error).toBeInstanceOf(ElsiumError)
+			const e = error as ElsiumError
+			expect(e.code).toBe('RATE_LIMIT')
+			expect(e.retryAfterMs).toBe(30_000)
+		}
+
+		vi.unstubAllGlobals()
+	})
+
+	it('should use undefined retryAfterMs when retry-after header is absent', async () => {
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 429,
+			text: async () => 'Too Many Requests',
+			headers: new Headers(),
+		})
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createGoogleProvider({ apiKey: 'test-key', maxRetries: 0 })
+
+		try {
+			await provider.complete({ messages: [{ role: 'user', content: 'Hello' }] })
+			expect.fail('Should have thrown')
+		} catch (error) {
+			expect(error).toBeInstanceOf(ElsiumError)
+			const e = error as ElsiumError
+			expect(e.code).toBe('RATE_LIMIT')
+			expect(e.retryAfterMs).toBeUndefined()
+		}
 
 		vi.unstubAllGlobals()
 	})

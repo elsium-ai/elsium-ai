@@ -1,6 +1,6 @@
 import type { Message } from '@elsium-ai/core'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
-import type { ApprovalCallback, ApprovalGateConfig } from './approval'
+import type { ApprovalGateConfig } from './approval'
 import type { ConfidenceConfig, ConfidenceResult } from './confidence'
 import type { MemoryConfig } from './memory'
 import type { AgentSecurityConfig } from './security'
@@ -56,7 +56,6 @@ export interface AgentHooks {
 	onToolResult?: (result: ToolExecutionResult) => void | Promise<void>
 	onError?: (error: Error) => void | Promise<void>
 	onComplete?: (result: AgentResult) => void | Promise<void>
-	onApprovalRequired?: ApprovalCallback
 }
 
 export interface AgentResult {

@@ -3,7 +3,6 @@ import { generateId } from './utils'
 
 export interface ResilientStreamOptions {
 	checkpointIntervalMs?: number
-	maxRetries?: number
 	onCheckpoint?: (checkpoint: StreamCheckpoint) => void
 	onPartialRecovery?: (text: string, error: Error) => void
 }

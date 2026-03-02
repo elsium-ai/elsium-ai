@@ -343,6 +343,14 @@ function redactResponseSecrets(
 
 export function securityMiddleware(config: SecurityMiddlewareConfig): Middleware {
 	return async (ctx: MiddlewareContext, next: MiddlewareNext): Promise<LLMResponse> => {
+		// Pre-processing: scan system prompt
+		if (ctx.request.system) {
+			const sysViolations = scanMessageForViolations(ctx.request.system, config)
+			if (sysViolations.length > 0) {
+				reportAndThrow(sysViolations, config)
+			}
+		}
+
 		// Pre-processing: scan input messages
 		for (const message of ctx.request.messages) {
 			const text = extractText(message.content)

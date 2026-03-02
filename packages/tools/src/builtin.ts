@@ -2,7 +2,28 @@ import { z } from 'zod'
 import { defineTool } from './define'
 
 const BLOCKED_HOSTS =
-	/^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|0+\.0+\.0+\.0+|\[::1\]|\[::ffff:127\.\d+\.\d+\.\d+\]|::ffff:127\.\d+\.\d+\.\d+|0177\.\d+\.\d+\.\d+|2130706433|\[fd[0-9a-f]{2}:)/i
+	/^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|0+\.0+\.0+\.0+|\[?::1\]?|\[?::ffff:127\.\d+\.\d+\.\d+\]?|\[?::ffff:10\.\d+\.\d+\.\d+\]?|\[?::ffff:192\.168\.\d+\.\d+\]?|\[?::ffff:172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\]?|::ffff:127\.\d+\.\d+\.\d+|0177\.\d+\.\d+\.\d+|2130706433|\[?::\]?|\[?f[cd][0-9a-f]{2}:|\[?fe80:)/i
+
+const BLOCKED_HEADER_NAMES = new Set([
+	'cookie',
+	'set-cookie',
+	'authorization',
+	'proxy-authorization',
+	'host',
+	'x-api-key',
+	'x-forwarded-for',
+	'x-real-ip',
+])
+
+function sanitizeHeaders(headers: Record<string, string>): Record<string, string> {
+	const safe: Record<string, string> = {}
+	for (const [key, value] of Object.entries(headers)) {
+		if (!BLOCKED_HEADER_NAMES.has(key.toLowerCase())) {
+			safe[key] = value
+		}
+	}
+	return safe
+}
 
 function validateUrl(urlString: string): void {
 	const parsed = new URL(urlString)
@@ -30,8 +51,9 @@ export const httpFetchTool = defineTool({
 	handler: async ({ url, headers }, context) => {
 		validateUrl(url)
 
+		const safeHeaders = headers ? sanitizeHeaders(headers) : undefined
 		const response = await fetch(url, {
-			headers,
+			headers: safeHeaders,
 			signal: context.signal,
 			redirect: 'manual',
 		})

@@ -14,6 +14,7 @@ export interface AppConfig {
 		export?: string
 	}
 	server?: ServerConfig
+	version?: string
 }
 
 export interface ServerConfig {
@@ -22,6 +23,7 @@ export interface ServerConfig {
 	cors?: boolean | CorsConfig
 	auth?: AuthConfig
 	rateLimit?: RateLimitConfig
+	gracefulShutdown?: boolean | { drainTimeoutMs?: number }
 }
 
 export interface CorsConfig {

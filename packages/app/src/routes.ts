@@ -1,6 +1,8 @@
 import type { Agent } from '@elsium-ai/agents'
+import { ElsiumError } from '@elsium-ai/core'
 import type { Gateway } from '@elsium-ai/gateway'
 import type { Tracer } from '@elsium-ai/observe'
+import type { Context } from 'hono'
 import { Hono } from 'hono'
 import type {
 	ChatRequest,
@@ -9,6 +11,31 @@ import type {
 	HealthResponse,
 	MetricsResponse,
 } from './types'
+
+function parseJsonBody<T>(raw: string): { ok: true; data: T } | { ok: false } {
+	try {
+		return { ok: true, data: JSON.parse(raw) as T }
+	} catch {
+		return { ok: false }
+	}
+}
+
+function elsiumErrorResponse(c: Context, err: unknown, fallbackMessage: string) {
+	if (err instanceof ElsiumError) {
+		return c.json({ error: err.message, code: err.code }, (err.statusCode ?? 500) as 500)
+	}
+	return c.json({ error: fallbackMessage }, 500)
+}
+
+function resolveAgent(
+	name: string | undefined,
+	agents: Map<string, Agent>,
+	defaultAgent?: Agent,
+): { agent: Agent } | { error: string } {
+	const agent = name ? agents.get(name) : defaultAgent
+	if (agent) return { agent }
+	return { error: name ? `Agent "${name}" not found` : 'No default agent configured' }
+}
 
 export interface RoutesDeps {
 	gateway: Gateway
@@ -67,31 +94,33 @@ export function createRoutes(deps: RoutesDeps): Hono {
 	app.post('/chat', async (c) => {
 		totalRequests++
 
-		// Enforce body size limit on actual body, not Content-Length header
 		const MAX_BODY_SIZE = 1_048_576
 		const rawText = await c.req.text()
 		if (rawText.length > MAX_BODY_SIZE) {
 			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
 		}
 
-		const body = JSON.parse(rawText) as ChatRequest
+		const parsed = parseJsonBody<ChatRequest>(rawText)
+		if (!parsed.ok) {
+			return c.json({ error: 'Invalid JSON in request body' }, 400)
+		}
+		const body = parsed.data
 
 		if (!body.message) {
 			return c.json({ error: 'message is required' }, 400)
 		}
 
-		const agent = body.agent ? deps.agents.get(body.agent) : deps.defaultAgent
-
-		if (!agent) {
-			return c.json(
-				{
-					error: body.agent ? `Agent "${body.agent}" not found` : 'No default agent configured',
-				},
-				404,
-			)
+		const resolved = resolveAgent(body.agent, deps.agents, deps.defaultAgent)
+		if ('error' in resolved) {
+			return c.json({ error: resolved.error }, 404)
 		}
 
-		const result = await agent.run(body.message)
+		let result: Awaited<ReturnType<Agent['run']>>
+		try {
+			result = await resolved.agent.run(body.message)
+		} catch (err) {
+			return elsiumErrorResponse(c, err, 'Agent execution failed')
+		}
 
 		deps.tracer?.trackLLMCall({
 			model: 'unknown',
@@ -111,7 +140,7 @@ export function createRoutes(deps: RoutesDeps): Hono {
 				totalTokens: result.usage.totalTokens,
 				cost: result.usage.totalCost,
 			},
-			model: agent.config.model ?? 'default',
+			model: resolved.agent.config.model ?? 'default',
 			traceId: result.traceId,
 		}
 
@@ -123,14 +152,17 @@ export function createRoutes(deps: RoutesDeps): Hono {
 	app.post('/complete', async (c) => {
 		totalRequests++
 
-		// Enforce body size limit on actual body, not Content-Length header
 		const MAX_BODY_SIZE = 1_048_576
 		const rawText = await c.req.text()
 		if (rawText.length > MAX_BODY_SIZE) {
 			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
 		}
 
-		const body = JSON.parse(rawText) as CompleteRequest
+		const parsed = parseJsonBody<CompleteRequest>(rawText)
+		if (!parsed.ok) {
+			return c.json({ error: 'Invalid JSON in request body' }, 400)
+		}
+		const body = parsed.data
 
 		if (!body.messages?.length) {
 			return c.json({ error: 'messages array is required' }, 400)
@@ -141,13 +173,18 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			content: m.content,
 		}))
 
-		const response = await deps.gateway.complete({
-			messages,
-			model: body.model,
-			system: body.system,
-			maxTokens: body.maxTokens,
-			temperature: body.temperature,
-		})
+		let response: Awaited<ReturnType<Gateway['complete']>>
+		try {
+			response = await deps.gateway.complete({
+				messages,
+				model: body.model,
+				system: body.system,
+				maxTokens: body.maxTokens,
+				temperature: body.temperature,
+			})
+		} catch (err) {
+			return elsiumErrorResponse(c, err, 'Completion failed')
+		}
 
 		deps.tracer?.trackLLMCall({
 			model: response.model,

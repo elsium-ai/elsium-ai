@@ -17,7 +17,13 @@ export type {
 } from './types'
 
 // Middleware
-export { corsMiddleware, authMiddleware, rateLimitMiddleware } from './middleware'
+export {
+	corsMiddleware,
+	authMiddleware,
+	rateLimitMiddleware,
+	requestIdMiddleware,
+	requestLoggerMiddleware,
+} from './middleware'
 
 // Routes
 export { createRoutes } from './routes'

@@ -20,9 +20,13 @@ import type { LLMProvider } from '../provider'
 const DEFAULT_BASE_URL = 'https://api.openai.com'
 const DEFAULT_MAX_TOKENS = 4096
 
+type OpenAIContentPart =
+	| { type: 'text'; text: string }
+	| { type: 'image_url'; image_url: { url: string } }
+
 interface OpenAIMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool'
-	content: string | null
+	content: string | OpenAIContentPart[] | null
 	name?: string
 	tool_calls?: OpenAIToolCall[]
 	tool_call_id?: string
@@ -143,6 +147,25 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		return openaiMsg
 	}
 
+	function formatUserContent(msg: Message): string | OpenAIContentPart[] {
+		if (typeof msg.content === 'string') return msg.content
+
+		const parts: OpenAIContentPart[] = []
+		for (const part of msg.content) {
+			if (part.type === 'text') {
+				parts.push({ type: 'text', text: part.text })
+			} else if (part.type === 'image') {
+				if (part.source.type === 'base64') {
+					const url = `data:${part.source.mediaType};base64,${part.source.data}`
+					parts.push({ type: 'image_url', image_url: { url } })
+				} else {
+					parts.push({ type: 'image_url', image_url: { url: part.source.url } })
+				}
+			}
+		}
+		return parts
+	}
+
 	function formatMessages(messages: Message[]): OpenAIMessage[] {
 		const formatted: OpenAIMessage[] = []
 
@@ -163,7 +186,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 			}
 
 			// User message
-			formatted.push({ role: 'user', content: extractTextContent(msg) })
+			formatted.push({ role: 'user', content: formatUserContent(msg) })
 		}
 
 		return formatted

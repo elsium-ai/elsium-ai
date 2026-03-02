@@ -28,6 +28,8 @@ interface GeminiPart {
 	text?: string
 	functionCall?: { name: string; args: Record<string, unknown> }
 	functionResponse?: { name: string; response: { content: string } }
+	inlineData?: { mimeType: string; data: string }
+	fileData?: { mimeType: string; fileUri: string }
 }
 
 interface GeminiTool {
@@ -96,9 +98,22 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 	}
 
 	function formatGeminiMultipartContent(msg: Message, role: 'user' | 'model'): GeminiContent {
-		const parts: GeminiPart[] = (msg.content as Array<{ type: string; text?: string }>)
-			.filter((p) => p.type === 'text')
-			.map((p) => ({ text: (p as { text: string }).text }))
+		const parts: GeminiPart[] = []
+		for (const p of msg.content as Array<{ type: string; text?: string }>) {
+			if (p.type === 'text') {
+				parts.push({ text: (p as { text: string }).text })
+			} else if (p.type === 'image') {
+				const img = p as {
+					type: 'image'
+					source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
+				}
+				if (img.source.type === 'base64') {
+					parts.push({ inlineData: { mimeType: img.source.mediaType, data: img.source.data } })
+				} else {
+					parts.push({ fileData: { mimeType: 'image/jpeg', fileUri: img.source.url } })
+				}
+			}
+		}
 		return { role, parts }
 	}
 
@@ -310,7 +325,11 @@ async function handleGoogleErrorResponse(response: Response): Promise<never> {
 		throw ElsiumError.authError('google')
 	}
 	if (response.status === 429) {
-		throw ElsiumError.rateLimit('google')
+		const retryAfter = response.headers.get('retry-after')
+		throw ElsiumError.rateLimit(
+			'google',
+			retryAfter ? Number.parseInt(retryAfter) * 1000 : undefined,
+		)
 	}
 
 	throw ElsiumError.providerError(`Google API error ${response.status}: ${errorBody}`, {

@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/cli",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"description": "CLI tool for ElsiumAI projects",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
