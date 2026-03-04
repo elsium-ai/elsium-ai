@@ -1,5 +1,21 @@
 # @elsium-ai/integration-test
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies [fc58fdb]
+  - @elsium-ai/app@0.5.0
+  - @elsium-ai/testing@0.5.0
+  - @elsium-ai/agents@0.5.0
+  - @elsium-ai/core@0.5.0
+  - @elsium-ai/gateway@0.5.0
+  - @elsium-ai/mcp@0.5.0
+  - @elsium-ai/observe@0.5.0
+  - @elsium-ai/rag@0.5.0
+  - @elsium-ai/tools@0.5.0
+  - @elsium-ai/workflows@0.5.0
+
 ## 0.2.1
 
 ### Patch Changes
