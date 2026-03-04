@@ -31,6 +31,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "test:coverage": "vitest run --coverage",
     "metrics": "bun scripts/metrics.ts",
+    "stats": "bun scripts/stats.ts",
     "prepare": "husky"
   },
   "lint-staged": {
