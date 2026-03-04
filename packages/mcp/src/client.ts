@@ -58,19 +58,50 @@ export function createMCPClient(config: MCPClientConfig): MCPClient {
 	return createStdioMCPClient(config)
 }
 
+function assertConnected(connected: boolean): void {
+	if (!connected) {
+		throw new ElsiumError({
+			code: 'NETWORK_ERROR',
+			message: 'MCP HTTP client not connected',
+			retryable: false,
+		})
+	}
+}
+
+function parseHttpResponse(json: {
+	result?: unknown
+	error?: { code: number; message: string }
+}): unknown {
+	if (json.error) {
+		throw new ElsiumError({
+			code: 'PROVIDER_ERROR',
+			message: `MCP error: ${json.error.message}`,
+			retryable: false,
+			metadata: { code: json.error.code },
+		})
+	}
+	return json.result
+}
+
+function handleFetchError(error: unknown, timeoutMs: number): never {
+	if (error instanceof ElsiumError) throw error
+	if (error instanceof Error && error.name === 'AbortError') {
+		throw new ElsiumError({
+			code: 'TIMEOUT',
+			message: `MCP HTTP request timed out after ${timeoutMs}ms`,
+			retryable: true,
+		})
+	}
+	throw error
+}
+
 function createHttpMCPClient(config: MCPClientHttpConfig): MCPClient {
 	let connected = false
 	let requestId = 0
 	const timeoutMs = config.timeoutMs ?? 30_000
 
 	async function sendRequest(method: string, params?: Record<string, unknown>): Promise<unknown> {
-		if (!connected) {
-			throw new ElsiumError({
-				code: 'NETWORK_ERROR',
-				message: 'MCP HTTP client not connected',
-				retryable: false,
-			})
-		}
+		assertConnected(connected)
 
 		const id = ++requestId
 		const body = {
@@ -107,26 +138,9 @@ function createHttpMCPClient(config: MCPClientHttpConfig): MCPClient {
 				error?: { code: number; message: string }
 			}
 
-			if (json.error) {
-				throw new ElsiumError({
-					code: 'PROVIDER_ERROR',
-					message: `MCP error: ${json.error.message}`,
-					retryable: false,
-					metadata: { code: json.error.code },
-				})
-			}
-
-			return json.result
+			return parseHttpResponse(json)
 		} catch (error) {
-			if (error instanceof ElsiumError) throw error
-			if (error instanceof Error && error.name === 'AbortError') {
-				throw new ElsiumError({
-					code: 'TIMEOUT',
-					message: `MCP HTTP request timed out after ${timeoutMs}ms`,
-					retryable: true,
-				})
-			}
-			throw error
+			handleFetchError(error, timeoutMs)
 		} finally {
 			clearTimeout(timer)
 		}

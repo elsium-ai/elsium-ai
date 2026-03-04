@@ -38,6 +38,40 @@ function resolveAgent(
 	return { error: name ? `Agent "${name}" not found` : 'No default agent configured' }
 }
 
+const MAX_BODY_SIZE = 1_048_576
+
+function parseRequestBody<T>(
+	c: Context,
+	rawText: string,
+): { ok: true; data: T } | { ok: false; response: Response } {
+	if (rawText.length > MAX_BODY_SIZE) {
+		return { ok: false, response: c.json({ error: 'Request body too large (max 1MB)' }, 413) }
+	}
+	const parsed = parseJsonBody<T>(rawText)
+	if (!parsed.ok) {
+		return { ok: false, response: c.json({ error: 'Invalid JSON in request body' }, 400) }
+	}
+	return { ok: true, data: parsed.data }
+}
+
+function buildChatResponse(
+	result: Awaited<ReturnType<Agent['run']>>,
+	model: string | undefined,
+): ChatResponse {
+	const content = typeof result.message.content === 'string' ? result.message.content : ''
+	return {
+		message: content,
+		usage: {
+			inputTokens: result.usage.totalInputTokens,
+			outputTokens: result.usage.totalOutputTokens,
+			totalTokens: result.usage.totalTokens,
+			cost: result.usage.totalCost,
+		},
+		model: model ?? 'default',
+		traceId: result.traceId,
+	}
+}
+
 export interface RoutesDeps {
 	gateway: Gateway
 	agents: Map<string, Agent>
@@ -95,18 +129,11 @@ export function createRoutes(deps: RoutesDeps): Hono {
 	app.post('/chat', async (c) => {
 		totalRequests++
 
-		const MAX_BODY_SIZE = 1_048_576
 		const rawText = await c.req.text()
-		if (rawText.length > MAX_BODY_SIZE) {
-			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
-		}
+		const parsed = parseRequestBody<ChatRequest>(c, rawText)
+		if (!parsed.ok) return parsed.response
 
-		const parsed = parseJsonBody<ChatRequest>(rawText)
-		if (!parsed.ok) {
-			return c.json({ error: 'Invalid JSON in request body' }, 400)
-		}
 		const body = parsed.data
-
 		if (!body.message) {
 			return c.json({ error: 'message is required' }, 400)
 		}
@@ -140,21 +167,7 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			latencyMs: 0,
 		})
 
-		const content = typeof result.message.content === 'string' ? result.message.content : ''
-
-		const response: ChatResponse = {
-			message: content,
-			usage: {
-				inputTokens: result.usage.totalInputTokens,
-				outputTokens: result.usage.totalOutputTokens,
-				totalTokens: result.usage.totalTokens,
-				cost: result.usage.totalCost,
-			},
-			model: resolved.agent.config.model ?? 'default',
-			traceId: result.traceId,
-		}
-
-		return c.json(response)
+		return c.json(buildChatResponse(result, resolved.agent.config.model))
 	})
 
 	// ─── Complete ─────────────────────────────────────────────
@@ -162,16 +175,10 @@ export function createRoutes(deps: RoutesDeps): Hono {
 	app.post('/complete', async (c) => {
 		totalRequests++
 
-		const MAX_BODY_SIZE = 1_048_576
 		const rawText = await c.req.text()
-		if (rawText.length > MAX_BODY_SIZE) {
-			return c.json({ error: 'Request body too large (max 1MB)' }, 413)
-		}
+		const parsed = parseRequestBody<CompleteRequest>(c, rawText)
+		if (!parsed.ok) return parsed.response
 
-		const parsed = parseJsonBody<CompleteRequest>(rawText)
-		if (!parsed.ok) {
-			return c.json({ error: 'Invalid JSON in request body' }, 400)
-		}
 		const body = parsed.data
 
 		if (!body.messages?.length) {

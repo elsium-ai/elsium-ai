@@ -98,37 +98,56 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 		return { role, parts }
 	}
 
-	function formatGeminiMultipartContent(msg: Message, role: 'user' | 'model'): GeminiContent {
-		const parts: GeminiPart[] = []
-		for (const p of msg.content as Array<{ type: string; text?: string }>) {
-			if (p.type === 'text') {
-				parts.push({ text: (p as { text: string }).text })
-			} else if (p.type === 'image') {
-				const img = p as {
+	function convertGeminiImagePart(p: {
+		type: 'image'
+		source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
+	}): GeminiPart {
+		if (p.source.type === 'base64') {
+			return { inlineData: { mimeType: p.source.mediaType, data: p.source.data } }
+		}
+		return { fileData: { mimeType: 'image/jpeg', fileUri: p.source.url } }
+	}
+
+	function convertGeminiMediaPart(p: {
+		type: string
+		source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
+	}): GeminiPart {
+		if (p.source.type === 'base64') {
+			return { inlineData: { mimeType: p.source.mediaType, data: p.source.data } }
+		}
+		const urlSource = p.source as { type: 'url'; url: string }
+		return { fileData: { mimeType: 'application/octet-stream', fileUri: urlSource.url } }
+	}
+
+	function convertGeminiContentPart(p: { type: string; text?: string }): GeminiPart | null {
+		if (p.type === 'text') {
+			return { text: (p as { text: string }).text }
+		}
+		if (p.type === 'image') {
+			return convertGeminiImagePart(
+				p as {
 					type: 'image'
 					source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
-				}
-				if (img.source.type === 'base64') {
-					parts.push({ inlineData: { mimeType: img.source.mediaType, data: img.source.data } })
-				} else {
-					parts.push({ fileData: { mimeType: 'image/jpeg', fileUri: img.source.url } })
-				}
-			} else if (p.type === 'audio' || p.type === 'document') {
-				const media = p as {
+				},
+			)
+		}
+		if (p.type === 'audio' || p.type === 'document') {
+			return convertGeminiMediaPart(
+				p as {
 					type: string
 					source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
-				}
-				if (media.source.type === 'base64') {
-					parts.push({
-						inlineData: { mimeType: media.source.mediaType, data: media.source.data },
-					})
-				} else {
-					const urlSource = media.source as { type: 'url'; url: string }
-					parts.push({
-						fileData: { mimeType: 'application/octet-stream', fileUri: urlSource.url },
-					})
-				}
-			}
+				},
+			)
+		}
+		return null
+	}
+
+	function formatGeminiMultipartContent(msg: Message, role: 'user' | 'model'): GeminiContent {
+		const content = msg.content as Array<{ type: string; text?: string }>
+		const parts: GeminiPart[] = []
+		for (const p of content) {
+			const converted = convertGeminiContentPart(p)
+			if (converted) parts.push(converted)
 		}
 		return { role, parts }
 	}

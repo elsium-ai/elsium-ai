@@ -236,6 +236,63 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		}))
 	}
 
+	function buildOptionalParams(req: CompletionRequest): Record<string, unknown> {
+		const params: Record<string, unknown> = {}
+		if (req.temperature !== undefined) params.temperature = req.temperature
+		if (req.topP !== undefined) params.top_p = req.topP
+		if (req.stopSequences?.length) params.stop_sequences = req.stopSequences
+		return params
+	}
+
+	function applyStructuredOutput(
+		body: Record<string, unknown>,
+		req: CompletionRequest,
+		tools: AnthropicTool[] | undefined,
+	): void {
+		if (!req.schema) return
+		const jsonSchema = zodToJsonSchema(req.schema)
+		const structuredTool: AnthropicTool = {
+			name: '_structured_output',
+			description: 'Return structured output matching the required schema',
+			input_schema: jsonSchema,
+		}
+		body.tools = [...(tools ?? []), structuredTool]
+		body.tool_choice = { type: 'tool', name: '_structured_output' }
+	}
+
+	function buildRequestBody(req: CompletionRequest): Record<string, unknown> {
+		const { system, messages } = formatMessages(req.messages)
+		const model = req.model ?? 'claude-sonnet-4-6'
+
+		const body: Record<string, unknown> = {
+			model,
+			messages,
+			max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			...(system || req.system ? { system: req.system ?? system } : {}),
+			...buildOptionalParams(req),
+			...buildSeedMetadata(req),
+		}
+
+		const tools = formatTools(req.tools)
+		if (tools) body.tools = tools
+		applyStructuredOutput(body, req, tools)
+
+		return body
+	}
+
+	function executeWithTimeout<T>(
+		fn: (signal: AbortSignal) => Promise<T>,
+		reqSignal?: AbortSignal,
+	): Promise<T> {
+		const controller = new AbortController()
+		const timer = setTimeout(() => controller.abort(), timeout)
+
+		const signals = [controller.signal, reqSignal].filter(Boolean) as AbortSignal[]
+		const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+
+		return fn(mergedSignal).finally(() => clearTimeout(timer))
+	}
+
 	function extractContentBlocks(content: AnthropicContentBlock[]): {
 		textParts: string[]
 		toolCalls: ToolCall[]
@@ -297,50 +354,15 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		},
 
 		async complete(req: CompletionRequest): Promise<LLMResponse> {
-			const { system, messages } = formatMessages(req.messages)
-			const model = req.model ?? 'claude-sonnet-4-6'
-
-			const body: Record<string, unknown> = {
-				model,
-				messages,
-				max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-				...(system || req.system ? { system: req.system ?? system } : {}),
-				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-				...(req.topP !== undefined ? { top_p: req.topP } : {}),
-				...(req.stopSequences?.length ? { stop_sequences: req.stopSequences } : {}),
-				...buildSeedMetadata(req),
-			}
-
-			const tools = formatTools(req.tools)
-			if (tools) body.tools = tools
-
-			if (req.schema) {
-				const jsonSchema = zodToJsonSchema(req.schema)
-				const structuredTool: AnthropicTool = {
-					name: '_structured_output',
-					description: 'Return structured output matching the required schema',
-					input_schema: jsonSchema,
-				}
-				body.tools = [...(tools ?? []), structuredTool]
-				body.tool_choice = { type: 'tool', name: '_structured_output' }
-			}
-
+			const body = buildRequestBody(req)
 			const startTime = performance.now()
 
 			const raw = await retry(
-				async () => {
-					const controller = new AbortController()
-					const timer = setTimeout(() => controller.abort(), timeout)
-
-					try {
-						const signals = [controller.signal, req.signal].filter(Boolean) as AbortSignal[]
-						const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
-						const resp = await request('/messages', body, mergedSignal)
+				() =>
+					executeWithTimeout(async (signal) => {
+						const resp = await request('/messages', body, signal)
 						return (await resp.json()) as AnthropicResponse
-					} finally {
-						clearTimeout(timer)
-					}
-				},
+					}, req.signal),
 				{
 					maxRetries,
 					baseDelayMs: 1000,
@@ -353,32 +375,13 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		},
 
 		stream(req: CompletionRequest): ElsiumStream {
-			const { system, messages } = formatMessages(req.messages)
-			const model = req.model ?? 'claude-sonnet-4-6'
-
-			const body: Record<string, unknown> = {
-				model,
-				messages,
-				max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-				stream: true,
-				...(system || req.system ? { system: req.system ?? system } : {}),
-				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-				...(req.topP !== undefined ? { top_p: req.topP } : {}),
-				...(req.stopSequences?.length ? { stop_sequences: req.stopSequences } : {}),
-				...buildSeedMetadata(req),
-			}
-
-			const tools = formatTools(req.tools)
-			if (tools) body.tools = tools
+			const body = buildRequestBody(req)
+			body.stream = true
+			const model = (body.model as string) ?? 'claude-sonnet-4-6'
 
 			return createStream(async (emit) => {
-				const controller = new AbortController()
-				const timer = setTimeout(() => controller.abort(), timeout)
-
-				try {
-					const signals = [controller.signal, req.signal].filter(Boolean) as AbortSignal[]
-					const mergedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
-					const resp = await request('/messages', body, mergedSignal)
+				await executeWithTimeout(async (signal) => {
+					const resp = await request('/messages', body, signal)
 
 					if (!resp.body)
 						throw new ElsiumError({
@@ -389,9 +392,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 						})
 
 					await processAnthropicSSEStream(resp.body, model, emit)
-				} finally {
-					clearTimeout(timer)
-				}
+				}, req.signal)
 			})
 		},
 
