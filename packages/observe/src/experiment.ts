@@ -70,6 +70,61 @@ export function createFileExperimentStore(dir: string): ExperimentStore {
 	}
 }
 
+type VariantStats = Record<
+	string,
+	{
+		assignments: number
+		metrics: Record<string, { sum: number; count: number }>
+	}
+>
+
+function loadFromStore(store: ExperimentStore, name: string, stats: VariantStats): void {
+	const saved = store.load(name)
+	if (!saved) return
+
+	for (const [vName, vData] of Object.entries(saved.variants)) {
+		if (!stats[vName]) continue
+		stats[vName].assignments = vData.assignments
+		for (const [key, m] of Object.entries(vData.metrics)) {
+			stats[vName].metrics[key] = { sum: m.sum, count: m.count }
+		}
+	}
+	log.debug('Loaded experiment state', { name, totalAssignments: saved.totalAssignments })
+}
+
+function recordMetrics(s: VariantStats[string], metrics: Record<string, number>): void {
+	for (const [key, value] of Object.entries(metrics)) {
+		if (!s.metrics[key]) {
+			s.metrics[key] = { sum: 0, count: 0 }
+		}
+		s.metrics[key].sum += value
+		s.metrics[key].count++
+	}
+}
+
+function buildResults(name: string, stats: VariantStats): ExperimentResults {
+	let totalAssignments = 0
+	const variantResults: ExperimentResults['variants'] = {}
+
+	for (const [vName, s] of Object.entries(stats)) {
+		totalAssignments += s.assignments
+		const metricsResult: Record<string, { sum: number; count: number; avg: number }> = {}
+		for (const [key, m] of Object.entries(s.metrics)) {
+			metricsResult[key] = {
+				sum: m.sum,
+				count: m.count,
+				avg: m.count > 0 ? m.sum / m.count : 0,
+			}
+		}
+		variantResults[vName] = {
+			assignments: s.assignments,
+			metrics: metricsResult,
+		}
+	}
+
+	return { name, totalAssignments, variants: variantResults }
+}
+
 export function createExperiment(config: ExperimentConfig): Experiment {
 	const { name, variants, store } = config
 
@@ -79,32 +134,14 @@ export function createExperiment(config: ExperimentConfig): Experiment {
 
 	const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0)
 
-	const stats: Record<
-		string,
-		{
-			assignments: number
-			metrics: Record<string, { sum: number; count: number }>
-		}
-	> = {}
+	const stats: VariantStats = {}
 
 	for (const v of variants) {
 		stats[v.name] = { assignments: 0, metrics: {} }
 	}
 
-	// Auto-load from store
 	if (store) {
-		const saved = store.load(name)
-		if (saved) {
-			for (const [vName, vData] of Object.entries(saved.variants)) {
-				if (stats[vName]) {
-					stats[vName].assignments = vData.assignments
-					for (const [key, m] of Object.entries(vData.metrics)) {
-						stats[vName].metrics[key] = { sum: m.sum, count: m.count }
-					}
-				}
-			}
-			log.debug('Loaded experiment state', { name, totalAssignments: saved.totalAssignments })
-		}
+		loadFromStore(store, name, stats)
 	}
 
 	function hashAssign(userId: string): ExperimentVariant {
@@ -144,41 +181,15 @@ export function createExperiment(config: ExperimentConfig): Experiment {
 			const s = stats[variant]
 			if (!s) return
 
-			for (const [key, value] of Object.entries(metrics)) {
-				if (!s.metrics[key]) {
-					s.metrics[key] = { sum: 0, count: 0 }
-				}
-				s.metrics[key].sum += value
-				s.metrics[key].count++
-			}
+			recordMetrics(s, metrics)
 
-			// Auto-save to store
 			if (store) {
 				store.save(name, this.results())
 			}
 		},
 
 		results(): ExperimentResults {
-			let totalAssignments = 0
-			const variantResults: ExperimentResults['variants'] = {}
-
-			for (const [vName, s] of Object.entries(stats)) {
-				totalAssignments += s.assignments
-				const metricsResult: Record<string, { sum: number; count: number; avg: number }> = {}
-				for (const [key, m] of Object.entries(s.metrics)) {
-					metricsResult[key] = {
-						sum: m.sum,
-						count: m.count,
-						avg: m.count > 0 ? m.sum / m.count : 0,
-					}
-				}
-				variantResults[vName] = {
-					assignments: s.assignments,
-					metrics: metricsResult,
-				}
-			}
-
-			return { name, totalAssignments, variants: variantResults }
+			return buildResults(name, stats)
 		},
 	}
 }

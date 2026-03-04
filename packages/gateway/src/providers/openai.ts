@@ -1,5 +1,6 @@
 import {
 	type CompletionRequest,
+	type ContentPart,
 	ElsiumError,
 	type ElsiumStream,
 	type LLMResponse,
@@ -149,40 +150,47 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		return openaiMsg
 	}
 
+	function convertImagePart(part: ContentPart & { type: 'image' }): OpenAIContentPart {
+		if (part.source.type === 'base64') {
+			const url = `data:${part.source.mediaType};base64,${part.source.data}`
+			return { type: 'image_url', image_url: { url } }
+		}
+		return { type: 'image_url', image_url: { url: part.source.url } }
+	}
+
+	function convertAudioPart(part: ContentPart & { type: 'audio' }): OpenAIContentPart {
+		if (part.source.type === 'base64') {
+			const format = part.source.mediaType.split('/')[1] ?? 'wav'
+			return { type: 'input_audio', input_audio: { data: part.source.data, format } }
+		}
+		return { type: 'text', text: '[audio: url source requires file upload]' }
+	}
+
+	function convertDocumentPart(part: ContentPart & { type: 'document' }): OpenAIContentPart {
+		if (part.source.type === 'base64') {
+			return {
+				type: 'text',
+				text: `[document: ${part.source.mediaType} content attached as base64]`,
+			}
+		}
+		return { type: 'text', text: `[document: ${part.source.url}]` }
+	}
+
+	function convertContentPart(part: ContentPart): OpenAIContentPart | null {
+		if (part.type === 'text') return { type: 'text', text: part.text }
+		if (part.type === 'image') return convertImagePart(part)
+		if (part.type === 'audio') return convertAudioPart(part)
+		if (part.type === 'document') return convertDocumentPart(part)
+		return null
+	}
+
 	function formatUserContent(msg: Message): string | OpenAIContentPart[] {
 		if (typeof msg.content === 'string') return msg.content
 
 		const parts: OpenAIContentPart[] = []
 		for (const part of msg.content) {
-			if (part.type === 'text') {
-				parts.push({ type: 'text', text: part.text })
-			} else if (part.type === 'image') {
-				if (part.source.type === 'base64') {
-					const url = `data:${part.source.mediaType};base64,${part.source.data}`
-					parts.push({ type: 'image_url', image_url: { url } })
-				} else {
-					parts.push({ type: 'image_url', image_url: { url: part.source.url } })
-				}
-			} else if (part.type === 'audio') {
-				if (part.source.type === 'base64') {
-					const format = part.source.mediaType.split('/')[1] ?? 'wav'
-					parts.push({
-						type: 'input_audio',
-						input_audio: { data: part.source.data, format },
-					})
-				} else {
-					parts.push({ type: 'text', text: '[audio: url source requires file upload]' })
-				}
-			} else if (part.type === 'document') {
-				if (part.source.type === 'base64') {
-					parts.push({
-						type: 'text',
-						text: `[document: ${part.source.mediaType} content attached as base64]`,
-					})
-				} else {
-					parts.push({ type: 'text', text: `[document: ${part.source.url}]` })
-				}
-			}
+			const converted = convertContentPart(part)
+			if (converted) parts.push(converted)
 		}
 		return parts
 	}
@@ -223,6 +231,50 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 				parameters: t.inputSchema,
 			},
 		}))
+	}
+
+	function buildOptionalParams(req: CompletionRequest): Record<string, unknown> {
+		const params: Record<string, unknown> = {}
+		if (req.temperature !== undefined) params.temperature = req.temperature
+		if (req.seed !== undefined) params.seed = req.seed
+		if (req.topP !== undefined) params.top_p = req.topP
+		if (req.stopSequences?.length) params.stop = req.stopSequences
+		return params
+	}
+
+	function applyResponseFormat(body: Record<string, unknown>, req: CompletionRequest): void {
+		if (!req.schema) return
+		const jsonSchema = zodToJsonSchema(req.schema)
+		body.response_format = {
+			type: 'json_schema',
+			json_schema: {
+				name: 'structured_output',
+				strict: true,
+				schema: jsonSchema,
+			},
+		}
+	}
+
+	function buildRequestBody(req: CompletionRequest): Record<string, unknown> {
+		const messages = formatMessages(req.messages)
+		const model = req.model ?? 'gpt-4o'
+
+		if (req.system) {
+			messages.unshift({ role: 'system', content: req.system })
+		}
+
+		const body: Record<string, unknown> = {
+			model,
+			messages,
+			max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+			...buildOptionalParams(req),
+		}
+
+		const tools = formatTools(req.tools)
+		if (tools) body.tools = tools
+		applyResponseFormat(body, req)
+
+		return body
 	}
 
 	function parseResponse(raw: OpenAIResponse, latencyMs: number): LLMResponse {
@@ -282,38 +334,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		},
 
 		async complete(req: CompletionRequest): Promise<LLMResponse> {
-			const messages = formatMessages(req.messages)
-			const model = req.model ?? 'gpt-4o'
-
-			if (req.system) {
-				messages.unshift({ role: 'system', content: req.system })
-			}
-
-			const body: Record<string, unknown> = {
-				model,
-				messages,
-				max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-				...(req.seed !== undefined ? { seed: req.seed } : {}),
-				...(req.topP !== undefined ? { top_p: req.topP } : {}),
-				...(req.stopSequences?.length ? { stop: req.stopSequences } : {}),
-			}
-
-			const tools = formatTools(req.tools)
-			if (tools) body.tools = tools
-
-			if (req.schema) {
-				const jsonSchema = zodToJsonSchema(req.schema)
-				body.response_format = {
-					type: 'json_schema',
-					json_schema: {
-						name: 'structured_output',
-						strict: true,
-						schema: jsonSchema,
-					},
-				}
-			}
-
+			const body = buildRequestBody(req)
 			const startTime = performance.now()
 
 			const raw = await retry(
@@ -342,27 +363,10 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		},
 
 		stream(req: CompletionRequest): ElsiumStream {
-			const messages = formatMessages(req.messages)
-			const model = req.model ?? 'gpt-4o'
-
-			if (req.system) {
-				messages.unshift({ role: 'system', content: req.system })
-			}
-
-			const body: Record<string, unknown> = {
-				model,
-				messages,
-				max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-				stream: true,
-				stream_options: { include_usage: true },
-				...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-				...(req.seed !== undefined ? { seed: req.seed } : {}),
-				...(req.topP !== undefined ? { top_p: req.topP } : {}),
-				...(req.stopSequences?.length ? { stop: req.stopSequences } : {}),
-			}
-
-			const tools = formatTools(req.tools)
-			if (tools) body.tools = tools
+			const body = buildRequestBody(req)
+			body.stream = true
+			body.stream_options = { include_usage: true }
+			const model = (body.model as string) ?? 'gpt-4o'
 
 			return createStream(async (emit) => {
 				const controller = new AbortController()

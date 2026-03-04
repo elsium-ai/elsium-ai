@@ -209,6 +209,27 @@ async function accumulateStreamEvents(
 	return { textContent, usage, stopReason, id }
 }
 
+function extractFromToolCalls(response: LLMResponse): unknown | undefined {
+	if (response.stopReason !== 'tool_use' || !response.message.toolCalls?.length) {
+		return undefined
+	}
+	const structuredCall = response.message.toolCalls.find((tc) => tc.name === '_structured_output')
+	return structuredCall?.arguments
+}
+
+function extractJsonFromText(response: LLMResponse): unknown {
+	let text = typeof response.message.content === 'string' ? response.message.content : ''
+	// Strip markdown code fences
+	text = text.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/gm, '$1').trim()
+	const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
+	if (!jsonMatch) {
+		throw ElsiumError.validation('LLM response did not contain valid JSON', {
+			response: text,
+		})
+	}
+	return JSON.parse(jsonMatch[0])
+}
+
 // ─── Main gateway factory ────────────────────────────────────────
 
 export function gateway(config: GatewayConfig): Gateway {
@@ -329,29 +350,7 @@ export function gateway(config: GatewayConfig): Gateway {
 
 			// Extract structured data — check tool call result first (Anthropic approach),
 			// then try parsing text content
-			let parsed: unknown
-
-			if (response.stopReason === 'tool_use' && response.message.toolCalls?.length) {
-				const structuredCall = response.message.toolCalls.find(
-					(tc) => tc.name === '_structured_output',
-				)
-				if (structuredCall) {
-					parsed = structuredCall.arguments
-				}
-			}
-
-			if (parsed === undefined) {
-				let text = typeof response.message.content === 'string' ? response.message.content : ''
-				// Strip markdown code fences
-				text = text.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/gm, '$1').trim()
-				const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
-				if (!jsonMatch) {
-					throw ElsiumError.validation('LLM response did not contain valid JSON', {
-						response: text,
-					})
-				}
-				parsed = JSON.parse(jsonMatch[0])
-			}
+			const parsed = extractFromToolCalls(response) ?? extractJsonFromText(response)
 
 			const result = schema.safeParse(parsed)
 			if (!result.success) {
