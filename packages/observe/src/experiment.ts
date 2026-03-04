@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createLogger } from '@elsium-ai/core'
 
 const log = createLogger()
@@ -27,13 +29,49 @@ export interface Experiment {
 	results(): ExperimentResults
 }
 
+export interface ExperimentStore {
+	save(name: string, data: ExperimentResults): void
+	load(name: string): ExperimentResults | null
+}
+
 export interface ExperimentConfig {
 	name: string
 	variants: ExperimentVariant[]
+	store?: ExperimentStore
+}
+
+export function createFileExperimentStore(dir: string): ExperimentStore {
+	return {
+		save(name: string, data: ExperimentResults): void {
+			try {
+				if (!existsSync(dir)) {
+					mkdirSync(dir, { recursive: true })
+				}
+				const filePath = join(dir, `${name}.json`)
+				writeFileSync(filePath, JSON.stringify(data, null, 2))
+			} catch (err) {
+				log.error('Failed to save experiment', {
+					name,
+					error: err instanceof Error ? err.message : String(err),
+				})
+			}
+		},
+
+		load(name: string): ExperimentResults | null {
+			try {
+				const filePath = join(dir, `${name}.json`)
+				if (!existsSync(filePath)) return null
+				const raw = readFileSync(filePath, 'utf-8')
+				return JSON.parse(raw) as ExperimentResults
+			} catch {
+				return null
+			}
+		},
+	}
 }
 
 export function createExperiment(config: ExperimentConfig): Experiment {
-	const { name, variants } = config
+	const { name, variants, store } = config
 
 	if (variants.length === 0) {
 		throw new Error('Experiment must have at least one variant')
@@ -51,6 +89,22 @@ export function createExperiment(config: ExperimentConfig): Experiment {
 
 	for (const v of variants) {
 		stats[v.name] = { assignments: 0, metrics: {} }
+	}
+
+	// Auto-load from store
+	if (store) {
+		const saved = store.load(name)
+		if (saved) {
+			for (const [vName, vData] of Object.entries(saved.variants)) {
+				if (stats[vName]) {
+					stats[vName].assignments = vData.assignments
+					for (const [key, m] of Object.entries(vData.metrics)) {
+						stats[vName].metrics[key] = { sum: m.sum, count: m.count }
+					}
+				}
+			}
+			log.debug('Loaded experiment state', { name, totalAssignments: saved.totalAssignments })
+		}
 	}
 
 	function hashAssign(userId: string): ExperimentVariant {
@@ -96,6 +150,11 @@ export function createExperiment(config: ExperimentConfig): Experiment {
 				}
 				s.metrics[key].sum += value
 				s.metrics[key].count++
+			}
+
+			// Auto-save to store
+			if (store) {
+				store.save(name, this.results())
 			}
 		},
 

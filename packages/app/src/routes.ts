@@ -133,7 +133,7 @@ export function createRoutes(deps: RoutesDeps): Hono {
 		}
 
 		deps.tracer?.trackLLMCall({
-			model: 'unknown',
+			model: resolved.agent.config.model ?? 'unknown',
 			inputTokens: result.usage.totalInputTokens,
 			outputTokens: result.usage.totalOutputTokens,
 			cost: result.usage.totalCost,

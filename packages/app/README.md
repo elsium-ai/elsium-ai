@@ -332,6 +332,104 @@ app.use('*', rateLimitMiddleware({
 
 ---
 
+## SSE Utilities
+
+Helper functions for building Server-Sent Events responses in Hono handlers.
+
+### `sseHeaders`
+
+A constant object containing the standard HTTP headers for SSE responses.
+
+```ts
+const sseHeaders: Record<string, string>
+// { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' }
+```
+
+### `formatSSE`
+
+Formats an event name and data payload into the SSE wire format.
+
+```ts
+function formatSSE(event: string, data: unknown): string
+```
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `event` | `string` | The SSE event name. |
+| `data` | `unknown` | The data payload (will be JSON-stringified). |
+
+**Returns:** A formatted SSE string (e.g., `event: text_delta\ndata: {"text":"Hello"}\n\n`).
+
+### `streamResponse`
+
+Converts a `ReadableStream` into a Hono `Response` with the correct SSE headers.
+
+```ts
+function streamResponse(stream: ReadableStream): Response
+```
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `stream` | `ReadableStream` | The stream to send as the response body. |
+
+**Returns:** A `Response` object with SSE headers.
+
+```ts
+import { sseHeaders, formatSSE, streamResponse } from '@elsium-ai/app'
+
+// In a Hono route handler
+app.post('/my-stream', (c) => {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(formatSSE('text_delta', { text: 'Hello' })))
+      controller.enqueue(new TextEncoder().encode(formatSSE('message_end', { done: true })))
+      controller.close()
+    },
+  })
+  return streamResponse(stream)
+})
+```
+
+---
+
+## Tenant Budget Middleware
+
+### `tenantBudgetMiddleware`
+
+Creates a Hono middleware that enforces per-tenant token and cost budgets using sliding windows. Each tenant is identified from the request context and tracked independently.
+
+```ts
+function tenantBudgetMiddleware(config?: {
+  windowMs?: number
+  maxTokensPerWindow?: number
+  maxCostPerWindow?: number
+}): (c: Context, next: Next) => Promise<Response | void>
+```
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `config.windowMs` | `number` | `60_000` | Sliding window duration in milliseconds. |
+| `config.maxTokensPerWindow` | `number` | `undefined` | Maximum tokens allowed per tenant per window. |
+| `config.maxCostPerWindow` | `number` | `undefined` | Maximum cost (USD) allowed per tenant per window. |
+
+**Responses on failure:**
+- `429` with `{ error: 'Tenant budget exceeded' }` when the tenant's usage exceeds the configured limits.
+
+```ts
+import { tenantBudgetMiddleware } from '@elsium-ai/app'
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.use('*', tenantBudgetMiddleware({
+  windowMs: 60_000,
+  maxTokensPerWindow: 100_000,
+  maxCostPerWindow: 1.0,
+}))
+```
+
+---
+
 ## Routes
 
 ### `createRoutes`

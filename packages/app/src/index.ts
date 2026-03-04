@@ -39,5 +39,5 @@ export { createRBAC } from './rbac'
 export type { Permission, Role, RBACConfig, RBAC } from './rbac'
 
 // Tenant
-export { tenantMiddleware, tenantRateLimitMiddleware } from './tenant'
+export { tenantMiddleware, tenantRateLimitMiddleware, tenantBudgetMiddleware } from './tenant'
 export type { TenantMiddlewareConfig } from './tenant'

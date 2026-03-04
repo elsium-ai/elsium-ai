@@ -5,6 +5,7 @@ import type {
 	MiddlewareContext,
 	ProviderConfig,
 	StreamEvent,
+	StreamMiddleware,
 	XRayData,
 } from '@elsium-ai/core'
 import {
@@ -15,11 +16,11 @@ import {
 	zodToJsonSchema,
 } from '@elsium-ai/core'
 import type { z } from 'zod'
-import { composeMiddleware, xrayMiddleware } from './middleware'
+import { composeMiddleware, composeStreamMiddleware, xrayMiddleware } from './middleware'
 import type { XRayStore } from './middleware'
 import { calculateCost, registerPricing } from './pricing'
 import type { LLMProvider } from './provider'
-import { registerProviderMetadata } from './provider'
+import { getProviderFactory, listProviders, registerProviderMetadata } from './provider'
 import { createAnthropicProvider } from './providers/anthropic'
 import { createGoogleProvider } from './providers/google'
 import { createOpenAIProvider } from './providers/openai'
@@ -32,6 +33,7 @@ export interface GatewayConfig {
 	timeout?: number
 	maxRetries?: number
 	middleware?: Middleware[]
+	streamMiddleware?: StreamMiddleware[]
 	xray?: boolean | { maxHistory?: number }
 	maxMessages?: number
 	maxInputTokens?: number
@@ -55,6 +57,24 @@ const PROVIDER_FACTORIES: Record<string, (config: ProviderConfig) => LLMProvider
 	google: createGoogleProvider,
 }
 
+// Register built-in provider metadata at module load so getProviderMetadata() works
+// without requiring a gateway instance to be created first
+registerProviderMetadata('anthropic', {
+	baseUrl: 'https://api.anthropic.com/v1/messages',
+	capabilities: ['tools', 'vision', 'streaming', 'system'],
+	authStyle: 'x-api-key',
+})
+registerProviderMetadata('openai', {
+	baseUrl: 'https://api.openai.com/v1/chat/completions',
+	capabilities: ['tools', 'vision', 'streaming', 'system', 'json_mode'],
+	authStyle: 'bearer',
+})
+registerProviderMetadata('google', {
+	baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
+	capabilities: ['tools', 'vision', 'streaming', 'system'],
+	authStyle: 'bearer',
+})
+
 export function registerProviderFactory(
 	name: string,
 	factory: (config: ProviderConfig) => LLMProvider,
@@ -65,11 +85,13 @@ export function registerProviderFactory(
 // ─── Extracted helpers ───────────────────────────────────────────
 
 function validateGatewayConfig(config: GatewayConfig): (config: ProviderConfig) => LLMProvider {
-	const factory = PROVIDER_FACTORIES[config.provider]
+	const factory = PROVIDER_FACTORIES[config.provider] ?? getProviderFactory(config.provider)
 	if (!factory) {
+		const available = [...Object.keys(PROVIDER_FACTORIES), ...listProviders()]
+		const unique = [...new Set(available)]
 		throw new ElsiumError({
 			code: 'CONFIG_ERROR',
-			message: `Unknown provider: ${config.provider}. Available: ${Object.keys(PROVIDER_FACTORIES).join(', ')}`,
+			message: `Unknown provider: ${config.provider}. Available: ${unique.join(', ')}`,
 			retryable: false,
 		})
 	}
@@ -216,6 +238,9 @@ export function gateway(config: GatewayConfig): Gateway {
 	}
 
 	const composedMiddleware = allMiddleware.length ? composeMiddleware(allMiddleware) : null
+	const composedStreamMiddleware = config.streamMiddleware?.length
+		? composeStreamMiddleware(config.streamMiddleware)
+		: null
 
 	async function executeWithMiddleware(request: CompletionRequest): Promise<LLMResponse> {
 		const req = { ...request, model: request.model ?? defaultModel }
@@ -269,7 +294,16 @@ export function gateway(config: GatewayConfig): Gateway {
 				})
 			}
 
-			return provider.stream(req)
+			const rawStream = provider.stream(req)
+			if (!composedStreamMiddleware) return rawStream
+
+			const ctx = buildMiddlewareContext(req, provider.name, defaultModel, request.metadata ?? {})
+			return createStream(async (emit) => {
+				const processed = composedStreamMiddleware(ctx, rawStream, (_c, s) => s)
+				for await (const event of processed) {
+					emit(event)
+				}
+			})
 		},
 
 		async generate<T>(
@@ -307,8 +341,10 @@ export function gateway(config: GatewayConfig): Gateway {
 			}
 
 			if (parsed === undefined) {
-				const text = typeof response.message.content === 'string' ? response.message.content : ''
-				const jsonMatch = text.match(/\{[\s\S]*\}/)
+				let text = typeof response.message.content === 'string' ? response.message.content : ''
+				// Strip markdown code fences
+				text = text.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/gm, '$1').trim()
+				const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
 				if (!jsonMatch) {
 					throw ElsiumError.validation('LLM response did not contain valid JSON', {
 						response: text,

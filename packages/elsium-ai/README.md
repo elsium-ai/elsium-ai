@@ -77,6 +77,8 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | | `Registry` |
 | | `ContextStrategy` |
 | | `ContextManagerConfig` |
+| | `StreamMiddleware` |
+| | `StreamMiddlewareNext` |
 | | `ContextManager` |
 
 ### `@elsium-ai/gateway`
@@ -86,6 +88,8 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `gateway` | `LLMProvider` |
 | `registerProviderFactory` | `ProviderFactory` |
 | `calculateCost` | `Gateway` |
+| `estimateCost` | |
+| `composeStreamMiddleware` | |
 | `registerPricing` | `GatewayConfig` |
 | `composeMiddleware` | `XRayStore` |
 | `loggingMiddleware` | `ProviderMeshConfig` |
@@ -114,12 +118,15 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `runParallel` | `AgentConfig` |
 | `runSupervisor` | `AgentResult` |
 | `createMemory` | `AgentRunOptions` |
-| `createSemanticValidator` | `GuardrailConfig` |
-| `createAgentSecurity` | `AgentHooks` |
-| `createConfidenceScorer` | `Memory` |
-| `executeStateMachine` | `MemoryConfig` |
-| `createInMemoryMemoryStore` | `MemoryStore` |
-| `createSqliteMemoryStore` | `SqliteMemoryStoreConfig` |
+| `createSharedMemory` | `SharedMemory` |
+| `createSemanticValidator` | `MultiAgentOptions` |
+| `createAgentSecurity` | `GuardrailConfig` |
+| `createConfidenceScorer` | `AgentHooks` |
+| `executeStateMachine` | `Memory` |
+| `createInMemoryMemoryStore` | `MemoryConfig` |
+| `createSqliteMemoryStore` | `MemoryStore` |
+| | `SqliteMemoryStoreConfig` |
+| | `StateTransitionResult` |
 | | `SemanticGuardrailConfig` |
 | | `SemanticCheck` |
 | | `SemanticCheckResult` |
@@ -153,15 +160,15 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `rag` | `RAGPipeline` |
 | `createInMemoryStore` | `RAGPipelineConfig` |
 | `createOpenAIEmbeddings` | `IngestResult` |
-| `createMockEmbeddings` | `Document` |
-| `vectorStoreRegistry` | `Chunk` |
-| `embeddingProviderRegistry` | `EmbeddedChunk` |
-| `createPgVectorStore` | `RetrievalResult` |
-| | `QueryOptions` |
-| | `EmbeddingProvider` |
-| | `VectorStore` |
-| | `VectorStoreFactory` |
-| | `EmbeddingProviderFactory` |
+| `createGoogleEmbeddings` | `Document` |
+| `createCohereEmbeddings` | `Chunk` |
+| `createMockEmbeddings` | `EmbeddedChunk` |
+| `vectorStoreRegistry` | `RetrievalResult` |
+| `embeddingProviderRegistry` | `QueryOptions` |
+| `createPgVectorStore` | `EmbeddingProvider` |
+| `createQdrantStore` | `VectorStore` |
+| `createBM25Index` | `VectorStoreFactory` |
+| `createHybridSearch` | `EmbeddingProviderFactory` |
 | | `PgVectorStoreConfig` |
 
 ### `@elsium-ai/workflows`
@@ -171,10 +178,12 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `defineWorkflow` | `Workflow` |
 | `defineParallelWorkflow` | `WorkflowConfig` |
 | `defineBranchWorkflow` | `WorkflowResult` |
-| `step` | `WorkflowRunOptions` |
-| | `StepConfig` |
+| `defineDagWorkflow` | `WorkflowRunOptions` |
+| `step` | `StepConfig` |
 | | `StepContext` |
 | | `StepResult` |
+| | `DagStepConfig` |
+| | `DagWorkflowConfig` |
 
 ### `@elsium-ai/observe`
 
@@ -185,6 +194,9 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `createMetrics` | `TracerExporter` |
 | `createCostEngine` | `CostReport` |
 | `createExperiment` | `Span` |
+| `instrumentComplete` | `ExperimentStore` |
+| `instrumentAgent` | |
+| `createFileExperimentStore` | |
 | `toOTelSpan` | `SpanData` |
 | `toOTelExportRequest` | `SpanKind` |
 | `toTraceparent` | `SpanStatus` |
@@ -215,7 +227,7 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `streamResponse` | `AuthConfig` |
 | `tenantMiddleware` | `RateLimitConfig` |
 | `tenantRateLimitMiddleware` | `StreamChatEvent` |
-| | `StreamCompleteEvent` |
+| `tenantBudgetMiddleware` | `StreamCompleteEvent` |
 | | `TenantMiddlewareConfig` |
 
 ### `@elsium-ai/mcp`
@@ -224,9 +236,12 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 |--------|-------|
 | `createMCPClient` | `MCPClient` |
 | `createMCPServer` | `MCPClientConfig` |
-| | `MCPToolInfo` |
+| `createMCPHttpHandler` | `MCPToolInfo` |
 | | `MCPServer` |
 | | `MCPServerConfig` |
+| | `JsonRpcRequest` |
+| | `JsonRpcResponse` |
+| | `MCPTransport` |
 
 ### `@elsium-ai/client`
 

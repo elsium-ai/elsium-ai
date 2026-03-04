@@ -77,10 +77,17 @@ export function createPolicySet(policies: PolicyConfig[]): PolicySet {
 	}
 }
 
-export function policyMiddleware(policySet: PolicySet): Middleware {
+export function policyMiddleware(
+	policySet: PolicySet,
+	options?: { estimateCost?: (model: string, tokenCount: number) => number },
+): Middleware {
 	return async (ctx: MiddlewareContext, next: MiddlewareNext) => {
 		const requestContent = ctx.request.messages.map((m) => extractText(m.content)).join('\n')
 		const tokenCount = Math.ceil(requestContent.length / 4)
+
+		const costEstimate = options?.estimateCost
+			? options.estimateCost(ctx.model, tokenCount)
+			: undefined
 
 		const policyCtx: PolicyContext = {
 			model: ctx.model,
@@ -88,6 +95,7 @@ export function policyMiddleware(policySet: PolicySet): Middleware {
 			metadata: ctx.metadata,
 			requestContent,
 			tokenCount,
+			costEstimate,
 		}
 
 		const denials = policySet.evaluate(policyCtx)

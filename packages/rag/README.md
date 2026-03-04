@@ -660,6 +660,198 @@ const reranked = mmrRerank(queryEmbedding, candidateResults, {
 })
 ```
 
+### `createPgVectorStore`
+
+Creates a vector store backed by PostgreSQL with the pgvector extension.
+
+```typescript
+function createPgVectorStore(config: {
+  connectionString: string
+  tableName?: string
+  dimensions?: number
+}): VectorStore
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.connectionString` | `string` | **(required)** | PostgreSQL connection string. |
+| `config.tableName` | `string` | `'embeddings'` | Table name for storing vectors. |
+| `config.dimensions` | `number` | `1536` | Vector dimensions (must match your embedding model). |
+
+**Returns:** A `VectorStore` with `name: 'pgvector'`.
+
+```typescript
+import { createPgVectorStore } from '@elsium-ai/rag'
+
+const store = createPgVectorStore({
+  connectionString: process.env.DATABASE_URL!,
+  tableName: 'document_embeddings',
+  dimensions: 1536,
+})
+
+await store.upsert(embeddedChunks)
+const results = await store.query(queryVector, { topK: 5 })
+```
+
+### `createQdrantStore`
+
+Creates a vector store backed by the Qdrant REST API.
+
+```typescript
+function createQdrantStore(config: {
+  url: string
+  apiKey?: string
+  collectionName: string
+  dimensions: number
+}): VectorStore
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.url` | `string` | **(required)** | Qdrant server URL. |
+| `config.apiKey` | `string` | `undefined` | Optional API key for authentication. |
+| `config.collectionName` | `string` | **(required)** | Name of the Qdrant collection. |
+| `config.dimensions` | `number` | **(required)** | Vector dimensions. |
+
+**Returns:** A `VectorStore` with `name: 'qdrant'`.
+
+```typescript
+import { createQdrantStore } from '@elsium-ai/rag'
+
+const store = createQdrantStore({
+  url: 'http://localhost:6333',
+  collectionName: 'documents',
+  dimensions: 1536,
+})
+```
+
+---
+
+## Additional Embedding Providers
+
+### `createGoogleEmbeddings`
+
+Creates an embedding provider backed by Google's text-embedding-004 model.
+
+```typescript
+function createGoogleEmbeddings(config: {
+  apiKey: string
+  model?: string
+  dimensions?: number
+}): EmbeddingProvider
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.apiKey` | `string` | **(required)** | Google API key. |
+| `config.model` | `string` | `'text-embedding-004'` | Model name. |
+| `config.dimensions` | `number` | `768` | Embedding dimensions. |
+
+**Returns:** An `EmbeddingProvider` with `name: 'google'`.
+
+```typescript
+import { createGoogleEmbeddings } from '@elsium-ai/rag'
+
+const embeddings = createGoogleEmbeddings({
+  apiKey: process.env.GOOGLE_API_KEY!,
+})
+
+const vector = await embeddings.embed('Hello, world!')
+```
+
+### `createCohereEmbeddings`
+
+Creates an embedding provider backed by Cohere's embed-v4.0 model.
+
+```typescript
+function createCohereEmbeddings(config: {
+  apiKey: string
+  model?: string
+  inputType?: string
+}): EmbeddingProvider
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.apiKey` | `string` | **(required)** | Cohere API key. |
+| `config.model` | `string` | `'embed-v4.0'` | Model name. |
+| `config.inputType` | `string` | `'search_document'` | Input type hint for the model. |
+
+**Returns:** An `EmbeddingProvider` with `name: 'cohere'`.
+
+```typescript
+import { createCohereEmbeddings } from '@elsium-ai/rag'
+
+const embeddings = createCohereEmbeddings({
+  apiKey: process.env.COHERE_API_KEY!,
+})
+
+const vector = await embeddings.embed('Hello, world!')
+```
+
+---
+
+## Keyword & Hybrid Search
+
+### `createBM25Index`
+
+Creates a BM25 keyword search index for term-frequency-based retrieval.
+
+```typescript
+function createBM25Index(): {
+  add(chunks: Chunk[]): void
+  search(query: string, topK?: number): RetrievalResult[]
+  clear(): void
+}
+```
+
+**Returns:** A BM25 index with `add`, `search`, and `clear` methods.
+
+```typescript
+import { createBM25Index } from '@elsium-ai/rag'
+
+const bm25 = createBM25Index()
+bm25.add(chunks)
+
+const results = bm25.search('machine learning', 5)
+```
+
+### `createHybridSearch`
+
+Combines a vector store with a BM25 index using Reciprocal Rank Fusion (RRF) to blend semantic and keyword search results.
+
+```typescript
+function createHybridSearch(
+  vectorStore: VectorStore,
+  bm25: ReturnType<typeof createBM25Index>,
+  config?: { vectorWeight?: number; bm25Weight?: number; topK?: number },
+): {
+  query(embedding: EmbeddingVector, text: string, options?: QueryOptions): Promise<RetrievalResult[]>
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `vectorStore` | `VectorStore` | **(required)** | The vector store for semantic search. |
+| `bm25` | `BM25Index` | **(required)** | The BM25 index for keyword search. |
+| `config.vectorWeight` | `number` | `0.7` | Weight for vector search results in RRF. |
+| `config.bm25Weight` | `number` | `0.3` | Weight for BM25 results in RRF. |
+| `config.topK` | `number` | `5` | Number of results to return. |
+
+```typescript
+import { createInMemoryStore, createBM25Index, createHybridSearch } from '@elsium-ai/rag'
+
+const vectorStore = createInMemoryStore()
+const bm25 = createBM25Index()
+
+const hybrid = createHybridSearch(vectorStore, bm25, {
+  vectorWeight: 0.7,
+  bm25Weight: 0.3,
+})
+
+const results = await hybrid.query(queryEmbedding, 'search query', { topK: 10 })
+```
+
 ---
 
 ## Pipeline

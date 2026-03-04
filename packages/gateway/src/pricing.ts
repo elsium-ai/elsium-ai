@@ -71,3 +71,9 @@ export function calculateCost(model: string, usage: TokenUsage): CostBreakdown {
 export function registerPricing(model: string, pricing: ModelPricing): void {
 	PRICING[model] = pricing
 }
+
+export function estimateCost(model: string, tokenCount: number): number {
+	const pricing = PRICING[resolveModelName(model)]
+	if (!pricing) return 0
+	return (tokenCount / 1_000_000) * pricing.inputPerMillion
+}

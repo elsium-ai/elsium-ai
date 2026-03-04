@@ -8,6 +8,7 @@ import {
 	costTrackingMiddleware,
 	gateway,
 	getProviderFactory,
+	getProviderMetadata,
 	listProviders,
 	registerPricing,
 	registerProvider,
@@ -301,6 +302,65 @@ describe('registerProvider / getProviderFactory / listProviders', () => {
 		const providers = listProviders()
 		expect(providers).toContain('list-test-a')
 		expect(providers).toContain('list-test-b')
+	})
+
+	it('gateway() resolves custom providers registered via registerProvider', () => {
+		registerProvider('custom-llm', () => createMockProvider())
+
+		const gw = gateway({
+			provider: 'custom-llm',
+			apiKey: 'test-key',
+		})
+		expect(gw).toBeDefined()
+	})
+
+	it('gateway() resolves custom providers registered via registerProviderFactory', () => {
+		registerProviderFactory('my-bedrock', () => createMockProvider())
+
+		const gw = gateway({
+			provider: 'my-bedrock',
+			apiKey: 'test-key',
+		})
+		expect(gw).toBeDefined()
+	})
+
+	it('gateway() with custom provider can call complete()', async () => {
+		registerProvider('custom-complete', () =>
+			createMockProvider([{ message: { role: 'assistant', content: 'custom response' } }]),
+		)
+
+		const gw = gateway({ provider: 'custom-complete', apiKey: 'test-key' })
+		const response = await gw.complete({ messages: [{ role: 'user', content: 'hi' }] })
+		expect(response.message.content).toBe('custom response')
+	})
+})
+
+// ─── getProviderMetadata ────────────────────────────────────────
+
+describe('getProviderMetadata', () => {
+	it('returns metadata for built-in anthropic provider', () => {
+		const meta = getProviderMetadata('anthropic')
+		expect(meta).toBeDefined()
+		expect(meta?.authStyle).toBe('x-api-key')
+		expect(meta?.capabilities).toContain('tools')
+	})
+
+	it('returns metadata for built-in openai provider', () => {
+		const meta = getProviderMetadata('openai')
+		expect(meta).toBeDefined()
+		expect(meta?.authStyle).toBe('bearer')
+		expect(meta?.capabilities).toContain('json_mode')
+	})
+
+	it('returns metadata for built-in google provider', () => {
+		const meta = getProviderMetadata('google')
+		expect(meta).toBeDefined()
+		expect(meta?.authStyle).toBe('bearer')
+	})
+
+	it('returns undefined for unknown provider', () => {
+		const meta = getProviderMetadata('nonexistent-xyz')
+		expect(meta).toBeUndefined()
 	})
 })
 

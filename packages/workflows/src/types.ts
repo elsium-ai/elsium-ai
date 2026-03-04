@@ -62,3 +62,18 @@ export interface WorkflowResult {
 export interface WorkflowRunOptions {
 	signal?: AbortSignal
 }
+
+// ─── DAG Workflow ───────────────────────────────────────────────
+
+export interface DagStepConfig<TInput = unknown, TOutput = unknown>
+	extends StepConfig<TInput, TOutput> {
+	dependsOn?: string[]
+}
+
+export interface DagWorkflowConfig {
+	name: string
+	steps: DagStepConfig[]
+	onStepComplete?: (result: StepResult) => void | Promise<void>
+	onStepError?: (error: Error, stepName: string) => void | Promise<void>
+	onComplete?: (result: WorkflowResult) => void | Promise<void>
+}

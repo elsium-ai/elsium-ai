@@ -31,11 +31,19 @@ export interface GuardrailConfig {
 
 // ─── State Machine Types ────────────────────────────────────────
 
+export interface StateTransitionResult {
+	next: string
+	context?: Record<string, unknown>
+}
+
 export interface StateDefinition {
 	system?: string
 	tools?: Tool[]
 	guardrails?: GuardrailConfig
-	transition: (result: AgentResult) => string
+	transition: (
+		result: AgentResult,
+		stateContext?: Record<string, unknown>,
+	) => string | StateTransitionResult
 	terminal?: boolean
 }
 

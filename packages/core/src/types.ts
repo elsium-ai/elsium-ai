@@ -168,7 +168,9 @@ export interface TenantContext {
 	tier?: string
 	limits?: {
 		maxRequestsPerMinute?: number
+		maxTokensPerMinute?: number
 		maxTokensPerDay?: number
+		maxCostPerDay?: number
 		maxCostPerMonth?: number
 		allowedModels?: string[]
 	}
@@ -189,3 +191,16 @@ export interface MiddlewareContext {
 export type MiddlewareNext = (ctx: MiddlewareContext) => Promise<LLMResponse>
 
 export type Middleware = (ctx: MiddlewareContext, next: MiddlewareNext) => Promise<LLMResponse>
+
+// ─── Stream Middleware ──────────────────────────────────────────
+
+export type StreamMiddlewareNext = (
+	ctx: MiddlewareContext,
+	source: AsyncIterable<StreamEvent>,
+) => AsyncIterable<StreamEvent>
+
+export type StreamMiddleware = (
+	ctx: MiddlewareContext,
+	source: AsyncIterable<StreamEvent>,
+	next: StreamMiddlewareNext,
+) => AsyncIterable<StreamEvent>

@@ -23,6 +23,8 @@ export type {
 	MiddlewareContext,
 	MiddlewareNext,
 	Middleware,
+	StreamMiddleware,
+	StreamMiddlewareNext,
 } from './types'
 
 // Errors

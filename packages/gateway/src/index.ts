@@ -26,6 +26,7 @@ export { createGoogleProvider } from './providers/google'
 // Middleware
 export {
 	composeMiddleware,
+	composeStreamMiddleware,
 	loggingMiddleware,
 	costTrackingMiddleware,
 	xrayMiddleware,
@@ -66,7 +67,7 @@ export type {
 } from './output-guardrails'
 
 // Pricing
-export { calculateCost, registerPricing } from './pricing'
+export { calculateCost, registerPricing, estimateCost } from './pricing'
 
 // Batch
 export { createBatch } from './batch'
