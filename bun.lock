@@ -43,7 +43,7 @@
     },
     "packages/agents": {
       "name": "@elsium-ai/agents",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/observe": "workspace:*",
@@ -56,7 +56,7 @@
     },
     "packages/app": {
       "name": "@elsium-ai/app",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
@@ -65,8 +65,8 @@
         "@elsium-ai/rag": "workspace:*",
         "@elsium-ai/tools": "workspace:*",
         "@elsium-ai/workflows": "workspace:*",
-        "@hono/node-server": "^1.13.0",
-        "hono": "^4.7.0",
+        "@hono/node-server": "^1.19.10",
+        "hono": "^4.12.4",
         "zod": "^3.24.0",
       },
       "devDependencies": {
@@ -75,7 +75,7 @@
     },
     "packages/cli": {
       "name": "@elsium-ai/cli",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "bin": {
         "elsium": "./dist/cli.js",
       },
@@ -89,7 +89,7 @@
     },
     "packages/client": {
       "name": "@elsium-ai/client",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -99,7 +99,7 @@
     },
     "packages/core": {
       "name": "@elsium-ai/core",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "zod": "^3.24.0",
       },
@@ -109,7 +109,7 @@
     },
     "packages/elsium-ai": {
       "name": "elsium-ai",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/app": "workspace:*",
@@ -129,7 +129,7 @@
     },
     "packages/gateway": {
       "name": "@elsium-ai/gateway",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -140,7 +140,7 @@
     },
     "packages/mcp": {
       "name": "@elsium-ai/mcp",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/tools": "workspace:*",
@@ -151,7 +151,7 @@
     },
     "packages/observe": {
       "name": "@elsium-ai/observe",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -161,7 +161,7 @@
     },
     "packages/rag": {
       "name": "@elsium-ai/rag",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -171,7 +171,7 @@
     },
     "packages/testing": {
       "name": "@elsium-ai/testing",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
@@ -184,7 +184,7 @@
     },
     "packages/tools": {
       "name": "@elsium-ai/tools",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -195,7 +195,7 @@
     },
     "packages/workflows": {
       "name": "@elsium-ai/workflows",
-      "version": "0.2.3",
+      "version": "0.4.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -386,7 +386,7 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.27.3", "", { "os": "win32", "cpu": "x64" }, "sha512-4uJGhsxuptu3OcpVAzli+/gWusVGwZZHTlS63hh++ehExkVT8SgiEf7/uC/PclrPPkLhZqGgCTjd0VWLo6xMqA=="],
 
-    "@hono/node-server": ["@hono/node-server@1.19.9", "", { "peerDependencies": { "hono": "^4" } }, "sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw=="],
+    "@hono/node-server": ["@hono/node-server@1.19.10", "", { "peerDependencies": { "hono": "^4" } }, "sha512-hZ7nOssGqRgyV3FVVQdfi+U4q02uB23bpnYpdvNXkYTRRyWx84b7yf1ans+dnJ/7h41sGL3CeQTfO+ZGxuO+Iw=="],
 
     "@inquirer/external-editor": ["@inquirer/external-editor@1.0.3", "", { "dependencies": { "chardet": "^2.1.1", "iconv-lite": "^0.7.0" }, "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA=="],
 
@@ -640,7 +640,7 @@
 
     "has-flag": ["has-flag@4.0.0", "", {}, "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="],
 
-    "hono": ["hono@4.12.3", "", {}, "sha512-SFsVSjp8sj5UumXOOFlkZOG6XS9SJDKw0TbwFeV+AJ8xlST8kxK5Z/5EYa111UY8732lK2S/xB653ceuaoGwpg=="],
+    "hono": ["hono@4.12.5", "", {}, "sha512-3qq+FUBtlTHhtYxbxheZgY8NIFnkkC/MR8u5TTsr7YZ3wixryQ3cCwn3iZbg8p8B88iDBBAYSfZDS75t8MN7Vg=="],
 
     "html-escaper": ["html-escaper@2.0.2", "", {}, "sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg=="],
 

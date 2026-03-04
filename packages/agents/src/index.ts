@@ -10,6 +10,7 @@ export type {
 	AgentHooks,
 	GuardrailConfig,
 	StateDefinition,
+	StateTransitionResult,
 	StateHistoryEntry,
 	StateMachineResult,
 } from './types'
@@ -22,9 +23,13 @@ export type { Memory, MemoryConfig, MemoryStrategy } from './memory'
 export { createInMemoryMemoryStore, createSqliteMemoryStore } from './stores/index'
 export type { MemoryStore, SqliteMemoryStoreConfig } from './stores/index'
 
+// Shared Memory
+export { createSharedMemory } from './shared-memory'
+export type { SharedMemory } from './shared-memory'
+
 // Multi-agent
 export { runSequential, runParallel, runSupervisor } from './multi'
-export type { MultiAgentConfig } from './multi'
+export type { MultiAgentConfig, MultiAgentOptions } from './multi'
 
 // Semantic Guardrails
 export { createSemanticValidator } from './semantic-guardrails'

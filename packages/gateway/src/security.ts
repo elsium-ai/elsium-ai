@@ -86,6 +86,21 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; detail: string; replacement: str
 		replacement: '[REDACTED_API_KEY]',
 	},
 	{
+		pattern: /\bghp_[a-zA-Z0-9]{36,}\b/g,
+		detail: 'GitHub personal access token detected',
+		replacement: '[REDACTED_GITHUB_TOKEN]',
+	},
+	{
+		pattern: /\bgho_[a-zA-Z0-9]{36,}\b/g,
+		detail: 'GitHub OAuth token detected',
+		replacement: '[REDACTED_GITHUB_TOKEN]',
+	},
+	{
+		pattern: /\bgithub_pat_[a-zA-Z0-9_]{20,}\b/g,
+		detail: 'GitHub fine-grained token detected',
+		replacement: '[REDACTED_GITHUB_TOKEN]',
+	},
+	{
 		pattern: /\bapi_key[=:]\s*["']?[a-zA-Z0-9_-]{16,}["']?/gi,
 		detail: 'API key assignment detected',
 		replacement: '[REDACTED_API_KEY]',

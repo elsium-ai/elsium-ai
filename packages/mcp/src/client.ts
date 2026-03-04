@@ -3,7 +3,7 @@ import type { ToolDefinition } from '@elsium-ai/core'
 import { ElsiumError, generateId } from '@elsium-ai/core'
 import type { Tool, ToolContext, ToolExecutionResult } from '@elsium-ai/tools'
 
-export interface MCPClientConfig {
+export interface MCPClientStdioConfig {
 	name: string
 	transport: 'stdio'
 	command: string
@@ -11,6 +11,16 @@ export interface MCPClientConfig {
 	env?: Record<string, string>
 	timeoutMs?: number
 }
+
+export interface MCPClientHttpConfig {
+	name: string
+	transport: 'http'
+	url: string
+	headers?: Record<string, string>
+	timeoutMs?: number
+}
+
+export type MCPClientConfig = MCPClientStdioConfig | MCPClientHttpConfig
 
 export interface MCPToolInfo {
 	name: string
@@ -42,6 +52,189 @@ export interface MCPClient {
 }
 
 export function createMCPClient(config: MCPClientConfig): MCPClient {
+	if (config.transport === 'http') {
+		return createHttpMCPClient(config)
+	}
+	return createStdioMCPClient(config)
+}
+
+function createHttpMCPClient(config: MCPClientHttpConfig): MCPClient {
+	let connected = false
+	let requestId = 0
+	const timeoutMs = config.timeoutMs ?? 30_000
+
+	async function sendRequest(method: string, params?: Record<string, unknown>): Promise<unknown> {
+		if (!connected) {
+			throw new ElsiumError({
+				code: 'NETWORK_ERROR',
+				message: 'MCP HTTP client not connected',
+				retryable: false,
+			})
+		}
+
+		const id = ++requestId
+		const body = {
+			jsonrpc: '2.0',
+			id,
+			method,
+			...(params ? { params } : {}),
+		}
+
+		const controller = new AbortController()
+		const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+		try {
+			const response = await fetch(config.url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...(config.headers ?? {}),
+				},
+				body: JSON.stringify(body),
+				signal: controller.signal,
+			})
+
+			if (!response.ok) {
+				throw new ElsiumError({
+					code: 'PROVIDER_ERROR',
+					message: `MCP HTTP error: ${response.status}`,
+					retryable: response.status >= 500,
+				})
+			}
+
+			const json = (await response.json()) as {
+				result?: unknown
+				error?: { code: number; message: string }
+			}
+
+			if (json.error) {
+				throw new ElsiumError({
+					code: 'PROVIDER_ERROR',
+					message: `MCP error: ${json.error.message}`,
+					retryable: false,
+					metadata: { code: json.error.code },
+				})
+			}
+
+			return json.result
+		} catch (error) {
+			if (error instanceof ElsiumError) throw error
+			if (error instanceof Error && error.name === 'AbortError') {
+				throw new ElsiumError({
+					code: 'TIMEOUT',
+					message: `MCP HTTP request timed out after ${timeoutMs}ms`,
+					retryable: true,
+				})
+			}
+			throw error
+		} finally {
+			clearTimeout(timer)
+		}
+	}
+
+	return {
+		get connected() {
+			return connected
+		},
+
+		async connect(): Promise<void> {
+			if (connected) return
+			await sendRequest
+				.call({ connected: true } as never, 'initialize', {
+					protocolVersion: '2024-11-05',
+					capabilities: {},
+					clientInfo: { name: `elsium-mcp-${config.name}`, version: '0.1.0' },
+				})
+				.catch(() => {
+					// Initialize may fail, that's ok - set connected for retry
+				})
+			connected = true
+			// Re-initialize now that connected flag is set
+			await sendRequest('initialize', {
+				protocolVersion: '2024-11-05',
+				capabilities: {},
+				clientInfo: { name: `elsium-mcp-${config.name}`, version: '0.1.0' },
+			})
+		},
+
+		async disconnect(): Promise<void> {
+			connected = false
+		},
+
+		async listTools(): Promise<MCPToolInfo[]> {
+			const result = (await sendRequest('tools/list')) as {
+				tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+			}
+			return result.tools ?? []
+		},
+
+		async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+			const result = (await sendRequest('tools/call', { name, arguments: args })) as {
+				content: Array<{ type: string; text?: string }>
+			}
+			const textContent = result.content
+				?.filter((c) => c.type === 'text')
+				.map((c) => c.text)
+				.join('\n')
+			return textContent ?? result
+		},
+
+		async toElsiumTools(): Promise<Tool[]> {
+			const mcpTools = await this.listTools()
+			const client = this
+
+			return mcpTools.map((mcpTool) => {
+				const tool: Tool = {
+					name: mcpTool.name,
+					description: mcpTool.description,
+					inputSchema: { _def: { typeName: 'ZodObject' } } as never,
+					rawSchema: mcpTool.inputSchema,
+					timeoutMs,
+
+					async execute(
+						input: unknown,
+						partialCtx?: Partial<ToolContext>,
+					): Promise<ToolExecutionResult> {
+						const toolCallId = partialCtx?.toolCallId ?? generateId('tc')
+						const startTime = performance.now()
+
+						try {
+							const result = await client.callTool(
+								mcpTool.name,
+								(input as Record<string, unknown>) ?? {},
+							)
+							return {
+								success: true,
+								data: result,
+								toolCallId,
+								durationMs: Math.round(performance.now() - startTime),
+							}
+						} catch (error) {
+							return {
+								success: false,
+								error: error instanceof Error ? error.message : String(error),
+								toolCallId,
+								durationMs: Math.round(performance.now() - startTime),
+							}
+						}
+					},
+
+					toDefinition(): ToolDefinition {
+						return {
+							name: mcpTool.name,
+							description: mcpTool.description,
+							inputSchema: mcpTool.inputSchema,
+						}
+					},
+				}
+
+				return tool
+			})
+		},
+	}
+}
+
+function createStdioMCPClient(config: MCPClientStdioConfig): MCPClient {
 	let process: ChildProcess | null = null
 	let connected = false
 	let requestId = 0

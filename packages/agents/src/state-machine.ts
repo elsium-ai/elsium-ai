@@ -75,8 +75,16 @@ function evaluateTransition(
 	stateConfig: { states: Record<string, StateDefinition>; initialState: string },
 	stateHistory: StateHistoryEntry[],
 	conversationMessages: Message[],
+	stateContext: Record<string, unknown>,
 ): { nextStateName: string; nextState: StateDefinition } {
-	const nextStateName = currentState.transition(result)
+	const transitionResult = currentState.transition(result, stateContext)
+	const nextStateName =
+		typeof transitionResult === 'string' ? transitionResult : transitionResult.next
+
+	if (typeof transitionResult !== 'string' && transitionResult.context) {
+		Object.assign(stateContext, transitionResult.context)
+	}
+
 	const nextState = stateConfig.states[nextStateName]
 
 	if (!nextState) {
@@ -214,6 +222,7 @@ async function runStateMachine(
 	const outputValidator = guardrails?.outputValidator ?? (() => true)
 
 	const conversationMessages: Message[] = [{ role: 'user', content: input }]
+	const stateContext: Record<string, unknown> = {}
 
 	while (iterations < maxIterations) {
 		iterations++
@@ -288,6 +297,7 @@ async function runStateMachine(
 			stateConfig,
 			stateHistory,
 			conversationMessages,
+			stateContext,
 		)
 		currentStateName = transition.nextStateName
 		currentState = transition.nextState

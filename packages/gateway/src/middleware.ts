@@ -4,6 +4,8 @@ import type {
 	Middleware,
 	MiddlewareContext,
 	MiddlewareNext,
+	StreamEvent,
+	StreamMiddleware,
 	XRayData,
 } from '@elsium-ai/core'
 import { createLogger } from '@elsium-ai/core'
@@ -28,6 +30,22 @@ export function composeMiddleware(middlewares: Middleware[]): Middleware {
 		}
 
 		return dispatch(0)
+	}
+}
+
+export function composeStreamMiddleware(middlewares: StreamMiddleware[]): StreamMiddleware {
+	return (ctx, source, finalNext) => {
+		function dispatch(
+			i: number,
+			currentCtx: MiddlewareContext,
+			currentSource: AsyncIterable<StreamEvent>,
+		): AsyncIterable<StreamEvent> {
+			if (i >= middlewares.length) {
+				return finalNext(currentCtx, currentSource)
+			}
+			return middlewares[i](currentCtx, currentSource, (c, s) => dispatch(i + 1, c, s))
+		}
+		return dispatch(0, ctx, source)
 	}
 }
 

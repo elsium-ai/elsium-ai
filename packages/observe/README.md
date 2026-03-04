@@ -1171,6 +1171,125 @@ await tracer.flush()
 
 ---
 
+## Experiments Persistence
+
+### `createFileExperimentStore`
+
+Creates a file-based storage adapter for saving and loading experiment results to disk. Experiment data is serialized as JSON files in the specified directory.
+
+```ts
+function createFileExperimentStore(dir: string): ExperimentStore
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `dir` | `string` | Directory path where experiment result files will be stored |
+
+**Returns:** `ExperimentStore`
+
+```ts
+interface ExperimentStore {
+  save(experiment: ExperimentResults): Promise<void>
+  load(experimentId: string): Promise<ExperimentResults | null>
+  list(): Promise<string[]>
+}
+```
+
+```ts
+import { createExperiment, createFileExperimentStore } from 'elsium-ai/observe'
+
+const store = createFileExperimentStore('./experiments')
+
+const experiment = createExperiment({
+  name: 'prompt-comparison',
+  variants: [
+    { name: 'concise', config: { system: 'Be brief.' } },
+    { name: 'detailed', config: { system: 'Be thorough.' } },
+  ],
+})
+
+const results = await experiment.run(evaluator)
+
+// Persist results to disk
+await store.save(results)
+
+// Load results later
+const loaded = await store.load(results.id)
+```
+
+---
+
+## Auto-Instrumentation
+
+### `instrumentComplete`
+
+Wraps an LLM completion function with automatic span creation. Every call produces a span with model, token, cost, and latency metadata.
+
+```ts
+function instrumentComplete(
+  complete: (request: CompletionRequest) => Promise<LLMResponse>,
+  tracer: Tracer,
+): (request: CompletionRequest) => Promise<LLMResponse>
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `complete` | `(request: CompletionRequest) => Promise<LLMResponse>` | The LLM completion function to instrument |
+| `tracer` | `Tracer` | The tracer instance to record spans to |
+
+**Returns:** A wrapped completion function with the same signature.
+
+```ts
+import { observe, instrumentComplete } from 'elsium-ai/observe'
+
+const tracer = observe()
+
+const tracedComplete = instrumentComplete(
+  (req) => llm.complete(req),
+  tracer,
+)
+
+// Every call now creates an 'llm' span automatically
+const response = await tracedComplete({ model: 'gpt-4o', messages })
+```
+
+### `instrumentAgent`
+
+Wraps an agent's `run` method with automatic span creation. Produces an `agent` span that captures the agent name, input, output, token usage, and tool calls.
+
+```ts
+function instrumentAgent(
+  agent: Agent,
+  tracer: Tracer,
+): Agent
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `agent` | `Agent` | The agent to instrument |
+| `tracer` | `Tracer` | The tracer instance to record spans to |
+
+**Returns:** A new `Agent` with the same interface, where `run` and `chat` are automatically traced.
+
+```ts
+import { observe, instrumentAgent } from 'elsium-ai/observe'
+import { defineAgent } from 'elsium-ai/agents'
+
+const tracer = observe()
+
+const agent = defineAgent(
+  { name: 'assistant', system: 'You are helpful.' },
+  { complete: (req) => llm.complete(req) },
+)
+
+const tracedAgent = instrumentAgent(agent, tracer)
+
+// Every run/chat call now creates an 'agent' span automatically
+const result = await tracedAgent.run('Hello')
+```
+
+---
+
 ## Part of ElsiumAI
 
 This package is the observability layer of the [ElsiumAI](https://github.com/elsium-ai/elsium-ai) framework. See the [full documentation](https://github.com/elsium-ai/elsium-ai) for guides and examples.

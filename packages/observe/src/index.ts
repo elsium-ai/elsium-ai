@@ -41,13 +41,18 @@ export { createProvenanceTracker } from './provenance'
 export type { ProvenanceRecord, ProvenanceTracker } from './provenance'
 
 // Experiment
-export { createExperiment } from './experiment'
+export { createExperiment, createFileExperimentStore } from './experiment'
 export type {
 	Experiment,
 	ExperimentConfig,
 	ExperimentVariant,
 	ExperimentResults,
+	ExperimentStore,
 } from './experiment'
+
+// Auto-instrumentation
+export { instrumentComplete, instrumentAgent } from './instrument'
+export type { InstrumentableAgent } from './instrument'
 
 // OpenTelemetry compatibility
 export {

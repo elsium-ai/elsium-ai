@@ -163,6 +163,30 @@ describe('redactSecrets', () => {
 		expect(redacted).toBe('This is a normal message with no secrets')
 		expect(found).toHaveLength(0)
 	})
+
+	it('redacts GitHub personal access tokens (ghp_)', () => {
+		const token = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn'
+		const { redacted, found } = redactSecrets(`Token: ${token}`)
+		expect(redacted).toContain('[REDACTED_GITHUB_TOKEN]')
+		expect(redacted).not.toContain(token)
+		expect(found).toHaveLength(1)
+	})
+
+	it('redacts GitHub OAuth tokens (gho_)', () => {
+		const token = 'gho_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn'
+		const { redacted, found } = redactSecrets(`Token: ${token}`)
+		expect(redacted).toContain('[REDACTED_GITHUB_TOKEN]')
+		expect(redacted).not.toContain(token)
+		expect(found).toHaveLength(1)
+	})
+
+	it('redacts GitHub fine-grained tokens (github_pat_)', () => {
+		const token = 'github_pat_ABCDEFGHIJKLMNOPQRSTUVWX'
+		const { redacted, found } = redactSecrets(`Token: ${token}`)
+		expect(redacted).toContain('[REDACTED_GITHUB_TOKEN]')
+		expect(redacted).not.toContain(token)
+		expect(found).toHaveLength(1)
+	})
 })
 
 // ─── checkBlockedPatterns ───────────────────────────────────────

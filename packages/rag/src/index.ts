@@ -61,3 +61,19 @@ export type { RAGPipeline, RAGPipelineConfig, IngestResult } from './pipeline'
 // Stores
 export { createPgVectorStore } from './stores/index'
 export type { PgVectorStoreConfig } from './stores/index'
+export { createQdrantStore } from './stores/index'
+export type { QdrantStoreConfig } from './stores/index'
+
+// Embedding Providers
+export { createGoogleEmbeddings } from './providers/google-embeddings'
+export type { GoogleEmbeddingsConfig } from './providers/google-embeddings'
+export { createCohereEmbeddings } from './providers/cohere-embeddings'
+export type { CohereEmbeddingsConfig } from './providers/cohere-embeddings'
+
+// BM25
+export { createBM25Index } from './bm25'
+export type { BM25Index } from './bm25'
+
+// Hybrid Search
+export { createHybridSearch } from './hybrid'
+export type { HybridSearch, HybridSearchConfig } from './hybrid'

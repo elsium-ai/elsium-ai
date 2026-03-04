@@ -1,5 +1,6 @@
 import { createLogger, generateId } from '@elsium-ai/core'
 import type { Tool } from '@elsium-ai/tools'
+import type { JsonRpcRequest, JsonRpcResponse } from './types'
 
 const log = createLogger()
 
@@ -223,5 +224,148 @@ export function createMCPServer(config: MCPServerConfig): MCPServer {
 		stop() {
 			running = false
 		},
+	}
+}
+
+// ─── HTTP Handler ────────────────────────────────────────────────
+
+export interface MCPHttpHandlerConfig {
+	name: string
+	version?: string
+	tools: Tool[]
+}
+
+export type MCPHttpHandler = (request: Request) => Promise<Response>
+
+export function createMCPHttpHandler(config: MCPHttpHandlerConfig): MCPHttpHandler {
+	const toolMap = new Map(config.tools.map((t) => [t.name, t]))
+
+	function handleSyncRequest(request: JsonRpcRequest): JsonRpcResponse | null {
+		const id = request.id ?? 0
+
+		switch (request.method) {
+			case 'initialize':
+				return {
+					jsonrpc: '2.0',
+					id,
+					result: {
+						protocolVersion: '2024-11-05',
+						capabilities: { tools: {} },
+						serverInfo: {
+							name: config.name,
+							version: config.version ?? '0.1.0',
+						},
+					},
+				}
+
+			case 'notifications/initialized':
+				return null
+
+			case 'tools/list':
+				return {
+					jsonrpc: '2.0',
+					id,
+					result: {
+						tools: config.tools.map((t) => {
+							const def = t.toDefinition()
+							return {
+								name: def.name,
+								description: def.description,
+								inputSchema: def.inputSchema,
+							}
+						}),
+					},
+				}
+
+			default:
+				return {
+					jsonrpc: '2.0',
+					id,
+					error: {
+						code: -32601,
+						message: `Method not found: ${request.method}`,
+					},
+				}
+		}
+	}
+
+	async function handleToolCall(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+		const id = request.id ?? 0
+		const name = request.params?.name as string
+		const args = (request.params?.arguments ?? {}) as Record<string, unknown>
+
+		const tool = toolMap.get(name)
+		if (!tool) {
+			return {
+				jsonrpc: '2.0',
+				id,
+				error: { code: -32602, message: `Unknown tool: ${name}` },
+			}
+		}
+
+		const result = await tool.execute(args, { toolCallId: generateId('tc') })
+
+		if (result.success) {
+			return {
+				jsonrpc: '2.0',
+				id,
+				result: {
+					content: [
+						{
+							type: 'text',
+							text:
+								typeof result.data === 'string'
+									? result.data
+									: JSON.stringify(result.data, null, 2),
+						},
+					],
+				},
+			}
+		}
+
+		return {
+			jsonrpc: '2.0',
+			id,
+			result: {
+				content: [{ type: 'text', text: result.error ?? 'Tool execution failed' }],
+				isError: true,
+			},
+		}
+	}
+
+	return async (request: Request): Promise<Response> => {
+		if (request.method !== 'POST') {
+			return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+				status: 405,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+
+		let body: JsonRpcRequest
+		try {
+			body = (await request.json()) as JsonRpcRequest
+		} catch {
+			return new Response(
+				JSON.stringify({ jsonrpc: '2.0', id: 0, error: { code: -32700, message: 'Parse error' } }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } },
+			)
+		}
+
+		let response: JsonRpcResponse | null
+
+		if (body.method === 'tools/call') {
+			response = await handleToolCall(body)
+		} else {
+			response = handleSyncRequest(body)
+		}
+
+		if (!response) {
+			return new Response(null, { status: 204 })
+		}
+
+		return new Response(JSON.stringify(response), {
+			status: 200,
+			headers: { 'Content-Type': 'application/json' },
+		})
 	}
 }

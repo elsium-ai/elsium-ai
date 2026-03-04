@@ -13,7 +13,7 @@ import type {
 	RetrievalResult,
 	VectorStoreConfig,
 } from './types'
-import { type VectorStore, createInMemoryStore } from './vectorstore'
+import { type VectorStore, createInMemoryStore, vectorStoreRegistry } from './vectorstore'
 
 export interface RAGPipelineConfig {
 	loader?: LoaderType
@@ -52,14 +52,22 @@ export function rag(config: RAGPipelineConfig): RAGPipeline {
 		strategy: 'similarity',
 	}
 
-	if (config.store) {
-		throw new Error('External vector store not yet implemented. Use in-memory store.')
-	}
-
 	const loader = getLoader(loaderType)
 	const chunker = getChunker(chunkingConfig)
 	const embeddingProvider = getEmbeddingProvider(config.embeddings)
-	const vectorStore = createInMemoryStore()
+
+	let vectorStore: VectorStore
+	if (config.store) {
+		const factory = vectorStoreRegistry.get(config.store.provider)
+		if (!factory) {
+			throw new Error(
+				`Unknown vector store provider: ${config.store.provider}. Register it with vectorStoreRegistry.register().`,
+			)
+		}
+		vectorStore = factory(config.store as unknown as Record<string, unknown>)
+	} else {
+		vectorStore = createInMemoryStore()
+	}
 
 	async function embedChunks(chunks: Chunk[]): Promise<EmbeddedChunk[]> {
 		const texts = chunks.map((c) => c.content)

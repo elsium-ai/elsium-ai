@@ -431,6 +431,46 @@ interface MultiAgentConfig {
 }
 ```
 
+### Shared Memory
+
+Agents in a multi-agent orchestration can share data through a `SharedMemory` instance. Each agent's output is automatically stored in shared memory keyed by agent name, and agents can read data written by previous agents.
+
+```ts
+import { createSharedMemory, runSequential } from 'elsium-ai/agents'
+
+const memory = createSharedMemory()
+
+// Share data between agents
+memory.set('context', { topic: 'AI safety' })
+
+// Use with multi-agent orchestration
+const result = await runSequential(agents, input, { sharedMemory: memory })
+
+// Each agent's output is stored in shared memory keyed by agent name
+const allData = memory.getAll()
+```
+
+The `SharedMemory` interface:
+
+```ts
+interface SharedMemory {
+  get<T = unknown>(key: string): T | undefined
+  set(key: string, value: unknown): void
+  has(key: string): boolean
+  delete(key: string): boolean
+  getAll(): Record<string, unknown>
+  clear(): void
+}
+```
+
+Pass shared memory via `MultiAgentOptions`:
+
+```ts
+interface MultiAgentOptions extends AgentRunOptions {
+  sharedMemory?: SharedMemory
+}
+```
+
 ---
 
 ## Semantic Guardrails
@@ -772,6 +812,39 @@ console.log(result.stateHistory) // [{ state: 'intake', ... }, { state: 'validat
 ```
 
 Note: You do not need to call `executeStateMachine` directly. When `states` and `initialState` are set on the `AgentConfig`, calling `agent.run()` or `agent.chat()` automatically delegates to the state machine.
+
+### Typed State Context
+
+Transitions can return a `StateTransitionResult` object to pass typed context between states, rather than just returning a state name string:
+
+```ts
+interface StateTransitionResult {
+  next: string
+  context: Record<string, unknown>
+}
+```
+
+This allows each state to forward structured data to the next state:
+
+```ts
+states: {
+  intake: {
+    system: 'Gather order details from the user.',
+    transition: (result) => ({
+      next: 'validate',
+      context: { orderId: '12345', items: ['widget'] },
+    }),
+  },
+  validate: {
+    system: 'Validate the order details are complete.',
+    transition: (result) => 'confirm', // plain string still works
+  },
+  confirm: {
+    system: 'Confirm the order with the user.',
+    terminal: true,
+    transition: () => 'confirm',
+  },
+}
 
 ---
 

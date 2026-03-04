@@ -148,6 +148,145 @@ interface ElsiumClient {
 
 ---
 
+## Type Definitions
+
+### `ClientConfig`
+
+Configuration for creating a client instance.
+
+```typescript
+interface ClientConfig {
+  baseUrl: string
+  apiKey?: string
+  timeout?: number
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `baseUrl` | `string` | **(required)** | The base URL of the ElsiumAI server. |
+| `apiKey` | `string` | `undefined` | API token sent as `Authorization: Bearer` header. |
+| `timeout` | `number` | `30000` | Request timeout in milliseconds. |
+
+### `ChatRequest`
+
+```typescript
+interface ChatRequest {
+  message: string
+  agent?: string
+  stream?: boolean
+}
+```
+
+### `ChatResponse`
+
+```typescript
+interface ChatResponse {
+  message: string
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number; cost: number }
+  model: string
+  traceId: string
+}
+```
+
+### `CompleteRequest`
+
+```typescript
+interface CompleteRequest {
+  messages: Array<{ role: string; content: string }>
+  model?: string
+  system?: string
+  maxTokens?: number
+  temperature?: number
+  stream?: boolean
+}
+```
+
+### `CompleteResponse`
+
+```typescript
+interface CompleteResponse {
+  message: string
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number }
+  model: string
+  stopReason: string
+}
+```
+
+### `HealthResponse`
+
+```typescript
+interface HealthResponse {
+  status: 'ok' | 'degraded'
+  version: string
+  uptime: number
+  providers: string[]
+}
+```
+
+### `MetricsResponse`
+
+```typescript
+interface MetricsResponse {
+  uptime: number
+  totalRequests: number
+  totalTokens: number
+  totalCost: number
+  byModel: Record<string, { requests: number; tokens: number; cost: number }>
+}
+```
+
+### `AgentInfo`
+
+```typescript
+interface AgentInfo {
+  name: string
+  model?: string
+  tools: string[]
+  description?: string
+}
+```
+
+### `StreamEvent`
+
+```typescript
+type StreamEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'message_end'; usage: { inputTokens: number; outputTokens: number; totalTokens: number } }
+  | { type: 'error'; error: string }
+```
+
+---
+
+## Error Handling
+
+The client throws errors with descriptive messages for common failure cases. Wrap calls in try/catch for robust error handling:
+
+```typescript
+import { createClient } from '@elsium-ai/client'
+
+const client = createClient({
+  baseUrl: 'http://localhost:3000',
+  apiKey: 'my-token',
+})
+
+try {
+  const response = await client.chat({ message: 'Hello' })
+  console.log(response.message)
+} catch (error) {
+  if (error instanceof Error) {
+    // Common errors:
+    // - Network errors (server unreachable)
+    // - 401 Unauthorized (invalid or missing API key)
+    // - 429 Too Many Requests (rate limited)
+    // - 500 Internal Server Error
+    console.error('Request failed:', error.message)
+  }
+}
+```
+
+---
+
 ## License
 
 [MIT](https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE) - Copyright (c) 2026 Eric Utrera
