@@ -13,6 +13,7 @@ import {
 	generateId,
 	generateTraceId,
 	retry,
+	zodToJsonSchema,
 } from '@elsium-ai/core'
 import { calculateCost } from '../pricing'
 import type { LLMProvider } from '../provider'
@@ -111,6 +112,21 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 					parts.push({ inlineData: { mimeType: img.source.mediaType, data: img.source.data } })
 				} else {
 					parts.push({ fileData: { mimeType: 'image/jpeg', fileUri: img.source.url } })
+				}
+			} else if (p.type === 'audio' || p.type === 'document') {
+				const media = p as {
+					type: string
+					source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
+				}
+				if (media.source.type === 'base64') {
+					parts.push({
+						inlineData: { mimeType: media.source.mediaType, data: media.source.data },
+					})
+				} else {
+					const urlSource = media.source as { type: 'url'; url: string }
+					parts.push({
+						fileData: { mimeType: 'application/octet-stream', fileUri: urlSource.url },
+					})
 				}
 			}
 		}
@@ -228,6 +244,10 @@ export function createGoogleProvider(config: ProviderConfig): LLMProvider {
 		if (req.seed !== undefined) config.seed = req.seed
 		if (req.topP !== undefined) config.topP = req.topP
 		if (req.stopSequences?.length) config.stopSequences = req.stopSequences
+		if (req.schema) {
+			config.responseMimeType = 'application/json'
+			config.responseSchema = zodToJsonSchema(req.schema)
+		}
 		return config
 	}
 

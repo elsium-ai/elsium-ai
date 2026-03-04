@@ -4,6 +4,7 @@ import type { Gateway } from '@elsium-ai/gateway'
 import type { Tracer } from '@elsium-ai/observe'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
+import { streamResponse } from './sse'
 import type {
 	ChatRequest,
 	ChatResponse,
@@ -115,6 +116,15 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			return c.json({ error: resolved.error }, 404)
 		}
 
+		if (body.stream) {
+			const stream = deps.gateway.stream({
+				messages: [{ role: 'user', content: body.message }],
+				system: resolved.agent.config.system,
+				model: resolved.agent.config.model,
+			})
+			return streamResponse(c, stream)
+		}
+
 		let result: Awaited<ReturnType<Agent['run']>>
 		try {
 			result = await resolved.agent.run(body.message)
@@ -172,6 +182,17 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			role: m.role as 'user' | 'assistant' | 'system',
 			content: m.content,
 		}))
+
+		if (body.stream) {
+			const stream = deps.gateway.stream({
+				messages,
+				model: body.model,
+				system: body.system,
+				maxTokens: body.maxTokens,
+				temperature: body.temperature,
+			})
+			return streamResponse(c, stream)
+		}
 
 		let response: Awaited<ReturnType<Gateway['complete']>>
 		try {

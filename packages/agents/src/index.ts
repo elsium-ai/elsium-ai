@@ -18,6 +18,10 @@ export type {
 export { createMemory } from './memory'
 export type { Memory, MemoryConfig, MemoryStrategy } from './memory'
 
+// Memory Stores
+export { createInMemoryMemoryStore, createSqliteMemoryStore } from './stores/index'
+export type { MemoryStore, SqliteMemoryStoreConfig } from './stores/index'
+
 // Multi-agent
 export { runSequential, runParallel, runSupervisor } from './multi'
 export type { MultiAgentConfig } from './multi'

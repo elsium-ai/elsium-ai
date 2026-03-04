@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/gateway",
-	"version": "0.2.3",
+	"version": "0.3.0",
 	"description": "Multi-provider LLM gateway for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",

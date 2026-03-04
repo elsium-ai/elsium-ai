@@ -37,6 +37,13 @@ export {
 	extractText,
 	sleep,
 	retry,
+	// Schema
+	zodToJsonSchema,
+	// Registry
+	createRegistry,
+	// Tokens
+	countTokens,
+	createContextManager,
 } from '@elsium-ai/core'
 
 export type {
@@ -45,6 +52,8 @@ export type {
 	ContentPart,
 	TextContent,
 	ImageContent,
+	AudioContent,
+	DocumentContent,
 	Message,
 	ToolCall,
 	ToolResult,
@@ -58,6 +67,7 @@ export type {
 	ProviderConfig,
 	CompletionRequest,
 	ToolDefinition,
+	TenantContext,
 	Middleware,
 	// Result types
 	Result,
@@ -71,6 +81,12 @@ export type {
 	Logger,
 	// Error types
 	ErrorCode,
+	// Registry types
+	Registry,
+	// Token types
+	ContextStrategy,
+	ContextManagerConfig,
+	ContextManager,
 } from '@elsium-ai/core'
 
 // ─── Gateway ────────────────────────────────────────────────────
@@ -92,6 +108,13 @@ export {
 	detectJailbreak,
 	redactSecrets,
 	checkBlockedPatterns,
+	// Cache
+	cacheMiddleware,
+	createInMemoryCache,
+	// Output Guardrails
+	outputGuardrailMiddleware,
+	// Batch
+	createBatch,
 } from '@elsium-ai/gateway'
 
 export type {
@@ -107,6 +130,18 @@ export type {
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,
+	// Cache types
+	CacheAdapter,
+	CacheStats,
+	CacheMiddlewareConfig,
+	// Output Guardrail types
+	OutputGuardrailConfig,
+	OutputGuardrailRule,
+	OutputViolation,
+	// Batch types
+	BatchConfig,
+	BatchResult,
+	BatchResultItem,
 } from '@elsium-ai/gateway'
 
 // ─── Agents ─────────────────────────────────────────────────────
@@ -120,6 +155,9 @@ export {
 	createAgentSecurity,
 	createConfidenceScorer,
 	executeStateMachine,
+	// Memory Stores
+	createInMemoryMemoryStore,
+	createSqliteMemoryStore,
 } from '@elsium-ai/agents'
 
 export type {
@@ -144,6 +182,9 @@ export type {
 	StateDefinition,
 	StateHistoryEntry,
 	StateMachineResult,
+	// Memory Store types
+	MemoryStore,
+	SqliteMemoryStoreConfig,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────
@@ -172,6 +213,11 @@ export {
 	createInMemoryStore,
 	createOpenAIEmbeddings,
 	createMockEmbeddings,
+	// Registries
+	vectorStoreRegistry,
+	embeddingProviderRegistry,
+	// Stores
+	createPgVectorStore,
 } from '@elsium-ai/rag'
 
 export type {
@@ -185,6 +231,9 @@ export type {
 	QueryOptions,
 	EmbeddingProvider,
 	VectorStore,
+	VectorStoreFactory,
+	EmbeddingProviderFactory,
+	PgVectorStoreConfig,
 } from '@elsium-ai/rag'
 
 // ─── Workflows ──────────────────────────────────────────────────
@@ -211,6 +260,8 @@ export {
 	createSpan,
 	createMetrics,
 	createCostEngine,
+	// Experiment
+	createExperiment,
 	// OpenTelemetry
 	toOTelSpan,
 	toOTelExportRequest,
@@ -238,6 +289,11 @@ export type {
 	CostDimension,
 	CostIntelligenceReport,
 	ModelSuggestion,
+	// Experiment types
+	Experiment,
+	ExperimentConfig,
+	ExperimentVariant,
+	ExperimentResults,
 	// OTel types
 	OTelSpan,
 	OTelExportRequest,
@@ -246,7 +302,16 @@ export type {
 } from '@elsium-ai/observe'
 
 // ─── App ────────────────────────────────────────────────────────
-export { createApp } from '@elsium-ai/app'
+export {
+	createApp,
+	// SSE
+	sseHeaders,
+	formatSSE,
+	streamResponse,
+	// Tenant
+	tenantMiddleware,
+	tenantRateLimitMiddleware,
+} from '@elsium-ai/app'
 
 export type {
 	AppConfig,
@@ -254,6 +319,9 @@ export type {
 	CorsConfig,
 	AuthConfig,
 	RateLimitConfig,
+	StreamChatEvent,
+	StreamCompleteEvent,
+	TenantMiddlewareConfig,
 } from '@elsium-ai/app'
 
 // ─── MCP ────────────────────────────────────────────────────────
@@ -266,6 +334,14 @@ export type {
 	MCPServer,
 	MCPServerConfig,
 } from '@elsium-ai/mcp'
+
+// ─── Client ─────────────────────────────────────────────────────
+export { createClient } from '@elsium-ai/client'
+
+export type {
+	ElsiumClient,
+	ClientConfig,
+} from '@elsium-ai/client'
 
 // ─── Testing ────────────────────────────────────────────────────
 export {

@@ -1,0 +1,34 @@
+{
+	"name": "@elsium-ai/client",
+	"version": "0.3.0",
+	"description": "HTTP client SDK for ElsiumAI server",
+	"license": "MIT",
+	"author": "Eric Utrera <ebutrera9103@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/elsium-ai/elsium-ai.git",
+		"directory": "packages/client"
+	},
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "bun build ./src/index.ts --outdir ./dist --target node && bun x tsc -p tsconfig.build.json --emitDeclarationOnly",
+		"dev": "bun --watch src/index.ts"
+	},
+	"dependencies": {
+		"@elsium-ai/core": "workspace:*"
+	},
+	"devDependencies": {
+		"typescript": "^5.7.0"
+	}
+}

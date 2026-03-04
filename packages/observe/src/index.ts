@@ -40,6 +40,15 @@ export type {
 export { createProvenanceTracker } from './provenance'
 export type { ProvenanceRecord, ProvenanceTracker } from './provenance'
 
+// Experiment
+export { createExperiment } from './experiment'
+export type {
+	Experiment,
+	ExperimentConfig,
+	ExperimentVariant,
+	ExperimentResults,
+} from './experiment'
+
 // OpenTelemetry compatibility
 export {
 	toOTelSpan,

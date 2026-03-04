@@ -13,6 +13,7 @@ import {
 	generateId,
 	generateTraceId,
 	retry,
+	zodToJsonSchema,
 } from '@elsium-ai/core'
 import { calculateCost } from '../pricing'
 import type { LLMProvider } from '../provider'
@@ -147,18 +148,36 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 	function convertContentPart(part: {
 		type: string
 		text?: string
-		source?: { type: string; mediaType: string; data: string }
+		source?: { type: string; mediaType: string; data: string } | { type: 'url'; url: string }
 	}): AnthropicContentBlock {
 		if (part.type === 'text') return { type: 'text', text: part.text }
 		if (part.type === 'image' && part.source?.type === 'base64') {
+			const src = part.source as { type: 'base64'; mediaType: string; data: string }
 			return {
 				type: 'image',
 				source: {
 					type: 'base64',
-					media_type: part.source.mediaType,
-					data: part.source.data,
+					media_type: src.mediaType,
+					data: src.data,
 				},
 			}
+		}
+		if (part.type === 'document' && part.source) {
+			if (part.source.type === 'base64') {
+				const src = part.source as { type: 'base64'; mediaType: string; data: string }
+				return {
+					type: 'document' as AnthropicContentBlock['type'],
+					source: {
+						type: 'base64',
+						media_type: src.mediaType,
+						data: src.data,
+					},
+				}
+			}
+			return { type: 'text', text: '[document: url source not supported by Anthropic]' }
+		}
+		if (part.type === 'audio') {
+			return { type: 'text', text: '[audio content not supported by this provider]' }
 		}
 		return { type: 'text', text: '[unsupported content]' }
 	}
@@ -294,6 +313,17 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 
 			const tools = formatTools(req.tools)
 			if (tools) body.tools = tools
+
+			if (req.schema) {
+				const jsonSchema = zodToJsonSchema(req.schema)
+				const structuredTool: AnthropicTool = {
+					name: '_structured_output',
+					description: 'Return structured output matching the required schema',
+					input_schema: jsonSchema,
+				}
+				body.tools = [...(tools ?? []), structuredTool]
+				body.tool_choice = { type: 'tool', name: '_structured_output' }
+			}
 
 			const startTime = performance.now()
 

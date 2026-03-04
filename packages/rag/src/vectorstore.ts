@@ -1,3 +1,5 @@
+import { createRegistry } from '@elsium-ai/core'
+import type { Registry } from '@elsium-ai/core'
 import type { EmbeddedChunk, EmbeddingVector, QueryOptions, RetrievalResult } from './types'
 
 export interface VectorStore {
@@ -9,6 +11,13 @@ export interface VectorStore {
 	clear(): Promise<void>
 	count(): Promise<number>
 }
+
+// ─── Vector Store Registry ───────────────────────────────────────
+
+export type VectorStoreFactory = (config: Record<string, unknown>) => VectorStore
+
+export const vectorStoreRegistry: Registry<VectorStoreFactory> =
+	createRegistry<VectorStoreFactory>('vectorStore')
 
 // ─── Cosine Similarity ───────────────────────────────────────────
 

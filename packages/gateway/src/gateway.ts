@@ -7,7 +7,13 @@ import type {
 	StreamEvent,
 	XRayData,
 } from '@elsium-ai/core'
-import { ElsiumError, type ElsiumStream, createStream, generateTraceId } from '@elsium-ai/core'
+import {
+	ElsiumError,
+	type ElsiumStream,
+	createStream,
+	generateTraceId,
+	zodToJsonSchema,
+} from '@elsium-ai/core'
 import type { z } from 'zod'
 import { composeMiddleware, xrayMiddleware } from './middleware'
 import type { XRayStore } from './middleware'
@@ -271,131 +277,54 @@ export function gateway(config: GatewayConfig): Gateway {
 		): Promise<{ data: T; response: LLMResponse }> {
 			const { schema, ...rest } = request
 
-			const jsonSchema = schemaToJsonSchema(schema)
-			const systemPrompt = [
-				rest.system ?? '',
-				'You MUST respond with valid JSON matching this schema:',
-				JSON.stringify(jsonSchema, null, 2),
-				'Respond ONLY with the JSON object, no markdown or explanation.',
-			]
-				.filter(Boolean)
-				.join('\n\n')
+			const jsonSchema = zodToJsonSchema(schema)
 
+			// Pass schema to provider for native JSON mode support
 			const response = await executeWithMiddleware({
 				...rest,
-				system: systemPrompt,
+				schema,
+				system: [
+					rest.system ?? '',
+					'You MUST respond with valid JSON matching this schema:',
+					JSON.stringify(jsonSchema, null, 2),
+					'Respond ONLY with the JSON object, no markdown or explanation.',
+				]
+					.filter(Boolean)
+					.join('\n\n'),
 			})
 
-			const text = typeof response.message.content === 'string' ? response.message.content : ''
+			// Extract structured data — check tool call result first (Anthropic approach),
+			// then try parsing text content
+			let parsed: unknown
 
-			const jsonMatch = text.match(/\{[\s\S]*\}/)
-			if (!jsonMatch) {
-				throw ElsiumError.validation('LLM response did not contain valid JSON', {
-					response: text,
-				})
+			if (response.stopReason === 'tool_use' && response.message.toolCalls?.length) {
+				const structuredCall = response.message.toolCalls.find(
+					(tc) => tc.name === '_structured_output',
+				)
+				if (structuredCall) {
+					parsed = structuredCall.arguments
+				}
 			}
 
-			const parsed = JSON.parse(jsonMatch[0])
-			const result = schema.safeParse(parsed)
+			if (parsed === undefined) {
+				const text = typeof response.message.content === 'string' ? response.message.content : ''
+				const jsonMatch = text.match(/\{[\s\S]*\}/)
+				if (!jsonMatch) {
+					throw ElsiumError.validation('LLM response did not contain valid JSON', {
+						response: text,
+					})
+				}
+				parsed = JSON.parse(jsonMatch[0])
+			}
 
+			const result = schema.safeParse(parsed)
 			if (!result.success) {
 				throw ElsiumError.validation('LLM response did not match schema', {
 					errors: result.error.issues,
-					response: text,
 				})
 			}
 
 			return { data: result.data, response }
 		},
 	}
-}
-
-/**
- * Lightweight Zod-to-JSON-Schema for structured output prompts.
- * Uses Zod's internal `_def` — see packages/tools/src/define.ts for the full version.
- */
-function schemaToJsonSchema(schema: z.ZodType): Record<string, unknown> {
-	try {
-		if ('_def' in schema) {
-			const def = schema._def as Record<string, unknown>
-			const result = convertZodDef(def)
-			if (result) return result
-		}
-	} catch {
-		// fallback
-	}
-
-	return { type: 'string' }
-}
-
-function zodDefKind(def: Record<string, unknown>): string | undefined {
-	return typeof def.type === 'string' ? (def.type as string) : (def.typeName as string | undefined)
-}
-
-function convertZodDef(def: Record<string, unknown>): Record<string, unknown> | null {
-	const kind = zodDefKind(def)
-	switch (kind) {
-		case 'object':
-		case 'ZodObject':
-			return convertZodObject(def)
-		case 'string':
-		case 'ZodString':
-			return { type: 'string' }
-		case 'number':
-		case 'ZodNumber':
-			return { type: 'number' }
-		case 'boolean':
-		case 'ZodBoolean':
-			return { type: 'boolean' }
-		case 'array':
-		case 'ZodArray':
-			return convertZodArray(def)
-		case 'enum':
-		case 'ZodEnum': {
-			const values =
-				(def.values as string[]) ??
-				(def.entries ? Object.values(def.entries as Record<string, string>) : [])
-			return { type: 'string', enum: values }
-		}
-		case 'optional':
-		case 'ZodOptional':
-			return convertZodOptional(def)
-		default:
-			return null
-	}
-}
-
-function convertZodObject(def: Record<string, unknown>): Record<string, unknown> | null {
-	if (!def.shape) return null
-
-	const shape =
-		typeof def.shape === 'function'
-			? (def.shape as () => Record<string, unknown>)()
-			: (def.shape as Record<string, unknown>)
-	const properties: Record<string, unknown> = {}
-	const required: string[] = []
-
-	for (const [key, value] of Object.entries(shape)) {
-		properties[key] = schemaToJsonSchema(value as z.ZodType)
-		const valDef = (value as z.ZodType)._def as Record<string, unknown>
-		const valKind = zodDefKind(valDef)
-		if (valKind !== 'optional' && valKind !== 'ZodOptional') {
-			required.push(key)
-		}
-	}
-
-	return { type: 'object', properties, required }
-}
-
-function convertZodArray(def: Record<string, unknown>): Record<string, unknown> {
-	return {
-		type: 'array',
-		items: schemaToJsonSchema((def.element ?? def.type) as z.ZodType),
-	}
-}
-
-function convertZodOptional(def: Record<string, unknown>): Record<string, unknown> {
-	return schemaToJsonSchema(
-		(def.innerType as z.ZodType) ?? (def as Record<string, unknown>).innerType,
-	)
 }

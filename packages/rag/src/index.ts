@@ -41,17 +41,23 @@ export {
 	createOpenAIEmbeddings,
 	createMockEmbeddings,
 	getEmbeddingProvider,
+	embeddingProviderRegistry,
 } from './embeddings'
-export type { EmbeddingProvider } from './embeddings'
+export type { EmbeddingProvider, EmbeddingProviderFactory } from './embeddings'
 
 // Vector Store
 export {
 	createInMemoryStore,
 	cosineSimilarity,
 	mmrRerank,
+	vectorStoreRegistry,
 } from './vectorstore'
-export type { VectorStore } from './vectorstore'
+export type { VectorStore, VectorStoreFactory } from './vectorstore'
 
 // Pipeline
 export { rag } from './pipeline'
 export type { RAGPipeline, RAGPipelineConfig, IngestResult } from './pipeline'
+
+// Stores
+export { createPgVectorStore } from './stores/index'
+export type { PgVectorStoreConfig } from './stores/index'
