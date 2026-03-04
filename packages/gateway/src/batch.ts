@@ -25,6 +25,42 @@ export interface BatchResult {
 	totalDurationMs: number
 }
 
+function makeCancelledItem(index: number): BatchResultItem {
+	return { index, success: false, error: 'Batch cancelled' }
+}
+
+function makeFailedItem(index: number, error: string | undefined): BatchResultItem {
+	return { index, success: false, error }
+}
+
+async function attemptRequest(
+	gateway: Gateway,
+	request: CompletionRequest,
+	retryPerItem: number,
+): Promise<{ response?: LLMResponse; error?: string }> {
+	let lastError: string | undefined
+	for (let attempt = 0; attempt <= retryPerItem; attempt++) {
+		try {
+			const response = await gateway.complete(request)
+			return { response }
+		} catch (err) {
+			lastError = err instanceof Error ? err.message : String(err)
+			const isRetryable = attempt < retryPerItem && err instanceof ElsiumError && err.retryable
+			if (!isRetryable) break
+		}
+	}
+	return { error: lastError }
+}
+
+function cancelRemaining(results: BatchResultItem[], fromIndex: number, total: number): number {
+	let cancelled = 0
+	for (let i = fromIndex; i < total; i++) {
+		results[i] = makeCancelledItem(i)
+		cancelled++
+	}
+	return cancelled
+}
+
 export function createBatch(
 	gateway: Gateway,
 	config?: BatchConfig,
@@ -47,44 +83,26 @@ export function createBatch(
 
 			async function processItem(index: number): Promise<void> {
 				if (signal?.aborted) {
-					results[index] = {
-						index,
-						success: false,
-						error: 'Batch cancelled',
-					}
+					results[index] = makeCancelledItem(index)
 					totalFailed++
 					return
 				}
 
-				let lastError: string | undefined
-				for (let attempt = 0; attempt <= retryPerItem; attempt++) {
-					try {
-						const response = await gateway.complete(requests[index])
-						results[index] = { index, success: true, response }
-						totalSucceeded++
-						return
-					} catch (err) {
-						lastError = err instanceof Error ? err.message : String(err)
-						if (attempt < retryPerItem && err instanceof ElsiumError && err.retryable) {
-							continue
-						}
-						break
-					}
+				const result = await attemptRequest(gateway, requests[index], retryPerItem)
+				if (result.response) {
+					results[index] = { index, success: true, response: result.response }
+					totalSucceeded++
+				} else {
+					results[index] = makeFailedItem(index, result.error)
+					totalFailed++
 				}
-
-				results[index] = { index, success: false, error: lastError }
-				totalFailed++
 			}
 
 			return new Promise<BatchResult>((resolve) => {
 				function scheduleNext() {
 					while (running < concurrency && nextIndex < requests.length) {
 						if (signal?.aborted) {
-							// Mark remaining as cancelled
-							for (let i = nextIndex; i < requests.length; i++) {
-								results[i] = { index: i, success: false, error: 'Batch cancelled' }
-								totalFailed++
-							}
+							totalFailed += cancelRemaining(results, nextIndex, requests.length)
 							nextIndex = requests.length
 							break
 						}
