@@ -87,6 +87,12 @@ describe('createMemory', () => {
 // ─── Agent ───────────────────────────────────────────────────────
 
 describe('defineAgent', () => {
+	it('throws when neither deps nor provider/apiKey is provided', () => {
+		expect(() => defineAgent({ name: 'bad', system: 'test' })).toThrow(
+			'Either provide AgentDependencies',
+		)
+	})
+
 	it('runs simple completion', async () => {
 		const deps = mockDeps([{ message: { role: 'assistant', content: 'I can help with that!' } }])
 

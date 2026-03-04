@@ -20,7 +20,12 @@ import { composeMiddleware, composeStreamMiddleware, xrayMiddleware } from './mi
 import type { XRayStore } from './middleware'
 import { calculateCost, registerPricing } from './pricing'
 import type { LLMProvider } from './provider'
-import { getProviderFactory, listProviders, registerProviderMetadata } from './provider'
+import {
+	getProviderFactory,
+	listProviders,
+	registerProvider,
+	registerProviderMetadata,
+} from './provider'
 import { createAnthropicProvider } from './providers/anthropic'
 import { createGoogleProvider } from './providers/google'
 import { createOpenAIProvider } from './providers/openai'
@@ -80,6 +85,7 @@ export function registerProviderFactory(
 	factory: (config: ProviderConfig) => LLMProvider,
 ): void {
 	PROVIDER_FACTORIES[name] = factory
+	registerProvider(name, factory)
 }
 
 // ─── Extracted helpers ───────────────────────────────────────────

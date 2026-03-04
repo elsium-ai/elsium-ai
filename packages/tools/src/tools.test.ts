@@ -98,6 +98,29 @@ describe('defineTool', () => {
 		})
 	})
 
+	it('accepts "parameters" as alias for "input"', async () => {
+		const tool = defineTool({
+			name: 'params_tool',
+			description: 'Uses parameters key',
+			parameters: z.object({ value: z.number() }),
+			handler: async ({ value }) => ({ doubled: value * 2 }),
+		})
+
+		const result = await tool.execute({ value: 5 })
+		expect(result.success).toBe(true)
+		expect(result.data).toEqual({ doubled: 10 })
+	})
+
+	it('throws if neither input nor parameters is provided', () => {
+		expect(() =>
+			defineTool({
+				name: 'no_schema',
+				description: 'Missing schema',
+				handler: async () => ({}),
+			} as never),
+		).toThrow('requires an input schema')
+	})
+
 	it('respects timeout', async () => {
 		const slowTool = defineTool({
 			name: 'slow',

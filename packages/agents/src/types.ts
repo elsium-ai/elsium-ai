@@ -17,6 +17,9 @@ export interface AgentConfig {
 	confidence?: boolean | ConfidenceConfig
 	states?: Record<string, StateDefinition>
 	initialState?: string
+	provider?: string
+	apiKey?: string
+	baseUrl?: string
 }
 
 export interface GuardrailConfig {
