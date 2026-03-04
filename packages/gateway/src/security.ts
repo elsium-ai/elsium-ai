@@ -18,7 +18,7 @@ export interface SecurityMiddlewareConfig {
 	promptInjection?: boolean
 	secretRedaction?: boolean
 	jailbreakDetection?: boolean
-	blockedPatterns?: RegExp[]
+	blockedPatterns?: (string | RegExp)[]
 	piiTypes?: Array<'email' | 'phone' | 'address' | 'passport' | 'all'>
 	onViolation?: (violation: SecurityViolation) => void
 }
@@ -245,6 +245,7 @@ function redactPatterns(
 
 	for (const { pattern, detail, replacement } of patterns) {
 		const regex = new RegExp(pattern.source, pattern.flags)
+		regex.lastIndex = 0
 		const result = redacted.replace(regex, replacement)
 		if (result !== redacted) {
 			found.push({ type: 'secret_detected', detail, severity: 'medium' })
@@ -287,9 +288,13 @@ export function redactSecrets(
 	return { redacted, found }
 }
 
-export function checkBlockedPatterns(text: string, patterns: RegExp[]): SecurityViolation[] {
+export function checkBlockedPatterns(
+	text: string,
+	patterns: (string | RegExp)[],
+): SecurityViolation[] {
 	const violations: SecurityViolation[] = []
-	for (const pattern of patterns) {
+	for (const raw of patterns) {
+		const pattern = typeof raw === 'string' ? new RegExp(raw, 'i') : raw
 		pattern.lastIndex = 0
 		if (pattern.test(text)) {
 			violations.push({

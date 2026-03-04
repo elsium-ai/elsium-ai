@@ -1,5 +1,6 @@
 import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-ai/core'
 import { ElsiumError, extractText, generateTraceId } from '@elsium-ai/core'
+import { gateway } from '@elsium-ai/gateway'
 import type { ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
 import { type ApprovalGate, createApprovalGate, shouldRequireApproval } from './approval'
@@ -37,7 +38,24 @@ async function safeHook<T>(fn: (() => T | Promise<T>) | undefined): Promise<void
 	}
 }
 
-export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent {
+function resolveDependencies(config: AgentConfig, deps?: AgentDependencies): AgentDependencies {
+	if (deps) return deps
+	if (!config.provider || !config.apiKey) {
+		throw ElsiumError.validation(
+			'Either provide AgentDependencies as second argument, or set provider and apiKey in config',
+		)
+	}
+	const gw = gateway({
+		provider: config.provider,
+		apiKey: config.apiKey,
+		baseUrl: config.baseUrl,
+		model: config.model,
+	})
+	return { complete: (req) => gw.complete(req) }
+}
+
+export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agent {
+	const resolvedDeps = resolveDependencies(config, deps)
 	const memory: Memory = createMemory(
 		config.memory ?? { strategy: 'sliding-window', maxMessages: 50 },
 	)
@@ -58,7 +76,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 	}
 
 	const semanticValidator = guardrails.semantic
-		? createSemanticValidator(guardrails.semantic, deps.complete)
+		? createSemanticValidator(guardrails.semantic, resolvedDeps.complete)
 		: null
 
 	const agentSecurity = guardrails.security ? createAgentSecurity(guardrails.security) : null
@@ -297,7 +315,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 			checkBudget(totalInputTokens, totalOutputTokens)
 
 			const request = buildCompletionRequest(conversationMessages)
-			const response = await deps.complete(request)
+			const response = await resolvedDeps.complete(request)
 
 			totalInputTokens += response.usage.inputTokens
 			totalOutputTokens += response.usage.outputTokens
@@ -424,7 +442,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 				return executeStateMachine(
 					config,
 					{ states: config.states, initialState: config.initialState },
-					deps,
+					resolvedDeps,
 					input,
 					options,
 				)
@@ -450,7 +468,7 @@ export function defineAgent(config: AgentConfig, deps: AgentDependencies): Agent
 				return executeStateMachine(
 					config,
 					{ states: config.states, initialState: config.initialState },
-					deps,
+					resolvedDeps,
 					inputText || '',
 					options,
 				)

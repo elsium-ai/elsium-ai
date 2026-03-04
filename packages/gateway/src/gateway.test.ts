@@ -335,6 +335,16 @@ describe('registerProvider / getProviderFactory / listProviders', () => {
 	})
 })
 
+describe('registerProviderFactory syncs with getProviderFactory', () => {
+	it('getProviderFactory finds providers registered via registerProviderFactory', () => {
+		const factory = () => createMockProvider()
+		registerProviderFactory('synced-provider', factory)
+
+		const retrieved = getProviderFactory('synced-provider')
+		expect(retrieved).toBe(factory)
+	})
+})
+
 // ─── getProviderMetadata ────────────────────────────────────────
 
 describe('getProviderMetadata', () => {

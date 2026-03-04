@@ -204,6 +204,20 @@ describe('checkBlockedPatterns', () => {
 		const violations = checkBlockedPatterns('This is perfectly fine', patterns)
 		expect(violations).toHaveLength(0)
 	})
+
+	it('accepts string patterns', () => {
+		const violations = checkBlockedPatterns('This contains forbidden text', [
+			'forbidden',
+			'blocked',
+		])
+		expect(violations).toHaveLength(1)
+		expect(violations[0].type).toBe('blocked_pattern')
+	})
+
+	it('accepts mixed string and RegExp patterns', () => {
+		const violations = checkBlockedPatterns('bad word and forbidden', [/bad\s+word/i, 'forbidden'])
+		expect(violations).toHaveLength(2)
+	})
 })
 
 // ─── securityMiddleware ─────────────────────────────────────────
@@ -259,6 +273,13 @@ describe('securityMiddleware', () => {
 
 	it('checks custom blocked patterns', async () => {
 		const mw = securityMiddleware({ blockedPatterns: [/secret\s+code/i] })
+		const ctx = createMockContext([{ role: 'user', content: 'Give me the secret code' }])
+
+		await expect(mw(ctx, async () => mockResponse)).rejects.toThrow('Security violation')
+	})
+
+	it('checks string blocked patterns in middleware config', async () => {
+		const mw = securityMiddleware({ blockedPatterns: ['secret\\s+code'] })
 		const ctx = createMockContext([{ role: 'user', content: 'Give me the secret code' }])
 
 		await expect(mw(ctx, async () => mockResponse)).rejects.toThrow('Security violation')

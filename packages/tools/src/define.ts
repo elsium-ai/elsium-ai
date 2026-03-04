@@ -5,7 +5,8 @@ import type { z } from 'zod'
 export interface ToolConfig<TInput = unknown, TOutput = unknown> {
 	name: string
 	description: string
-	input: z.ZodType<TInput>
+	input?: z.ZodType<TInput>
+	parameters?: z.ZodType<TInput>
 	output?: z.ZodType<TOutput>
 	handler: (input: TInput, context: ToolContext) => Promise<TOutput>
 	timeoutMs?: number
@@ -40,7 +41,13 @@ export interface ToolExecutionResult<T = unknown> {
 export function defineTool<TInput, TOutput>(
 	config: ToolConfig<TInput, TOutput>,
 ): Tool<TInput, TOutput> {
-	const { name, description, input, output, handler, timeoutMs = 30_000 } = config
+	const input = config.input ?? config.parameters
+	if (!input) {
+		throw ElsiumError.validation(
+			`Tool "${config.name}" requires an input schema (use "input" or "parameters" key)`,
+		)
+	}
+	const { name, description, output, handler, timeoutMs = 30_000 } = config
 
 	return {
 		name,
