@@ -29,6 +29,7 @@ const PUBLISH_ORDER = [
 	'workflows',
 	'mcp',
 	'agents',
+	'client',
 	'cli',
 	'testing',
 	'app',
