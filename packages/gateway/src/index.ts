@@ -53,8 +53,24 @@ export type {
 export { createBulkhead, bulkheadMiddleware } from './bulkhead'
 export type { BulkheadConfig, Bulkhead } from './bulkhead'
 
+// Cache
+export { cacheMiddleware, createInMemoryCache } from './cache'
+export type { CacheAdapter, CacheStats, CacheMiddlewareConfig } from './cache'
+
+// Output Guardrails
+export { outputGuardrailMiddleware } from './output-guardrails'
+export type {
+	OutputGuardrailConfig,
+	OutputGuardrailRule,
+	OutputViolation,
+} from './output-guardrails'
+
 // Pricing
 export { calculateCost, registerPricing } from './pricing'
+
+// Batch
+export { createBatch } from './batch'
+export type { BatchConfig, BatchResult, BatchResultItem } from './batch'
 
 // Router
 export { createProviderMesh } from './router'

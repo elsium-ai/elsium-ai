@@ -199,8 +199,8 @@ This gives you:
 |---|---|
 | `GET /health` | Health check |
 | `GET /metrics` | Token usage and cost metrics |
-| `POST /chat` | Send a message to an agent |
-| `POST /complete` | Raw LLM completion |
+| `POST /chat` | Send a message to an agent (supports SSE streaming) |
+| `POST /complete` | Raw LLM completion (supports SSE streaming) |
 | `GET /agents` | List registered agents |
 
 ### Chat with your agent
@@ -213,6 +213,65 @@ curl -X POST http://localhost:3000/chat \
     "agent": "assistant"
   }'
 ```
+
+### Streaming responses (SSE)
+
+Add `"stream": true` to get real-time Server-Sent Events:
+
+```bash
+curl -X POST http://localhost:3000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Write a poem",
+    "agent": "assistant",
+    "stream": true
+  }'
+# Response: text/event-stream with incremental text deltas
+```
+
+### Using the Client SDK
+
+Consume your server from TypeScript:
+
+```typescript
+import { createClient } from '@elsium-ai/client'
+
+const client = createClient({
+  baseUrl: 'http://localhost:3000',
+})
+
+// Simple chat
+const response = await client.chat({ agent: 'assistant', message: 'Hello!' })
+console.log(response.message)
+
+// Streaming chat
+for await (const event of client.chatStream({ agent: 'assistant', message: 'Write a poem' })) {
+  if (event.type === 'text_delta') process.stdout.write(event.text)
+}
+```
+
+## Structured Output
+
+Get typed, validated JSON responses from any provider:
+
+```typescript
+import { z } from 'zod'
+
+const SentimentSchema = z.object({
+  sentiment: z.enum(['positive', 'negative', 'neutral']),
+  confidence: z.number(),
+})
+
+const { data } = await llm.generate({
+  messages: [{ role: 'user', content: [{ type: 'text', text: 'Analyze: "I love this!"' }] }],
+  schema: SentimentSchema,
+})
+
+console.log(data.sentiment)   // 'positive' (fully typed)
+console.log(data.confidence)  // 0.95
+```
+
+Each provider uses its native JSON mode (OpenAI: `json_schema`, Anthropic: tool-use, Google: `responseSchema`).
 
 ## Observability
 

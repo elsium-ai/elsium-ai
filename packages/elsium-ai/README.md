@@ -49,28 +49,35 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `ok` | `ContentPart` |
 | `err` | `TextContent` |
 | `isOk` | `ImageContent` |
-| `isErr` | `Message` |
-| `unwrap` | `ToolCall` |
-| `unwrapOr` | `ToolResult` |
-| `tryCatch` | `TokenUsage` |
-| `tryCatchSync` | `CostBreakdown` |
-| `createStream` | `StopReason` |
-| `createLogger` | `LLMResponse` |
-| `env` | `StreamEvent` |
-| `envNumber` | `XRayData` |
-| `envBool` | `StreamCheckpoint` |
-| `generateId` | `ProviderConfig` |
-| `generateTraceId` | `CompletionRequest` |
-| `extractText` | `ToolDefinition` |
-| `sleep` | `Middleware` |
-| `retry` | `Result` |
-| | `Ok` |
+| `isErr` | `AudioContent` |
+| `unwrap` | `DocumentContent` |
+| `unwrapOr` | `Message` |
+| `tryCatch` | `ToolCall` |
+| `tryCatchSync` | `ToolResult` |
+| `createStream` | `TokenUsage` |
+| `createLogger` | `CostBreakdown` |
+| `env` | `StopReason` |
+| `envNumber` | `LLMResponse` |
+| `envBool` | `StreamEvent` |
+| `generateId` | `XRayData` |
+| `generateTraceId` | `StreamCheckpoint` |
+| `extractText` | `ProviderConfig` |
+| `sleep` | `CompletionRequest` |
+| `retry` | `ToolDefinition` |
+| `zodToJsonSchema` | `TenantContext` |
+| `createRegistry` | `Middleware` |
+| `countTokens` | `Result` |
+| `createContextManager` | `Ok` |
 | | `Err` |
 | | `ElsiumStream` |
 | | `ResilientStreamOptions` |
 | | `LogLevel` |
 | | `Logger` |
 | | `ErrorCode` |
+| | `Registry` |
+| | `ContextStrategy` |
+| | `ContextManagerConfig` |
+| | `ContextManager` |
 
 ### `@elsium-ai/gateway`
 
@@ -88,11 +95,15 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `createOpenAIProvider` | `SecurityMiddlewareConfig` |
 | `createGoogleProvider` | `SecurityViolation` |
 | `createProviderMesh` | `SecurityResult` |
-| `securityMiddleware` | |
-| `detectPromptInjection` | |
-| `detectJailbreak` | |
-| `redactSecrets` | |
-| `checkBlockedPatterns` | |
+| `securityMiddleware` | `CacheAdapter` |
+| `detectPromptInjection` | `CacheStats` |
+| `detectJailbreak` | `CacheMiddlewareConfig` |
+| `redactSecrets` | `OutputGuardrailConfig` |
+| `checkBlockedPatterns` | `OutputGuardrailRule` |
+| `cacheMiddleware` | `OutputViolation` |
+| `createInMemoryCache` | `BatchConfig` |
+| `outputGuardrailMiddleware` | `BatchResult` |
+| `createBatch` | `BatchResultItem` |
 
 ### `@elsium-ai/agents`
 
@@ -107,6 +118,8 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `createAgentSecurity` | `AgentHooks` |
 | `createConfidenceScorer` | `Memory` |
 | `executeStateMachine` | `MemoryConfig` |
+| `createInMemoryMemoryStore` | `MemoryStore` |
+| `createSqliteMemoryStore` | `SqliteMemoryStoreConfig` |
 | | `SemanticGuardrailConfig` |
 | | `SemanticCheck` |
 | | `SemanticCheckResult` |
@@ -141,12 +154,15 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `createInMemoryStore` | `RAGPipelineConfig` |
 | `createOpenAIEmbeddings` | `IngestResult` |
 | `createMockEmbeddings` | `Document` |
-| | `Chunk` |
-| | `EmbeddedChunk` |
-| | `RetrievalResult` |
+| `vectorStoreRegistry` | `Chunk` |
+| `embeddingProviderRegistry` | `EmbeddedChunk` |
+| `createPgVectorStore` | `RetrievalResult` |
 | | `QueryOptions` |
 | | `EmbeddingProvider` |
 | | `VectorStore` |
+| | `VectorStoreFactory` |
+| | `EmbeddingProviderFactory` |
+| | `PgVectorStoreConfig` |
 
 ### `@elsium-ai/workflows`
 
@@ -168,18 +184,22 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | `createSpan` | `TracerConfig` |
 | `createMetrics` | `TracerExporter` |
 | `createCostEngine` | `CostReport` |
-| `toOTelSpan` | `Span` |
-| `toOTelExportRequest` | `SpanData` |
-| `toTraceparent` | `SpanKind` |
-| `parseTraceparent` | `SpanStatus` |
-| `injectTraceContext` | `MetricsCollector` |
-| `extractTraceContext` | `MetricEntry` |
-| `createOTLPExporter` | `CostEngine` |
-| | `CostEngineConfig` |
+| `createExperiment` | `Span` |
+| `toOTelSpan` | `SpanData` |
+| `toOTelExportRequest` | `SpanKind` |
+| `toTraceparent` | `SpanStatus` |
+| `parseTraceparent` | `MetricsCollector` |
+| `injectTraceContext` | `MetricEntry` |
+| `extractTraceContext` | `CostEngine` |
+| `createOTLPExporter` | `CostEngineConfig` |
 | | `CostAlert` |
 | | `CostDimension` |
 | | `CostIntelligenceReport` |
 | | `ModelSuggestion` |
+| | `Experiment` |
+| | `ExperimentConfig` |
+| | `ExperimentVariant` |
+| | `ExperimentResults` |
 | | `OTelSpan` |
 | | `OTelExportRequest` |
 | | `TraceContext` |
@@ -190,10 +210,13 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | Values | Types |
 |--------|-------|
 | `createApp` | `AppConfig` |
-| | `ServerConfig` |
-| | `CorsConfig` |
-| | `AuthConfig` |
-| | `RateLimitConfig` |
+| `sseHeaders` | `ServerConfig` |
+| `formatSSE` | `CorsConfig` |
+| `streamResponse` | `AuthConfig` |
+| `tenantMiddleware` | `RateLimitConfig` |
+| `tenantRateLimitMiddleware` | `StreamChatEvent` |
+| | `StreamCompleteEvent` |
+| | `TenantMiddlewareConfig` |
 
 ### `@elsium-ai/mcp`
 
@@ -204,6 +227,13 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | | `MCPToolInfo` |
 | | `MCPServer` |
 | | `MCPServerConfig` |
+
+### `@elsium-ai/client`
+
+| Values | Types |
+|--------|-------|
+| `createClient` | `ElsiumClient` |
+| | `ClientConfig` |
 
 ### `@elsium-ai/testing`
 
@@ -287,14 +317,15 @@ For full API documentation, see each sub-package README.
 
 | Package | npm | Description |
 |---------|-----|-------------|
-| `@elsium-ai/core` | [npm](https://www.npmjs.com/package/@elsium-ai/core) | Types, errors, result pattern, streaming, logger, config utilities |
-| `@elsium-ai/gateway` | [npm](https://www.npmjs.com/package/@elsium-ai/gateway) | Multi-provider LLM gateway, middleware, provider mesh, security |
-| `@elsium-ai/agents` | [npm](https://www.npmjs.com/package/@elsium-ai/agents) | Agent definitions, memory, guardrails, multi-agent orchestration |
+| `@elsium-ai/core` | [npm](https://www.npmjs.com/package/@elsium-ai/core) | Types, errors, result pattern, streaming, logger, config, tokens, context manager, registry, schema |
+| `@elsium-ai/gateway` | [npm](https://www.npmjs.com/package/@elsium-ai/gateway) | Multi-provider LLM gateway, middleware, provider mesh, security, caching, output guardrails, batch |
+| `@elsium-ai/agents` | [npm](https://www.npmjs.com/package/@elsium-ai/agents) | Agent definitions, memory, persistent stores (in-memory, SQLite), guardrails, multi-agent |
 | `@elsium-ai/tools` | [npm](https://www.npmjs.com/package/@elsium-ai/tools) | Tool definitions with Zod validation, built-in tools |
-| `@elsium-ai/rag` | [npm](https://www.npmjs.com/package/@elsium-ai/rag) | Document ingestion, chunking, embeddings, vector search |
+| `@elsium-ai/rag` | [npm](https://www.npmjs.com/package/@elsium-ai/rag) | Document ingestion, chunking, embeddings, vector search, PgVector store, plugin registries |
 | `@elsium-ai/workflows` | [npm](https://www.npmjs.com/package/@elsium-ai/workflows) | Sequential, parallel, and branching workflow definitions |
-| `@elsium-ai/observe` | [npm](https://www.npmjs.com/package/@elsium-ai/observe) | Tracing, metrics, cost intelligence, OpenTelemetry export |
-| `@elsium-ai/app` | [npm](https://www.npmjs.com/package/@elsium-ai/app) | HTTP server with CORS, auth, and rate limiting |
+| `@elsium-ai/observe` | [npm](https://www.npmjs.com/package/@elsium-ai/observe) | Tracing, metrics, cost intelligence, OpenTelemetry export, A/B experiments |
+| `@elsium-ai/app` | [npm](https://www.npmjs.com/package/@elsium-ai/app) | HTTP server with CORS, auth, rate limiting, SSE streaming, multi-tenant |
+| `@elsium-ai/client` | [npm](https://www.npmjs.com/package/@elsium-ai/client) | TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers |
 | `@elsium-ai/mcp` | [npm](https://www.npmjs.com/package/@elsium-ai/mcp) | Model Context Protocol client and server |
 | `@elsium-ai/testing` | [npm](https://www.npmjs.com/package/@elsium-ai/testing) | Mocks, fixtures, evals, snapshot testing, prompt versioning, replay |
 

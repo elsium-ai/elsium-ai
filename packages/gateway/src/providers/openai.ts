@@ -13,6 +13,7 @@ import {
 	generateId,
 	generateTraceId,
 	retry,
+	zodToJsonSchema,
 } from '@elsium-ai/core'
 import { calculateCost } from '../pricing'
 import type { LLMProvider } from '../provider'
@@ -23,6 +24,7 @@ const DEFAULT_MAX_TOKENS = 4096
 type OpenAIContentPart =
 	| { type: 'text'; text: string }
 	| { type: 'image_url'; image_url: { url: string } }
+	| { type: 'input_audio'; input_audio: { data: string; format: string } }
 
 interface OpenAIMessage {
 	role: 'system' | 'user' | 'assistant' | 'tool'
@@ -161,6 +163,25 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 				} else {
 					parts.push({ type: 'image_url', image_url: { url: part.source.url } })
 				}
+			} else if (part.type === 'audio') {
+				if (part.source.type === 'base64') {
+					const format = part.source.mediaType.split('/')[1] ?? 'wav'
+					parts.push({
+						type: 'input_audio',
+						input_audio: { data: part.source.data, format },
+					})
+				} else {
+					parts.push({ type: 'text', text: '[audio: url source requires file upload]' })
+				}
+			} else if (part.type === 'document') {
+				if (part.source.type === 'base64') {
+					parts.push({
+						type: 'text',
+						text: `[document: ${part.source.mediaType} content attached as base64]`,
+					})
+				} else {
+					parts.push({ type: 'text', text: `[document: ${part.source.url}]` })
+				}
 			}
 		}
 		return parts
@@ -280,6 +301,18 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 
 			const tools = formatTools(req.tools)
 			if (tools) body.tools = tools
+
+			if (req.schema) {
+				const jsonSchema = zodToJsonSchema(req.schema)
+				body.response_format = {
+					type: 'json_schema',
+					json_schema: {
+						name: 'structured_output',
+						strict: true,
+						schema: jsonSchema,
+					},
+				}
+			}
 
 			const startTime = performance.now()
 

@@ -34,7 +34,8 @@
 		"@elsium-ai/observe": "workspace:*",
 		"@elsium-ai/app": "workspace:*",
 		"@elsium-ai/testing": "workspace:*",
-		"@elsium-ai/mcp": "workspace:*"
+		"@elsium-ai/mcp": "workspace:*",
+		"@elsium-ai/client": "workspace:*"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.0"

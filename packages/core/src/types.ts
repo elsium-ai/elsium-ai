@@ -14,7 +14,17 @@ export interface ImageContent {
 	source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
 }
 
-export type ContentPart = TextContent | ImageContent
+export interface AudioContent {
+	type: 'audio'
+	source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
+}
+
+export interface DocumentContent {
+	type: 'document'
+	source: { type: 'base64'; mediaType: string; data: string } | { type: 'url'; url: string }
+}
+
+export type ContentPart = TextContent | ImageContent | AudioContent | DocumentContent
 
 // ─── Tool Calls ──────────────────────────────────────────────────
 
@@ -149,6 +159,20 @@ export interface StreamCheckpoint {
 	text: string
 	tokensSoFar: number
 	eventIndex: number
+}
+
+// ─── Tenant Context ─────────────────────────────────────────────
+
+export interface TenantContext {
+	tenantId: string
+	tier?: string
+	limits?: {
+		maxRequestsPerMinute?: number
+		maxTokensPerDay?: number
+		maxCostPerMonth?: number
+		allowedModels?: string[]
+	}
+	metadata?: Record<string, unknown>
 }
 
 // ─── Middleware ───────────────────────────────────────────────────

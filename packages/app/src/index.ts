@@ -14,7 +14,12 @@ export type {
 	CompleteRequest,
 	HealthResponse,
 	MetricsResponse,
+	StreamChatEvent,
+	StreamCompleteEvent,
 } from './types'
+
+// SSE
+export { sseHeaders, formatSSE, streamResponse } from './sse'
 
 // Middleware
 export {
@@ -32,3 +37,7 @@ export type { RoutesDeps } from './routes'
 // RBAC
 export { createRBAC } from './rbac'
 export type { Permission, Role, RBACConfig, RBAC } from './rbac'
+
+// Tenant
+export { tenantMiddleware, tenantRateLimitMiddleware } from './tenant'
+export type { TenantMiddlewareConfig } from './tenant'

@@ -86,3 +86,22 @@ export interface MetricsResponse {
 	totalCost: number
 	byModel: Record<string, { requests: number; tokens: number; cost: number }>
 }
+
+// ─── Stream Types ────────────────────────────────────────────────
+
+export interface StreamChatEvent {
+	type: 'text_delta' | 'message_end' | 'error'
+	text?: string
+	usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
+	error?: string
+}
+
+export interface StreamCompleteEvent {
+	type: 'text_delta' | 'tool_call_start' | 'tool_call_delta' | 'message_end' | 'error'
+	text?: string
+	toolCall?: { id: string; name: string }
+	toolCallId?: string
+	arguments?: string
+	usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
+	error?: string
+}

@@ -51,21 +51,30 @@ Three Pillars — where each feature lives:
   - [Configuration Helpers](#configuration-helpers)
   - [Logger](#logger)
   - [IDs, Text Extraction & Sleep](#ids-text-extraction--sleep)
+  - [Token Counting & Context Management](#token-counting--context-management)
+  - [Plugin Registry](#plugin-registry)
 - [Gateway & Providers](#gateway--providers)
   - [Custom Providers & Provider Registry](#custom-providers--provider-registry)
   - [Middleware Composition](#middleware-composition)
   - [Logging & Cost Tracking Middleware](#logging--cost-tracking-middleware)
   - [Pricing & Cost Calculation](#pricing--cost-calculation)
+- [Multimodal Content](#multimodal-content)
 - [Structured Output](#structured-output)
 - [Streaming](#streaming)
+- [Response Caching](#response-caching)
+- [Output Guardrails](#output-guardrails)
+- [Batch Processing](#batch-processing)
 - [Tools](#tools)
   - [Tool Result Formatting](#tool-result-formatting)
 - [Agents](#agents)
   - [Standalone Memory](#standalone-memory)
+  - [Persistent Memory Stores](#persistent-memory-stores)
   - [Standalone Security & Semantic Validation](#standalone-security--semantic-validation)
 - [Multi-Agent Orchestration](#multi-agent-orchestration)
 - [RAG (Retrieval-Augmented Generation)](#rag-retrieval-augmented-generation)
   - [Standalone RAG Components](#standalone-rag-components)
+  - [PgVector Store](#pgvector-store)
+  - [RAG Plugin Registries](#rag-plugin-registries)
 - [Workflows](#workflows)
 - [Reliability](#reliability)
   - [Circuit Breaker](#circuit-breaker)
@@ -90,6 +99,7 @@ Three Pillars — where each feature lives:
   - [Cost Intelligence](#cost-intelligence)
   - [X-Ray Mode](#x-ray-mode)
   - [OpenTelemetry Integration](#opentelemetry-integration)
+  - [A/B Experiments](#ab-experiments)
 - [Security](#security)
 - [Testing](#testing)
   - [Mock Providers](#mock-providers)
@@ -100,7 +110,10 @@ Three Pillars — where each feature lives:
   - [Prompt Versioning](#prompt-versioning)
 - [MCP (Model Context Protocol)](#mcp-model-context-protocol)
 - [HTTP Server](#http-server)
+  - [SSE Streaming](#sse-streaming)
+  - [Multi-Tenant](#multi-tenant)
   - [Standalone HTTP Middleware](#standalone-http-middleware)
+- [Client SDK](#client-sdk)
 
 ---
 
@@ -274,6 +287,76 @@ const text = extractText(response.message.content)
 // Async delay
 await sleep(1000) // Wait 1 second
 ```
+
+### Token Counting & Context Management
+
+Estimate token counts and manage context windows to stay within model limits:
+
+```typescript
+import { countTokens, createContextManager } from '@elsium-ai/core'
+
+// Estimate token count (model-aware: Claude uses ~3.5 chars/token, GPT uses ~4)
+const tokens = countTokens('Hello, how are you?')             // ~5 tokens
+const claudeTokens = countTokens('Hello, how are you?', 'claude-sonnet-4-6')  // Uses 3.5 ratio
+
+// Create a context manager to fit messages within a budget
+const ctx = createContextManager({
+  maxTokens: 8_000,
+  strategy: 'truncate',       // 'truncate' | 'summarize' | 'sliding-window'
+  reserveTokens: 500,         // Reserve tokens for system prompt + response
+})
+
+// Fit messages within the token budget (drops oldest messages first)
+const fitted = await ctx.fit(messages, systemPrompt)
+
+// Estimate total tokens for a message array
+const estimate = ctx.estimateTokens(messages)
+```
+
+**Sliding window** keeps the last N messages within the token budget:
+
+```typescript
+const sliding = createContextManager({
+  maxTokens: 16_000,
+  strategy: 'sliding-window',
+})
+const recent = await sliding.fit(longConversation)
+```
+
+**Summarize** condenses old messages via an LLM call:
+
+```typescript
+const summarizing = createContextManager({
+  maxTokens: 8_000,
+  strategy: 'summarize',
+  summarizer: async (messages) => {
+    const result = await llm.complete({
+      messages: [{ role: 'user', content: [{ type: 'text', text: `Summarize this conversation:\n${messages.map(m => extractText(m.content)).join('\n')}` }] }],
+    })
+    return extractText(result.message.content)
+  },
+})
+```
+
+### Plugin Registry
+
+A generic, type-safe registry for extending the framework with custom components:
+
+```typescript
+import { createRegistry } from '@elsium-ai/core'
+
+// Create a registry for any type
+const providerRegistry = createRegistry<(config: Record<string, unknown>) => LLMProvider>('providers')
+
+providerRegistry.register('my-provider', (config) => createMyProvider(config))
+providerRegistry.has('my-provider')   // true
+providerRegistry.list()               // ['my-provider']
+
+const factory = providerRegistry.get('my-provider')
+providerRegistry.unregister('my-provider')
+```
+
+Registries are used internally by the RAG module for vector stores and embedding providers (see [RAG Plugin Registries](#rag-plugin-registries)).
 
 ---
 
@@ -580,9 +663,59 @@ registerPricing('my-custom-model', {
 
 ---
 
+## Multimodal Content
+
+ElsiumAI supports text, image, audio, and document content across all providers. Content types are mapped automatically to each provider's native format.
+
+```typescript
+// Text (all providers)
+const textMessage = { role: 'user', content: [{ type: 'text', text: 'Hello' }] }
+
+// Image — base64 or URL (all providers)
+const imageMessage = {
+  role: 'user',
+  content: [
+    { type: 'text', text: 'Describe this image' },
+    { type: 'image', source: { type: 'base64', mediaType: 'image/png', data: base64Data } },
+  ],
+}
+
+// Audio — base64 or URL (OpenAI: input_audio, Google: inlineData, Anthropic: text fallback)
+const audioMessage = {
+  role: 'user',
+  content: [
+    { type: 'text', text: 'Transcribe this audio' },
+    { type: 'audio', source: { type: 'base64', mediaType: 'audio/wav', data: audioBase64 } },
+  ],
+}
+
+// Document — base64 or URL (Anthropic: PDF blocks, Google: inlineData, OpenAI: text extraction)
+const docMessage = {
+  role: 'user',
+  content: [
+    { type: 'text', text: 'Summarize this document' },
+    { type: 'document', source: { type: 'base64', mediaType: 'application/pdf', data: pdfBase64 } },
+  ],
+}
+
+// All content types work with any provider — ElsiumAI handles the mapping
+const response = await llm.complete({ messages: [audioMessage] })
+```
+
+**Provider mapping:**
+
+| Content type | Anthropic | OpenAI | Google |
+|---|---|---|---|
+| Text | Native | Native | Native |
+| Image | Base64/URL blocks | `image_url` | `inlineData`/`fileData` |
+| Audio | Text fallback | `input_audio` | `inlineData`/`fileData` |
+| Document | PDF blocks (`type: 'document'`) | Text extraction | `inlineData`/`fileData` |
+
+---
+
 ## Structured Output
 
-Generate type-safe, schema-validated responses from any provider:
+Generate type-safe, schema-validated responses from any provider. Each provider uses its native JSON mode for maximum reliability:
 
 ```typescript
 import { z } from 'zod'
@@ -638,6 +771,16 @@ await db.invoices.insert({
   items: data.lineItems,
 })
 ```
+
+**Native JSON mode per provider:**
+
+| Provider | Mechanism | How it works |
+|---|---|---|
+| **OpenAI** | `response_format: { type: 'json_schema' }` | Constrains output to match the schema at decoding time |
+| **Anthropic** | Synthetic tool-use (`_structured_output`) | Forces the model to call a tool whose input is your schema |
+| **Google** | `responseMimeType: 'application/json'` + `responseSchema` | Native JSON generation with schema validation |
+
+All providers fall back to prompt-based JSON extraction if native mode is unavailable.
 
 ---
 
@@ -705,6 +848,162 @@ const filtered = stream.pipe(async function* (source) {
     }
   }
 })
+```
+
+---
+
+## Response Caching
+
+Cache LLM responses to avoid redundant API calls. The cache middleware integrates into the gateway middleware stack:
+
+```typescript
+import { cacheMiddleware, createInMemoryCache } from '@elsium-ai/gateway'
+
+// Simple — uses in-memory LRU cache with defaults (1 hour TTL, 1000 max entries)
+const cache = cacheMiddleware()
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [cache],
+})
+
+// Same request → cache hit (no API call)
+await llm.complete(request) // API call
+await llm.complete(request) // Cache hit
+
+// Check cache stats
+console.log(cache.stats()) // { hits: 1, misses: 1, size: 0, hitRate: 0.5 }
+```
+
+**Custom configuration:**
+
+```typescript
+const cache = cacheMiddleware({
+  ttlMs: 600_000,          // 10 minute TTL
+  maxSize: 5_000,           // LRU eviction at 5000 entries
+  adapter: createInMemoryCache(5_000), // Or provide your own CacheAdapter (Redis, etc.)
+  keyFn: (ctx) => `${ctx.provider}:${ctx.model}:${hashMessages(ctx.request.messages)}`,
+  shouldCache: (ctx, response) => {
+    // Only cache deterministic requests (temperature 0) with complete responses
+    return (ctx.request.temperature === 0 || ctx.request.temperature === undefined)
+      && response.stopReason === 'end_turn'
+  },
+})
+```
+
+**Streaming requests are automatically bypassed** — only non-streaming completions are cached.
+
+---
+
+## Output Guardrails
+
+Scan LLM responses for PII, secrets, and policy violations before they reach your users:
+
+```typescript
+import { outputGuardrailMiddleware } from '@elsium-ai/gateway'
+
+const guardrails = outputGuardrailMiddleware({
+  piiDetection: true,           // Detect emails, phones, SSNs, credit cards
+  contentPolicy: {
+    blockedPatterns: [/internal\.company\.com/i, /proprietary/i],
+    maxResponseLength: 10_000,
+  },
+  onViolation: 'redact',        // 'block' | 'redact' | 'warn'
+  onViolationCallback: (violation) => {
+    audit.log('output_violation', {
+      type: violation.type,
+      detail: violation.detail,
+    })
+  },
+})
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [guardrails],
+})
+```
+
+**Violation modes:**
+
+| Mode | Behavior |
+|---|---|
+| `block` | Throws `ElsiumError.validation()` with violation details |
+| `redact` | Replaces detected content with `[REDACTED_*]` markers |
+| `warn` | Calls the callback but returns the unmodified response |
+
+**Custom rules:**
+
+```typescript
+const guardrails = outputGuardrailMiddleware({
+  customRules: [
+    {
+      name: 'no-competitor-mentions',
+      test: (content) => /competitor-name/i.test(content),
+      message: 'Response mentions a competitor',
+    },
+    {
+      name: 'max-code-blocks',
+      test: (content) => (content.match(/```/g)?.length ?? 0) > 10,
+      message: 'Too many code blocks in response',
+    },
+  ],
+  onViolation: 'block',
+})
+```
+
+---
+
+## Batch Processing
+
+Send multiple LLM requests concurrently with controlled parallelism:
+
+```typescript
+import { createBatch } from '@elsium-ai/gateway'
+
+const batch = createBatch(llm, {
+  concurrency: 5,            // Max 5 simultaneous requests
+  retryPerItem: 2,           // Retry each failed request up to 2 times
+  onProgress: (completed, total) => {
+    console.log(`Progress: ${completed}/${total}`)
+  },
+})
+
+const requests = articles.map(article => ({
+  messages: [{ role: 'user', content: [{ type: 'text', text: `Summarize: ${article}` }] }],
+}))
+
+const result = await batch.execute(requests)
+
+console.log(`Succeeded: ${result.succeeded}/${result.total}`)
+console.log(`Failed: ${result.failed}`)
+console.log(`Duration: ${result.durationMs}ms`)
+
+for (const item of result.results) {
+  if (item.success) {
+    console.log(extractText(item.response.message.content))
+  } else {
+    console.error(`Error: ${item.error}`)
+  }
+}
+```
+
+**With cancellation:**
+
+```typescript
+const controller = new AbortController()
+
+const batch = createBatch(llm, {
+  concurrency: 10,
+  signal: controller.signal,
+})
+
+// Cancel after 30 seconds
+setTimeout(() => controller.abort(), 30_000)
+
+const result = await batch.execute(requests)
+// result.results will contain completed items + error items for cancelled ones
 ```
 
 ---
@@ -1066,6 +1365,60 @@ const tokenMemory = createMemory({ strategy: 'token-limited', maxTokens: 32_000 
 const fullMemory = createMemory({ strategy: 'unlimited' })
 ```
 
+### Persistent Memory Stores
+
+Persist agent conversation history across restarts using pluggable storage adapters:
+
+```typescript
+import { createMemory } from '@elsium-ai/agents'
+import { createInMemoryMemoryStore, createSqliteMemoryStore } from '@elsium-ai/agents'
+
+// In-memory store (default — data lost on restart)
+const memoryStore = createInMemoryMemoryStore()
+
+// SQLite store (persistent — requires better-sqlite3 as peer dependency)
+const sqliteStore = createSqliteMemoryStore({
+  path: './data/agent-memory.db',
+  tableName: 'conversations',     // Optional, defaults to 'agent_messages'
+})
+
+// Use with memory — auto-persists on every add() and clear()
+const memory = createMemory({
+  strategy: 'sliding-window',
+  maxMessages: 50,
+  store: sqliteStore,
+  agentId: 'support-agent',      // Required when using a store
+})
+
+// Load previous conversation on startup
+await memory.loadFromStore()
+
+// Messages are auto-persisted as you add them
+memory.add({ role: 'user', content: [{ type: 'text', text: 'Hello' }] })
+
+// Manually save/load
+await memory.saveToStore()
+await memory.loadFromStore()
+```
+
+**Use with agents:**
+
+```typescript
+const agent = defineAgent(
+  {
+    name: 'support-agent',
+    system: 'You are a support agent.',
+    memory: {
+      strategy: 'sliding-window',
+      maxMessages: 100,
+      store: sqliteStore,
+      agentId: 'support-agent',
+    },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+```
+
 ### Standalone Security & Semantic Validation
 
 Use the agent security and semantic validation systems independently:
@@ -1381,6 +1734,58 @@ const diverseResults = mmrRerank(queryVector, resultsWithEmbeddings, {
   topK: 5,
   lambda: 0.7, // 1.0 = pure relevance, 0.0 = pure diversity
 })
+```
+
+### PgVector Store
+
+Use PostgreSQL with pgvector as a production vector store (requires `pg` as a peer dependency):
+
+```typescript
+import { createPgVectorStore } from '@elsium-ai/rag'
+
+const pgStore = createPgVectorStore({
+  connectionString: 'postgresql://user:pass@localhost:5432/mydb',
+  tableName: 'embeddings',    // Optional, defaults to 'vector_chunks'
+  dimensions: 1536,            // Optional, defaults to 1536
+})
+
+// Use with RAG pipeline
+const pipeline = rag({
+  loader: 'markdown',
+  chunking: { strategy: 'recursive', maxChunkSize: 512 },
+  embeddings: { provider: 'openai', apiKey: env('OPENAI_API_KEY') },
+  store: pgStore,    // Use PgVector instead of in-memory
+})
+
+// Or use standalone
+await pgStore.upsert(embeddedChunks)
+const results = await pgStore.query(queryVector, { topK: 10, minScore: 0.7 })
+await pgStore.delete(['chunk_1', 'chunk_2'])
+console.log(await pgStore.count())
+await pgStore.clear()
+```
+
+The store automatically creates the `vector` extension and table on first connection.
+
+### RAG Plugin Registries
+
+Register custom vector stores and embedding providers as plugins:
+
+```typescript
+import { vectorStoreRegistry, embeddingProviderRegistry } from '@elsium-ai/rag'
+
+// Register a custom vector store factory
+vectorStoreRegistry.register('pinecone', (config) => createPineconeStore(config))
+vectorStoreRegistry.register('qdrant', (config) => createQdrantStore(config))
+
+// List registered stores
+console.log(vectorStoreRegistry.list()) // ['pinecone', 'qdrant']
+
+// Register a custom embedding provider
+embeddingProviderRegistry.register('cohere', (config) => createCohereEmbeddings(config))
+
+// The getEmbeddingProvider() function checks the registry first
+// so registered providers are available in RAG pipeline configs
 ```
 
 ---
@@ -2353,6 +2758,43 @@ const tracer = observe({
 })
 ```
 
+### A/B Experiments
+
+Run A/B tests on prompts, models, or configurations with weight-based traffic splitting:
+
+```typescript
+import { createExperiment } from '@elsium-ai/observe'
+
+const experiment = createExperiment({
+  name: 'prompt-optimization',
+  variants: [
+    { name: 'control', weight: 0.5, config: { system: 'You are a helpful assistant.' } },
+    { name: 'detailed', weight: 0.3, config: { system: 'You are a helpful assistant. Always provide examples.' } },
+    { name: 'concise', weight: 0.2, config: { system: 'You are a helpful assistant. Be brief.' } },
+  ],
+})
+
+// Assign a variant (deterministic when userId is provided)
+const variant = experiment.assign('user_123')
+console.log(variant.name)   // 'control' (same user always gets same variant)
+console.log(variant.config) // { system: 'You are a helpful assistant.' }
+
+// Use the variant config in your agent
+const agent = defineAgent(
+  { name: 'assistant', system: variant.config.system },
+  { complete: (req) => llm.complete(req) },
+)
+
+// Record metrics for analysis
+experiment.record(variant.name, { satisfaction: 4.5, latencyMs: 230 })
+
+// Get aggregated results
+const results = experiment.results()
+for (const [variantName, metrics] of Object.entries(results.variants)) {
+  console.log(`${variantName}: avg satisfaction=${metrics.satisfaction.avg.toFixed(1)}, n=${metrics.satisfaction.count}`)
+}
+```
+
 ---
 
 ## Security
@@ -2812,11 +3254,84 @@ app.listen()
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/chat` | Chat with a named agent |
-| `POST` | `/complete` | Raw LLM completion |
+| `POST` | `/chat` | Chat with a named agent (supports SSE streaming) |
+| `POST` | `/complete` | Raw LLM completion (supports SSE streaming) |
 | `GET` | `/health` | Health check (skips auth) |
 | `GET` | `/metrics` | Token usage and cost metrics |
 | `GET` | `/agents` | List registered agents |
+
+### SSE Streaming
+
+Send `"stream": true` in your request body to get Server-Sent Events instead of a single JSON response:
+
+```bash
+curl -X POST http://localhost:3000/chat \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent": "support-agent", "message": "Hello!", "stream": true}'
+
+# Response: text/event-stream
+# data: {"type":"message_start","id":"msg_123"}
+# data: {"type":"text_delta","text":"Hello"}
+# data: {"type":"text_delta","text":"! How"}
+# data: {"type":"text_delta","text":" can I help?"}
+# data: {"type":"message_end","usage":{"inputTokens":10,"outputTokens":8,"totalTokens":18},"stopReason":"end_turn"}
+```
+
+**Use SSE utilities standalone** with your own Hono routes:
+
+```typescript
+import { sseHeaders, formatSSE, streamResponse } from '@elsium-ai/app'
+
+// Low-level: format individual SSE events
+const event = formatSSE('message', { type: 'text_delta', text: 'Hello' })
+// 'data: {"type":"text_delta","text":"Hello"}\n\n'
+
+// High-level: stream an ElsiumStream to a Hono response
+app.post('/my-stream', async (c) => {
+  const stream = llm.stream(request)
+  return streamResponse(c, stream)
+})
+```
+
+### Multi-Tenant
+
+Add tenant isolation to your HTTP server with per-tenant rate limiting:
+
+```typescript
+import { tenantMiddleware, tenantRateLimitMiddleware } from '@elsium-ai/app'
+
+// Extract tenant from request headers, JWT, or custom logic
+const tenant = tenantMiddleware({
+  extractTenant: (c) => {
+    const tenantId = c.req.header('X-Tenant-ID')
+    if (!tenantId) return null
+    return {
+      tenantId,
+      tier: 'pro',
+      limits: {
+        maxRequestsPerMinute: 100,
+        maxTokensPerDay: 1_000_000,
+        allowedModels: ['claude-sonnet-4-6', 'gpt-4o'],
+      },
+    }
+  },
+  onUnknownTenant: 'reject', // 'reject' | 'default'
+})
+
+// Per-tenant rate limiting (uses limits from TenantContext)
+const tenantRateLimit = tenantRateLimitMiddleware()
+
+// Apply to your Hono app
+app.use('*', tenant)
+app.use('*', tenantRateLimit)
+
+// Access tenant in your handlers
+app.post('/chat', async (c) => {
+  const tenant = c.get('tenant') // TenantContext
+  console.log(`Request from tenant: ${tenant.tenantId} (${tenant.tier})`)
+})
+```
 
 ### Chat with an agent
 
@@ -2896,6 +3411,66 @@ const routes = createRoutes({
   tracer,
 })
 // Returns a Hono router with /chat, /complete, /health, /metrics, /agents endpoints
+```
+
+---
+
+## Client SDK
+
+Consume ElsiumAI HTTP servers from TypeScript applications:
+
+```typescript
+import { createClient } from '@elsium-ai/client'
+
+const client = createClient({
+  baseUrl: 'http://localhost:3000',
+  apiKey: 'my-api-token',        // Sent as Authorization: Bearer header
+  timeout: 30_000,
+})
+
+// Chat with an agent
+const chatResponse = await client.chat({
+  agent: 'support-agent',
+  message: 'How do I return my order?',
+})
+console.log(chatResponse.message)
+
+// Raw LLM completion
+const completeResponse = await client.complete({
+  messages: [{ role: 'user', content: 'Hello!' }],
+  model: 'claude-sonnet-4-6',
+})
+
+// Health check
+const health = await client.health()
+console.log(health.status) // 'ok'
+
+// List agents
+const agents = await client.agents()
+console.log(agents.map(a => a.name))
+```
+
+**Streaming with SSE:**
+
+```typescript
+// Stream chat responses
+for await (const event of client.chatStream({
+  agent: 'support-agent',
+  message: 'Write me a poem',
+})) {
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.text)
+  }
+}
+
+// Stream completions
+for await (const event of client.completeStream({
+  messages: [{ role: 'user', content: 'Explain quantum computing' }],
+})) {
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.text)
+  }
+}
 ```
 
 ---
@@ -2998,11 +3573,14 @@ app.listen()
 
 This single application integrates:
 - **Reliability**: Circuit breakers, bulkhead isolation, request dedup, graceful shutdown
-- **Governance**: Policy engine, RBAC, approval gates, hash-chained audit trail
-- **Determinism**: Provenance tracking, output pinning (in CI)
+- **Governance**: Policy engine, RBAC, approval gates, hash-chained audit trail, output guardrails
+- **Determinism**: Provenance tracking, output pinning (in CI), A/B experiments
 - **Security**: Prompt injection detection, PII redaction, secret redaction
 - **Observability**: Distributed tracing, cost intelligence, X-Ray
-- **Agent features**: Memory, confidence scoring, guardrails, tool execution
+- **Performance**: Response caching, batch processing, token counting, context management
+- **Agent features**: Memory (with persistent stores), confidence scoring, guardrails, tool execution
+- **Multimodal**: Audio, document, and image content across all providers
+- **Streaming**: SSE endpoints for real-time responses, client SDK for consuming them
 
 ---
 

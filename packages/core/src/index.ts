@@ -3,6 +3,8 @@ export type {
 	Role,
 	TextContent,
 	ImageContent,
+	AudioContent,
+	DocumentContent,
 	ContentPart,
 	ToolCall,
 	ToolResult,
@@ -17,6 +19,7 @@ export type {
 	ProviderConfig,
 	CompletionRequest,
 	ToolDefinition,
+	TenantContext,
 	MiddlewareContext,
 	MiddlewareNext,
 	Middleware,
@@ -40,6 +43,17 @@ export type { Logger, LogLevel, LogEntry, LoggerOptions } from './logger'
 
 // Config
 export { env, envNumber, envBool } from './config'
+
+// Schema
+export { zodToJsonSchema } from './schema'
+
+// Registry
+export { createRegistry } from './registry'
+export type { Registry } from './registry'
+
+// Tokens
+export { countTokens, createContextManager } from './tokens'
+export type { ContextStrategy, ContextManagerConfig, ContextManager } from './tokens'
 
 // Utils
 export { generateId, generateTraceId, extractText, sleep, retry } from './utils'

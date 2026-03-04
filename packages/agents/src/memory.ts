@@ -1,5 +1,6 @@
 import type { Message } from '@elsium-ai/core'
 import { extractText } from '@elsium-ai/core'
+import type { MemoryStore } from './stores/memory-store'
 
 export type MemoryStrategy = 'sliding-window' | 'token-limited' | 'unlimited'
 
@@ -7,6 +8,8 @@ export interface MemoryConfig {
 	strategy: MemoryStrategy
 	maxTokens?: number
 	maxMessages?: number
+	store?: MemoryStore
+	agentId?: string
 }
 
 export interface Memory {
@@ -15,6 +18,8 @@ export interface Memory {
 	getMessages(): Message[]
 	clear(): void
 	getTokenEstimate(): number
+	loadFromStore(): Promise<void>
+	saveToStore(): Promise<void>
 }
 
 export function createMemory(config: MemoryConfig): Memory {
@@ -65,6 +70,10 @@ export function createMemory(config: MemoryConfig): Memory {
 				case 'unlimited':
 					break
 			}
+
+			if (config.store && config.agentId) {
+				config.store.save(config.agentId, [...messages]).catch(() => {})
+			}
 		},
 
 		getMessages(): Message[] {
@@ -73,10 +82,25 @@ export function createMemory(config: MemoryConfig): Memory {
 
 		clear() {
 			messages.length = 0
+			if (config.store && config.agentId) {
+				config.store.clear(config.agentId).catch(() => {})
+			}
 		},
 
 		getTokenEstimate(): number {
 			return messages.reduce((sum, m) => sum + estimateTokens(m), 0)
+		},
+
+		async loadFromStore(): Promise<void> {
+			if (!config.store || !config.agentId) return
+			const stored = await config.store.load(config.agentId)
+			messages.length = 0
+			messages.push(...stored)
+		},
+
+		async saveToStore(): Promise<void> {
+			if (!config.store || !config.agentId) return
+			await config.store.save(config.agentId, [...messages])
 		},
 	}
 }

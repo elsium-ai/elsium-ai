@@ -1,4 +1,5 @@
-import { ElsiumError } from '@elsium-ai/core'
+import { ElsiumError, createRegistry } from '@elsium-ai/core'
+import type { Registry } from '@elsium-ai/core'
 import type { EmbeddingConfig, EmbeddingVector } from './types'
 
 export interface EmbeddingProvider {
@@ -122,9 +123,20 @@ export function createMockEmbeddings(dims = 128): EmbeddingProvider {
 	}
 }
 
+// ─── Embedding Registry ──────────────────────────────────────────
+
+export type EmbeddingProviderFactory = (config: EmbeddingConfig) => EmbeddingProvider
+
+export const embeddingProviderRegistry: Registry<EmbeddingProviderFactory> =
+	createRegistry<EmbeddingProviderFactory>('embeddingProvider')
+
 // ─── Factory ─────────────────────────────────────────────────────
 
 export function getEmbeddingProvider(config: EmbeddingConfig): EmbeddingProvider {
+	// Check registry first
+	const registered = embeddingProviderRegistry.get(config.provider)
+	if (registered) return registered(config)
+
 	switch (config.provider) {
 		case 'openai':
 			return createOpenAIEmbeddings(config)
@@ -133,7 +145,7 @@ export function getEmbeddingProvider(config: EmbeddingConfig): EmbeddingProvider
 		default:
 			throw new ElsiumError({
 				code: 'CONFIG_ERROR',
-				message: `Unknown embedding provider: ${config.provider}`,
+				message: `Unknown embedding provider: ${config.provider}. Available: openai, mock${embeddingProviderRegistry.list().length ? `, ${embeddingProviderRegistry.list().join(', ')}` : ''}`,
 				retryable: false,
 			})
 	}
