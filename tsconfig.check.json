@@ -24,6 +24,7 @@
       "@elsium-ai/app": ["./packages/app/src"],
       "@elsium-ai/testing": ["./packages/testing/src"],
       "@elsium-ai/mcp": ["./packages/mcp/src"],
+      "@elsium-ai/client": ["./packages/client/src"],
       "elsium-ai": ["./packages/elsium-ai/src"]
     }
   },
