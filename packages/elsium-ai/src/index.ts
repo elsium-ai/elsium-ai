@@ -93,6 +93,11 @@ export type {
 export {
 	gateway,
 	registerProviderFactory,
+	registerProvider,
+	getProviderFactory,
+	listProviders,
+	registerProviderMetadata,
+	getProviderMetadata,
 	calculateCost,
 	registerPricing,
 	composeMiddleware,
@@ -120,6 +125,9 @@ export {
 export type {
 	LLMProvider,
 	ProviderFactory,
+	ProviderMetadata,
+	ModelPricing,
+	ModelTier,
 	Gateway,
 	GatewayConfig,
 	XRayStore,

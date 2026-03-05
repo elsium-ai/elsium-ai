@@ -84,6 +84,31 @@ describe('createAgentSecurity', () => {
 			expect(result.redactedOutput).toContain('[REDACTED_TOKEN]')
 		})
 
+		it('redacts GitHub personal access tokens (ghp_)', () => {
+			const security = createAgentSecurity({ redactSecrets: true })
+			const token = `ghp_${'a'.repeat(36)}`
+			const result = security.sanitizeOutput(`Token: ${token}`)
+			expect(result.safe).toBe(false)
+			expect(result.redactedOutput).toContain('[REDACTED_GITHUB_TOKEN]')
+			expect(result.redactedOutput).not.toContain(token)
+		})
+
+		it('redacts GitHub OAuth tokens (gho_)', () => {
+			const security = createAgentSecurity({ redactSecrets: true })
+			const token = `gho_${'b'.repeat(36)}`
+			const result = security.sanitizeOutput(`Token: ${token}`)
+			expect(result.safe).toBe(false)
+			expect(result.redactedOutput).toContain('[REDACTED_GITHUB_TOKEN]')
+		})
+
+		it('redacts GitHub fine-grained tokens (github_pat_)', () => {
+			const security = createAgentSecurity({ redactSecrets: true })
+			const token = `github_pat_${'c'.repeat(20)}`
+			const result = security.sanitizeOutput(`Token: ${token}`)
+			expect(result.safe).toBe(false)
+			expect(result.redactedOutput).toContain('[REDACTED_GITHUB_TOKEN]')
+		})
+
 		it('returns safe for clean output', () => {
 			const security = createAgentSecurity({ redactSecrets: true })
 			const result = security.sanitizeOutput('This is a normal response')

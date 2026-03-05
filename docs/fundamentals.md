@@ -1146,6 +1146,29 @@ console.log(result.usage.totalCost)       // Total cost in USD
 console.log(result.traceId)              // For observability
 ```
 
+### Single-arg form
+
+You can skip the two-arg form by passing `provider` and `apiKey` directly in config, or by passing an `LLMProvider` object:
+
+```typescript
+// String provider name + apiKey
+const agent = defineAgent({
+  name: 'assistant',
+  system: 'You are helpful.',
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  model: 'claude-sonnet-4-6',
+})
+
+// LLMProvider object directly
+const myProvider = createAnthropicProvider({ apiKey: env('ANTHROPIC_API_KEY') })
+const agent2 = defineAgent({
+  name: 'assistant',
+  system: 'You are helpful.',
+  provider: myProvider,
+})
+```
+
 ### Agent with tools
 
 ```typescript
