@@ -333,6 +333,17 @@ describe('registerProvider / getProviderFactory / listProviders', () => {
 		const response = await gw.complete({ messages: [{ role: 'user', content: 'hi' }] })
 		expect(response.message.content).toBe('custom response')
 	})
+
+	it('registerProvider accepts an LLMProvider object (not just a factory)', async () => {
+		const mockProv = createMockProvider([
+			{ message: { role: 'assistant', content: 'from object' } },
+		])
+		registerProvider('object-provider', mockProv)
+
+		const gw = gateway({ provider: 'object-provider', apiKey: 'test-key' })
+		const response = await gw.complete({ messages: [{ role: 'user', content: 'hi' }] })
+		expect(response.message.content).toBe('from object')
+	})
 })
 
 describe('registerProviderFactory syncs with getProviderFactory', () => {
