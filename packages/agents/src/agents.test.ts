@@ -93,6 +93,25 @@ describe('defineAgent', () => {
 		)
 	})
 
+	it('accepts an LLMProvider object as provider in single-arg form', async () => {
+		const mockProvider = {
+			name: 'mock',
+			defaultModel: 'mock-1',
+			async complete() {
+				return mockResponse({ message: { role: 'assistant', content: 'from provider object' } })
+			},
+			stream() {
+				throw new Error('not implemented')
+			},
+			async listModels() {
+				return ['mock-1']
+			},
+		}
+		const agent = defineAgent({ name: 'test', system: 'test', provider: mockProvider })
+		const result = await agent.run('hi')
+		expect(result.message.content).toBe('from provider object')
+	})
+
 	it('runs simple completion', async () => {
 		const deps = mockDeps([{ message: { role: 'assistant', content: 'I can help with that!' } }])
 

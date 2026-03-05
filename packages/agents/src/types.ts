@@ -1,4 +1,5 @@
 import type { Message } from '@elsium-ai/core'
+import type { LLMProvider } from '@elsium-ai/gateway'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import type { ApprovalGateConfig } from './approval'
 import type { ConfidenceConfig, ConfidenceResult } from './confidence'
@@ -17,7 +18,7 @@ export interface AgentConfig {
 	confidence?: boolean | ConfidenceConfig
 	states?: Record<string, StateDefinition>
 	initialState?: string
-	provider?: string
+	provider?: string | LLMProvider
 	apiKey?: string
 	baseUrl?: string
 }

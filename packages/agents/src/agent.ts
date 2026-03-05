@@ -40,9 +40,13 @@ async function safeHook<T>(fn: (() => T | Promise<T>) | undefined): Promise<void
 
 function resolveDependencies(config: AgentConfig, deps?: AgentDependencies): AgentDependencies {
 	if (deps) return deps
+	if (typeof config.provider === 'object' && config.provider !== null) {
+		const provider = config.provider
+		return { complete: (req) => provider.complete(req) }
+	}
 	if (!config.provider || !config.apiKey) {
 		throw ElsiumError.validation(
-			'Either provide AgentDependencies as second argument, or set provider and apiKey in config',
+			'Either provide AgentDependencies as second argument, set provider and apiKey in config, or pass an LLMProvider object as provider',
 		)
 	}
 	const gw = gateway({
