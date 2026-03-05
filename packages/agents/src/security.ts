@@ -61,27 +61,27 @@ const JAILBREAK_PATTERNS: Array<{ pattern: RegExp; detail: string }> = [
 
 const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string; detail: string }> = [
 	{
-		pattern: /\bsk-[a-zA-Z0-9_-]{20,}\b/g,
+		pattern: /\bsk-[a-zA-Z0-9_-]{8,}\b/g,
 		detail: 'API secret key detected',
 		replacement: '[REDACTED_API_KEY]',
 	},
 	{
-		pattern: /\bpk-[a-zA-Z0-9_-]{20,}\b/g,
+		pattern: /\bpk-[a-zA-Z0-9_-]{8,}\b/g,
 		detail: 'API public key detected',
 		replacement: '[REDACTED_API_KEY]',
 	},
 	{
-		pattern: /\bghp_[a-zA-Z0-9]{36,}\b/g,
+		pattern: /\bghp_[a-zA-Z0-9]{8,}\b/g,
 		detail: 'GitHub personal access token detected',
 		replacement: '[REDACTED_GITHUB_TOKEN]',
 	},
 	{
-		pattern: /\bgho_[a-zA-Z0-9]{36,}\b/g,
+		pattern: /\bgho_[a-zA-Z0-9]{8,}\b/g,
 		detail: 'GitHub OAuth token detected',
 		replacement: '[REDACTED_GITHUB_TOKEN]',
 	},
 	{
-		pattern: /\bgithub_pat_[a-zA-Z0-9_]{20,}\b/g,
+		pattern: /\bgithub_pat_[a-zA-Z0-9_]{8,}\b/g,
 		detail: 'GitHub fine-grained token detected',
 		replacement: '[REDACTED_GITHUB_TOKEN]',
 	},

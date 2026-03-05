@@ -33,7 +33,12 @@ export type ProviderFactory = (config: ProviderConfig) => LLMProvider
 const providerRegistry = new Map<string, ProviderFactory>()
 const metadataRegistry = new Map<string, ProviderMetadata>()
 
-export function registerProvider(name: string, factory: ProviderFactory): void {
+export function registerProvider(
+	name: string,
+	factoryOrProvider: ProviderFactory | LLMProvider,
+): void {
+	const factory =
+		typeof factoryOrProvider === 'function' ? factoryOrProvider : () => factoryOrProvider
 	providerRegistry.set(name, factory)
 }
 
