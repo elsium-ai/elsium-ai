@@ -187,6 +187,25 @@ describe('redactSecrets', () => {
 		expect(redacted).not.toContain(token)
 		expect(found).toHaveLength(1)
 	})
+
+	it('redacts shorter sk- keys (12+ chars)', () => {
+		const { redacted, found } = redactSecrets('key: sk-abc123def456')
+		expect(redacted).toContain('[REDACTED_API_KEY]')
+		expect(redacted).not.toContain('sk-abc123def456')
+		expect(found).toHaveLength(1)
+	})
+
+	it('redacts shorter ghp_ tokens (12 chars)', () => {
+		const { redacted, found } = redactSecrets('token: ghp_xxxxxxxxxxxx')
+		expect(redacted).toContain('[REDACTED_GITHUB_TOKEN]')
+		expect(found).toHaveLength(1)
+	})
+
+	it('redacts shorter github_pat_ tokens', () => {
+		const { redacted, found } = redactSecrets('pat: github_pat_xxxxxxxxx')
+		expect(redacted).toContain('[REDACTED_GITHUB_TOKEN]')
+		expect(found).toHaveLength(1)
+	})
 })
 
 // ─── checkBlockedPatterns ───────────────────────────────────────
