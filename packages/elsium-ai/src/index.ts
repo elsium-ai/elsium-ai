@@ -159,6 +159,7 @@ export {
 	runParallel,
 	runSupervisor,
 	createMemory,
+	createSummarizeFn,
 	createSemanticValidator,
 	createAgentSecurity,
 	createConfidenceScorer,
@@ -174,11 +175,22 @@ export {
 	createInMemoryThreadStore,
 	// Async Agent
 	createAsyncAgent,
+	// Channels
+	createChannelGateway,
+	createWebhookChannel,
+	// Session Router
+	createSessionRouter,
+	// Scheduler
+	createScheduler,
+	parseCronExpression,
+	cronMatchesDate,
+	getNextCronDate,
 } from '@elsium-ai/agents'
 
 export type {
 	Agent,
 	AgentDependencies,
+	AgentGenerateResult,
 	AgentConfig,
 	AgentResult,
 	AgentRunOptions,
@@ -186,6 +198,7 @@ export type {
 	AgentHooks,
 	Memory,
 	MemoryConfig,
+	SummarizeFn,
 	SemanticGuardrailConfig,
 	SemanticCheck,
 	SemanticCheckResult,
@@ -218,6 +231,25 @@ export type {
 	AgentTask,
 	TaskStatus,
 	TaskProgressEvent,
+	// Channel types
+	ChannelAdapter,
+	ChannelGateway,
+	ChannelGatewayConfig,
+	IncomingMessage,
+	OutgoingMessage,
+	ChannelAttachment,
+	WebhookChannelConfig,
+	// Session Router types
+	SessionRouter,
+	SessionRouterConfig,
+	SessionInfo,
+	SessionResolveOptions,
+	// Scheduler types
+	Scheduler,
+	SchedulerConfig,
+	ScheduleOptions,
+	ScheduledTask,
+	CronFields,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────
@@ -230,6 +262,7 @@ export {
 	currentTimeTool,
 	formatToolResult,
 	formatToolResultAsText,
+	createRetrievalTool,
 } from '@elsium-ai/tools'
 
 export type {
@@ -238,6 +271,9 @@ export type {
 	ToolContext,
 	ToolExecutionResult,
 	Toolkit,
+	RetrievalToolConfig,
+	RetrievalResult as ToolRetrievalResult,
+	RetrieveFn,
 } from '@elsium-ai/tools'
 
 // ─── RAG ────────────────────────────────────────────────────────

@@ -65,14 +65,19 @@ Three Pillars — where each feature lives:
 - [Output Guardrails](#output-guardrails)
 - [Batch Processing](#batch-processing)
 - [Tools](#tools)
+  - [Retrieval Tool](#retrieval-tool)
   - [Tool Result Formatting](#tool-result-formatting)
 - [Agents](#agents)
+  - [Structured Output](#structured-output)
   - [Streaming](#streaming)
   - [Conversation Threads](#conversation-threads)
   - [Async / Background Agents](#async--background-agents)
   - [Standalone Memory](#standalone-memory)
   - [Persistent Memory Stores](#persistent-memory-stores)
   - [Standalone Security & Semantic Validation](#standalone-security--semantic-validation)
+  - [Channel Adapters](#channel-adapters)
+  - [Session Router](#session-router)
+  - [Task Scheduler](#task-scheduler)
 - [Multi-Agent Orchestration](#multi-agent-orchestration)
 - [RAG (Retrieval-Augmented Generation)](#rag-retrieval-augmented-generation)
   - [Standalone RAG Components](#standalone-rag-components)
@@ -1086,6 +1091,39 @@ const utils = createToolkit('utils', [httpFetchTool, calculatorTool, jsonParseTo
 | `json_parse` | Parse JSON with path extraction | Blocks prototype pollution |
 | `current_time` | ISO timestamp with timezone | Safe IANA timezone handling |
 
+### Retrieval Tool
+
+Create a RAG-powered search tool that plugs into any agent's tool loop:
+
+```typescript
+import { createRetrievalTool } from '@elsium-ai/tools'
+
+const searchDocs = createRetrievalTool({
+  name: 'search_docs',
+  description: 'Search internal documentation',
+  topK: 5,
+  retrieve: async (query, opts) => {
+    const results = await vectorStore.query(query, opts?.topK)
+    return results.map((r) => ({
+      content: r.text,
+      score: r.score,
+      source: r.metadata.filename,
+    }))
+  },
+})
+
+const agent = defineAgent(
+  {
+    name: 'support',
+    system: 'Answer questions using the documentation.',
+    tools: [searchDocs],
+  },
+  { complete: (req) => llm.complete(req) },
+)
+```
+
+The `retrieve` function is generic — connect it to any vector store, search API, or database. Results are formatted with scores and sources by default, or provide a custom `formatResult` function.
+
 ### Tool Result Formatting
 
 Format tool execution results for display or logging:
@@ -1170,6 +1208,20 @@ const agent2 = defineAgent({
   system: 'You are helpful.',
   provider: myProvider,
 })
+
+// ProviderMesh for automatic failover and load balancing
+const mesh = createProviderMesh({
+  providers: [
+    { name: 'primary', provider: anthropic, weight: 80 },
+    { name: 'fallback', provider: openai, weight: 20 },
+  ],
+  strategy: 'weighted-round-robin',
+})
+const agent3 = defineAgent({
+  name: 'resilient-agent',
+  system: 'You are helpful.',
+  provider: mesh,
+})
 ```
 
 ### Agent with tools
@@ -1189,6 +1241,31 @@ const agent = defineAgent(
 const result = await agent.run('What is the average price of electronics products?')
 console.log(result.toolCalls)  // [{ name: 'search_products', arguments: {...}, result: {...} }, ...]
 ```
+
+### Structured output
+
+Use `agent.generate()` to get typed, validated data from agents using Zod schemas:
+
+```typescript
+import { z } from 'zod'
+
+const SentimentSchema = z.object({
+  sentiment: z.enum(['positive', 'negative', 'neutral']),
+  confidence: z.number().min(0).max(1),
+  keywords: z.array(z.string()),
+})
+
+const { data, result } = await agent.generate(
+  'Analyze the sentiment: "This product is amazing, best purchase ever!"',
+  SentimentSchema,
+)
+
+console.log(data.sentiment)   // 'positive'
+console.log(data.confidence)  // 0.95
+console.log(data.keywords)    // ['amazing', 'best purchase']
+```
+
+The agent runs through its full loop (including tools and guardrails), then parses and validates the final response against your schema. If the response doesn't match, it throws an `ElsiumError` with validation details.
 
 ### Memory strategies
 
@@ -1215,6 +1292,19 @@ const analyst = defineAgent(
   { complete: (req) => llm.complete(req) },
 )
 
+// Summary — compresses old messages into an LLM-generated summary
+import { createSummarizeFn } from '@elsium-ai/agents'
+
+const summarize = createSummarizeFn((req) => llm.complete(req))
+const longRunning = defineAgent(
+  {
+    name: 'long-running',
+    system: 'You are a helpful assistant.',
+    memory: { strategy: 'summary', maxMessages: 20, summarize },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+
 // Multi-turn conversation — memory persists across calls
 await chatbot.run('My name is Alice.')
 const result = await chatbot.run('What is my name?')
@@ -1223,6 +1313,8 @@ const result = await chatbot.run('What is my name?')
 // Reset when needed
 chatbot.resetMemory()
 ```
+
+The `summary` strategy keeps the most recent half of `maxMessages` and replaces older messages with a system message containing a summary. Call `memory.summarizeIfNeeded()` to trigger summarization (it's a no-op when under the limit).
 
 ### Lifecycle hooks
 
@@ -1565,6 +1657,12 @@ memory.clear()                                  // Reset
 // Token-limited — keeps messages up to a token budget
 const tokenMemory = createMemory({ strategy: 'token-limited', maxTokens: 32_000 })
 
+// Summary — compresses old messages with an LLM
+import { createSummarizeFn } from '@elsium-ai/agents'
+const summarize = createSummarizeFn((req) => llm.complete(req))
+const summaryMemory = createMemory({ strategy: 'summary', maxMessages: 20, summarize })
+await summaryMemory.summarizeIfNeeded() // triggers compression when over limit
+
 // Unlimited — keeps everything (use with caution)
 const fullMemory = createMemory({ strategy: 'unlimited' })
 ```
@@ -1681,6 +1779,116 @@ const confidence = await scorer.score(
 )
 console.log(confidence.overall)           // 0.85
 console.log(confidence.hallucinationRisk) // 0.1
+```
+
+### Channel Adapters
+
+Connect agents to messaging platforms. Implement the `ChannelAdapter` interface for custom platforms, or use `createWebhookChannel` for HTTP-based integrations.
+
+```ts
+import {
+  createWebhookChannel, createChannelGateway,
+  createSessionRouter, defineAgent,
+} from 'elsium-ai/agents'
+
+// Create a webhook channel (e.g., for your REST API)
+const webhook = createWebhookChannel({
+  name: 'api',
+  onSend: async (userId, msg) => {
+    await pushNotification(userId, msg.text)
+  },
+})
+
+// Create a custom adapter for any platform
+const slackAdapter: ChannelAdapter = {
+  name: 'slack',
+  async start() { /* connect to Slack WebSocket */ },
+  async stop() { /* disconnect */ },
+  async send(userId, msg) { /* post to Slack channel */ },
+  onMessage(handler) { /* wire up Slack events → handler */ },
+}
+
+const agent = defineAgent({ name: 'assistant', system: 'You help users.' })
+const router = createSessionRouter({ defaultAgent: agent })
+
+const gateway = createChannelGateway({
+  adapters: [webhook, slackAdapter],
+  router,
+  agent,
+  resolveAgent: (msg) => {
+    // Route different messages to different agents
+    if (msg.text.startsWith('/billing')) return billingAgent
+    return undefined // use default
+  },
+})
+
+await gateway.start()
+
+// In your HTTP webhook handler:
+webhook.receive({ userId: 'user-123', text: 'Hello!' })
+```
+
+### Session Router
+
+Maps (channel, userId) pairs to conversation threads with concurrency control. Serial mode (default) ensures one agent turn at a time per session.
+
+```ts
+import { createSessionRouter, defineAgent } from 'elsium-ai/agents'
+
+const router = createSessionRouter({
+  defaultAgent: agent,
+  concurrency: 'serial',         // one turn at a time per session
+  sessionTimeout: 30 * 60_000,   // expire after 30 min idle
+  onSessionCreated: (s) => log.info('New session', { id: s.sessionId }),
+  onSessionExpired: (s) => log.info('Expired', { id: s.sessionId }),
+})
+
+// resolve() returns the same thread for the same channel+user
+const thread = await router.resolve({ channelName: 'slack', userId: 'U123' })
+const result = await thread.send('Help me reset my password')
+
+// Manage sessions
+router.listSessions()                       // all active sessions
+router.endSession('slack', 'U123')          // end one
+router.endAllSessions()                     // cleanup
+```
+
+### Task Scheduler
+
+Run agents on a cron schedule for autonomous tasks — daily reports, periodic monitoring, data syncs.
+
+```ts
+import { createScheduler, defineAgent } from 'elsium-ai/agents'
+
+const reporter = defineAgent({ name: 'reporter', system: 'Generate metric summaries.' })
+
+const scheduler = createScheduler({
+  agent: reporter,
+  onComplete: (task, result) => sendSlackMessage(result.message.content),
+  onError: (task, error) => alertOps(error.message),
+})
+
+// Every day at 9am
+scheduler.schedule('0 9 * * *', 'Generate the daily metrics report')
+
+// Every 30 minutes on weekdays
+scheduler.schedule('*/30 * * * 1-5', 'Check for critical alerts', {
+  name: 'alert-check',
+})
+
+// Run once immediately
+scheduler.schedule('0 0 1 1 *', 'Initial data sync', {
+  startImmediately: true,
+  maxRuns: 1,
+})
+
+scheduler.start()
+
+// Manage tasks
+scheduler.pause('alert-check')
+scheduler.resume('alert-check')
+scheduler.listTasks()
+scheduler.stop()
 ```
 
 ---

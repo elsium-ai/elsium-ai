@@ -30,7 +30,7 @@ Creates an agent that can reason, use tools, and maintain memory across turns.
 | `guardrails` | `Guardrail[]` | Input/output validation guardrails |
 | `maxIterations` | `number` | Maximum tool-use loop iterations (default: 10) |
 
-**Returns** an `Agent` with a `run(input, opts?)` method.
+**Returns** an `Agent` with `run(input, opts?)`, `stream(input, opts?)`, and `generate(input, schema, opts?)` methods.
 
 ```ts
 import { defineAgent, createMemory } from 'elsium-ai/agents'
@@ -50,12 +50,44 @@ const result = await agent.run('What are the latest advances in quantum computin
 
 ---
 
+## Structured Output
+
+### agent.generate
+
+```ts
+agent.generate<T>(input: string, schema: z.ZodType<T>, options?: AgentRunOptions): Promise<AgentGenerateResult<T>>
+```
+
+Runs the full agent loop (tools, guardrails, memory) and parses the final response into a typed object validated against a Zod schema. Throws `ElsiumError` if the response is not valid JSON or doesn't match the schema.
+
+**AgentGenerateResult\<T\>:**
+
+| Field | Type | Description |
+|---|---|---|
+| `data` | `T` | Parsed and validated data |
+| `result` | `AgentResult` | Full agent execution result |
+
+```ts
+import { z } from 'zod'
+
+const schema = z.object({
+  answer: z.string(),
+  confidence: z.number(),
+  sources: z.array(z.string()),
+})
+
+const { data } = await agent.generate('What causes rain?', schema)
+// data is fully typed: { answer: string, confidence: number, sources: string[] }
+```
+
+---
+
 ## Memory
 
 ### createMemory
 
 ```ts
-createMemory(strategy: 'sliding-window' | 'token-limited' | 'unlimited', opts?: MemoryOptions): Memory
+createMemory(config: MemoryConfig): Memory
 ```
 
 Creates a memory instance with the specified retention strategy.
@@ -64,14 +96,20 @@ Creates a memory instance with the specified retention strategy.
 |---|---|
 | `sliding-window` | Keeps the last N messages (configure with `maxMessages`) |
 | `token-limited` | Keeps messages within a token budget (configure with `maxTokens`) |
+| `summary` | Compresses old messages into an LLM-generated summary (configure with `maxMessages` + `summarize`) |
 | `unlimited` | Retains all messages (use with caution) |
 
 ```ts
-import { createMemory } from 'elsium-ai/agents'
+import { createMemory, createSummarizeFn } from 'elsium-ai/agents'
 
-const memory = createMemory('sliding-window', { maxMessages: 100 })
-const tokenMemory = createMemory('token-limited', { maxTokens: 8192 })
-const fullMemory = createMemory('unlimited')
+const memory = createMemory({ strategy: 'sliding-window', maxMessages: 100 })
+const tokenMemory = createMemory({ strategy: 'token-limited', maxTokens: 8192 })
+const fullMemory = createMemory({ strategy: 'unlimited' })
+
+// Summary strategy — compresses old messages with an LLM
+const summarize = createSummarizeFn((req) => llm.complete(req))
+const summaryMemory = createMemory({ strategy: 'summary', maxMessages: 20, summarize })
+await summaryMemory.summarizeIfNeeded()
 ```
 
 ### createInMemoryMemoryStore
@@ -450,4 +488,229 @@ const result = await executeStateMachine(agent, {
     },
   },
 }, 'I was double-charged on my last invoice')
+```
+
+---
+
+## Channels
+
+### createWebhookChannel
+
+```ts
+createWebhookChannel(config: WebhookChannelConfig): ChannelAdapter & { receive(msg): void }
+```
+
+Creates a webhook-based channel adapter. Call `receive()` to inject incoming messages (e.g., from an HTTP webhook handler).
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Channel identifier |
+| `onSend` | `(userId, message) => void` | Callback when agent sends a response |
+
+### ChannelAdapter
+
+```ts
+interface ChannelAdapter {
+  readonly name: string
+  start(): Promise<void>
+  stop(): Promise<void>
+  send(userId: string, message: OutgoingMessage): Promise<void>
+  onMessage(handler: (message: IncomingMessage) => void): void
+}
+```
+
+Implement this interface to create custom adapters for messaging platforms (WhatsApp, Telegram, Discord, Slack, etc.).
+
+**IncomingMessage:**
+
+| Field | Type | Description |
+|---|---|---|
+| `channelName` | `string` | Which channel the message came from |
+| `userId` | `string` | User identifier on the platform |
+| `text` | `string` | Message text |
+| `attachments` | `ChannelAttachment[]?` | Optional attachments |
+| `metadata` | `Record?` | Platform-specific metadata |
+| `raw` | `unknown?` | Raw platform message |
+
+### createChannelGateway
+
+```ts
+createChannelGateway(config: ChannelGatewayConfig): ChannelGateway
+```
+
+Connects channel adapters to agents via a session router. Incoming messages are routed to the correct session, processed by the agent, and responses are sent back through the originating channel.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `adapters` | `ChannelAdapter[]` | Channel adapters to connect |
+| `router` | `SessionRouter` | Session router for thread management |
+| `agent` | `Agent` | Default agent for all channels |
+| `resolveAgent` | `(msg) => Agent?` | Dynamic agent selection per message |
+| `onError` | `(error, msg) => void` | Error callback |
+
+```ts
+import {
+  createWebhookChannel, createChannelGateway,
+  createSessionRouter, defineAgent,
+} from 'elsium-ai/agents'
+
+const webhook = createWebhookChannel({
+  name: 'api',
+  onSend: (userId, msg) => sendPushNotification(userId, msg.text),
+})
+
+const agent = defineAgent({ name: 'assistant', system: 'You are helpful.' })
+const router = createSessionRouter({ defaultAgent: agent })
+
+const gateway = createChannelGateway({
+  adapters: [webhook],
+  router,
+  agent,
+})
+
+await gateway.start()
+
+// In your HTTP handler:
+webhook.receive({ userId: 'user-123', text: 'Hello!' })
+```
+
+---
+
+## Session Router
+
+### createSessionRouter
+
+```ts
+createSessionRouter(config: SessionRouterConfig): SessionRouter
+```
+
+Maps (channel, userId) pairs to persistent conversation threads with concurrency control.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `defaultAgent` | `Agent` | Agent used when none specified |
+| `store` | `ThreadStore?` | Optional persistence for threads |
+| `concurrency` | `'serial' \| 'parallel'` | Concurrency mode (default: `'serial'`) |
+| `sessionTimeout` | `number?` | Auto-expire sessions after ms of inactivity |
+| `onSessionCreated` | `(session) => void` | Callback on new session |
+| `onSessionExpired` | `(session) => void` | Callback on session expiry |
+
+**SessionRouter methods:**
+
+| Method | Returns | Description |
+|---|---|---|
+| `resolve(opts)` | `Promise<Thread>` | Get or create a thread for channel+user |
+| `getSession(channel, userId)` | `SessionInfo \| null` | Get session info |
+| `listSessions()` | `SessionInfo[]` | List all active sessions |
+| `endSession(channel, userId)` | `boolean` | End a specific session |
+| `endAllSessions()` | `void` | End all sessions and cleanup |
+
+**Serial concurrency** (default) ensures only one agent turn runs at a time per session — subsequent messages wait for the current turn to complete. This prevents race conditions in conversation history.
+
+```ts
+import { createSessionRouter, defineAgent, createInMemoryThreadStore } from 'elsium-ai/agents'
+
+const agent = defineAgent({ name: 'support', system: 'You help users.' })
+const store = createInMemoryThreadStore()
+
+const router = createSessionRouter({
+  defaultAgent: agent,
+  store,
+  concurrency: 'serial',
+  sessionTimeout: 30 * 60 * 1000, // 30 minutes
+  onSessionCreated: (s) => console.log(`New session: ${s.sessionId}`),
+  onSessionExpired: (s) => console.log(`Expired: ${s.sessionId}`),
+})
+
+// Get or create a thread for this user
+const thread = await router.resolve({ channelName: 'slack', userId: 'U12345' })
+const result = await thread.send('Help me reset my password')
+```
+
+---
+
+## Scheduler
+
+### createScheduler
+
+```ts
+createScheduler(config: SchedulerConfig): Scheduler
+```
+
+Cron-based task scheduler for recurring agent tasks. Agents run autonomously on schedule.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `agent` | `Agent` | Default agent for scheduled tasks |
+| `resolveAgent` | `(task) => Agent?` | Dynamic agent selection per task |
+| `onComplete` | `(task, result) => void` | Callback on successful run |
+| `onError` | `(task, error) => void` | Callback on failed run |
+| `tickIntervalMs` | `number` | Check interval in ms (default: 60000) |
+
+**Scheduler methods:**
+
+| Method | Returns | Description |
+|---|---|---|
+| `schedule(cron, input, opts?)` | `ScheduledTask` | Schedule a recurring task |
+| `unschedule(taskId)` | `boolean` | Remove a scheduled task |
+| `getTask(taskId)` | `ScheduledTask \| null` | Get task by ID |
+| `listTasks()` | `ScheduledTask[]` | List all tasks |
+| `pause(taskId)` | `boolean` | Pause a task |
+| `resume(taskId)` | `boolean` | Resume a paused task |
+| `start()` | `void` | Start the scheduler tick loop |
+| `stop()` | `void` | Stop the scheduler |
+
+**Schedule options:**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string?` | Custom task ID |
+| `name` | `string?` | Human-readable name |
+| `startImmediately` | `boolean?` | Run once immediately |
+| `maxRuns` | `number?` | Stop after N runs |
+
+### parseCronExpression / cronMatchesDate / getNextCronDate
+
+```ts
+parseCronExpression(expression: string): CronFields | null
+cronMatchesDate(fields: CronFields, date: Date): boolean
+getNextCronDate(fields: CronFields, after: Date): Date
+```
+
+Cron utilities. Standard 5-field cron syntax: `minute hour dayOfMonth month dayOfWeek`. Supports `*`, ranges (`1-5`), steps (`*/15`), and comma-separated values (`0,30`).
+
+```ts
+import { createScheduler, defineAgent } from 'elsium-ai/agents'
+
+const agent = defineAgent({ name: 'reporter', system: 'Generate a daily summary.' })
+
+const scheduler = createScheduler({
+  agent,
+  onComplete: (task, result) => sendSlackMessage(result.message.content),
+  onError: (task, error) => alertOps(error),
+})
+
+// Every day at 9am
+scheduler.schedule('0 9 * * *', 'Generate the daily metrics report')
+
+// Every 30 minutes on weekdays
+scheduler.schedule('*/30 * * * 1-5', 'Check for critical alerts', {
+  name: 'alert-check',
+})
+
+// Run once immediately, then stop
+scheduler.schedule('0 0 1 1 *', 'Run initial data sync', {
+  startImmediately: true,
+  maxRuns: 1,
+})
+
+scheduler.start()
 ```

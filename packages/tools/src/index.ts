@@ -11,3 +11,7 @@ export { formatToolResult, formatToolResultAsText } from './format'
 
 // Built-in tools
 export { httpFetchTool, calculatorTool, jsonParseTool, currentTimeTool } from './builtin'
+
+// Retrieval tool
+export { createRetrievalTool } from './retrieval'
+export type { RetrievalToolConfig, RetrievalResult, RetrieveFn } from './retrieval'

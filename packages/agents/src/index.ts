@@ -1,6 +1,6 @@
 // Agent
 export { defineAgent } from './agent'
-export type { Agent, AgentDependencies } from './agent'
+export type { Agent, AgentDependencies, AgentGenerateResult } from './agent'
 
 // Types
 export type {
@@ -16,8 +16,8 @@ export type {
 } from './types'
 
 // Memory
-export { createMemory } from './memory'
-export type { Memory, MemoryConfig, MemoryStrategy } from './memory'
+export { createMemory, createSummarizeFn } from './memory'
+export type { Memory, MemoryConfig, MemoryStrategy, SummarizeFn } from './memory'
 
 // Memory Stores
 export { createInMemoryMemoryStore, createSqliteMemoryStore } from './stores/index'
@@ -80,3 +80,34 @@ export type {
 	ApprovalGateConfig,
 	ApprovalGate,
 } from './approval'
+
+// Channels
+export { createChannelGateway, createWebhookChannel } from './channels'
+export type {
+	ChannelAdapter,
+	ChannelGateway,
+	ChannelGatewayConfig,
+	IncomingMessage,
+	OutgoingMessage,
+	ChannelAttachment,
+	WebhookChannelConfig,
+} from './channels'
+
+// Session Router
+export { createSessionRouter } from './session'
+export type {
+	SessionRouter,
+	SessionRouterConfig,
+	SessionInfo,
+	SessionResolveOptions,
+} from './session'
+
+// Scheduler
+export { createScheduler, parseCronExpression, cronMatchesDate, getNextCronDate } from './scheduler'
+export type {
+	Scheduler,
+	SchedulerConfig,
+	ScheduleOptions,
+	ScheduledTask,
+	CronFields,
+} from './scheduler'
