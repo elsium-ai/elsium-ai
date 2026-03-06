@@ -52,6 +52,25 @@ export type { ConfidenceConfig, ConfidenceResult } from './confidence'
 // State Machine
 export { executeStateMachine } from './state-machine'
 
+// Streaming
+export { createAgentStream } from './streaming'
+export type { AgentStreamEvent, AgentStream, StreamingAgentDependencies } from './streaming'
+
+// Threads
+export { createThread, loadThread, createInMemoryThreadStore } from './thread'
+export type { Thread, ThreadConfig, ThreadStore, ThreadSnapshot, ThreadSummary } from './thread'
+
+// Async Agent
+export { createAsyncAgent } from './async-agent'
+export type {
+	AsyncAgent,
+	AsyncAgentConfig,
+	AsyncAgentRunOptions,
+	AgentTask,
+	TaskStatus,
+	TaskProgressEvent,
+} from './async-agent'
+
 // Approval Gates
 export { createApprovalGate, shouldRequireApproval } from './approval'
 export type {

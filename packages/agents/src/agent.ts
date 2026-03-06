@@ -1,5 +1,5 @@
 import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-ai/core'
-import { ElsiumError, extractText, generateTraceId } from '@elsium-ai/core'
+import { ElsiumError, type ElsiumStream, extractText, generateTraceId } from '@elsium-ai/core'
 import { gateway } from '@elsium-ai/gateway'
 import type { ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
@@ -10,18 +10,22 @@ import { createAgentSecurity } from './security'
 import type { SemanticValidationResult } from './semantic-guardrails'
 import { createSemanticValidator } from './semantic-guardrails'
 import { executeStateMachine } from './state-machine'
+import type { AgentStream, StreamingAgentDependencies } from './streaming'
+import { createAgentStream } from './streaming'
 import type { AgentConfig, AgentResult, AgentRunOptions, GuardrailConfig } from './types'
 
 export interface Agent {
 	readonly name: string
 	readonly config: AgentConfig
 	run(input: string, options?: AgentRunOptions): Promise<AgentResult>
+	stream(input: string, options?: AgentRunOptions): AgentStream
 	chat(messages: Message[], options?: AgentRunOptions): Promise<AgentResult>
 	resetMemory(): void
 }
 
 export interface AgentDependencies {
 	complete: (request: CompletionRequest) => Promise<LLMResponse>
+	stream?: (request: CompletionRequest) => ElsiumStream
 }
 
 type OutputProcessResult =
@@ -42,7 +46,10 @@ function resolveDependencies(config: AgentConfig, deps?: AgentDependencies): Age
 	if (deps) return deps
 	if (typeof config.provider === 'object' && config.provider !== null) {
 		const provider = config.provider
-		return { complete: (req) => provider.complete(req) }
+		return {
+			complete: (req) => provider.complete(req),
+			stream: (req) => provider.stream(req),
+		}
 	}
 	if (!config.provider || !config.apiKey) {
 		throw ElsiumError.validation(
@@ -55,7 +62,10 @@ function resolveDependencies(config: AgentConfig, deps?: AgentDependencies): Age
 		baseUrl: config.baseUrl,
 		model: config.model,
 	})
-	return { complete: (req) => gw.complete(req) }
+	return {
+		complete: (req) => gw.complete(req),
+		stream: (req) => gw.stream(req),
+	}
 }
 
 export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agent {
@@ -441,7 +451,6 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		async run(input: string, options: AgentRunOptions = {}): Promise<AgentResult> {
 			validateInputText(input)
 
-			// State machine mode
 			if (config.states && config.initialState) {
 				return executeStateMachine(
 					config,
@@ -454,6 +463,29 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 			const userMessage: Message = { role: 'user', content: input }
 			return executeLoop([userMessage], options)
+		},
+
+		stream(input: string, options: AgentRunOptions = {}): AgentStream {
+			validateInputText(input)
+
+			const streamDeps = resolvedDeps as StreamingAgentDependencies
+			if (!streamDeps.stream) {
+				throw ElsiumError.validation(
+					'Streaming requires a stream function in agent dependencies. ' +
+						'Pass { complete, stream } or use a provider that supports streaming.',
+				)
+			}
+
+			const userMessage: Message = { role: 'user', content: input }
+			return createAgentStream([userMessage], {
+				config,
+				deps: streamDeps,
+				memory,
+				toolMap,
+				options,
+				maxIterations: guardrails.maxIterations,
+				maxTokenBudget: guardrails.maxTokenBudget,
+			})
 		},
 
 		async chat(messages: Message[], options: AgentRunOptions = {}): Promise<AgentResult> {
