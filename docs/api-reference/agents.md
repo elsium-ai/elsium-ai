@@ -188,6 +188,143 @@ const result = await runSupervisor(
 
 ---
 
+## Streaming
+
+### agent.stream
+
+```ts
+agent.stream(input: string, options?: AgentRunOptions): AgentStream
+```
+
+Streams agent execution in real-time. Returns an `AgentStream` that yields `AgentStreamEvent` objects and provides a `.result()` method for the final `AgentResult`.
+
+Requires a `stream` function in agent dependencies.
+
+**AgentStreamEvent types:**
+
+| Type | Fields | Description |
+|---|---|---|
+| `text_delta` | `text: string` | Incremental text from the LLM |
+| `tool_call_start` | `toolCall: { id, name }` | Tool call initiated |
+| `tool_call_delta` | `toolCallId, arguments` | Partial tool arguments |
+| `tool_call_end` | `toolCallId` | Tool arguments complete |
+| `tool_result` | `toolCallId, name, result` | Tool execution result |
+| `iteration_start` | `iteration: number` | New loop iteration |
+| `iteration_end` | `iteration: number` | Loop iteration complete |
+| `agent_end` | `result: AgentResult` | Agent finished |
+| `error` | `error: Error` | Execution error |
+
+```ts
+const agent = defineAgent(
+  { name: 'assistant', system: 'You are helpful.' },
+  { complete: (req) => llm.complete(req), stream: (req) => llm.stream(req) },
+)
+
+const stream = agent.stream('Hello')
+for await (const event of stream) {
+  if (event.type === 'text_delta') process.stdout.write(event.text)
+}
+const result = await stream.result()
+```
+
+---
+
+## Threads
+
+### createThread
+
+```ts
+createThread(config: ThreadConfig): Thread
+```
+
+Creates a conversation thread that manages message history across multiple `send()` calls.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string?` | Custom thread ID (auto-generated if omitted) |
+| `agent` | `Agent` | The agent to use for this thread |
+| `metadata` | `Record?` | Custom metadata |
+| `store` | `ThreadStore?` | Persistence adapter |
+
+**Thread methods:**
+
+| Method | Returns | Description |
+|---|---|---|
+| `send(input)` | `Promise<AgentResult>` | Send a message and get a response |
+| `stream(input)` | `AgentStream` | Stream a response |
+| `getMessages()` | `Message[]` | Get full conversation history |
+| `addMessage(msg)` | `void` | Manually add a message |
+| `fork(opts?)` | `Thread` | Fork thread with full history |
+| `clear()` | `void` | Clear all messages |
+| `save()` | `Promise<void>` | Manually persist to store |
+
+### loadThread
+
+```ts
+loadThread(threadId: string, config: { agent, store }): Promise<Thread | null>
+```
+
+Loads a thread from a store. Returns `null` if not found.
+
+### createInMemoryThreadStore
+
+```ts
+createInMemoryThreadStore(): ThreadStore
+```
+
+In-memory thread persistence. Data lost on process exit.
+
+---
+
+## Async Agents
+
+### createAsyncAgent
+
+```ts
+createAsyncAgent(config: AsyncAgentConfig): AsyncAgent
+```
+
+Wraps an agent for background task execution with progress tracking and cancellation.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `agent` | `Agent` | The agent to run tasks with |
+| `onProgress` | `(task, event) => void` | Progress callback |
+| `onComplete` | `(task) => void` | Completion callback |
+| `onError` | `(task, error) => void` | Error callback |
+
+**AsyncAgent methods:**
+
+| Method | Returns | Description |
+|---|---|---|
+| `submit(input, opts?)` | `AgentTask` | Submit a task for execution |
+| `getTask(id)` | `AgentTask \| null` | Get a task by ID |
+| `listTasks(filter?)` | `AgentTask[]` | List tasks, optionally filtered by status |
+| `cancelAll()` | `void` | Cancel all pending/running tasks |
+
+**AgentTask:**
+
+| Property/Method | Description |
+|---|---|
+| `id` | Task identifier |
+| `status` | `'pending' \| 'running' \| 'completed' \| 'failed' \| 'cancelled'` |
+| `result` | `AgentResult \| null` |
+| `error` | `Error \| null` |
+| `wait()` | `Promise<AgentResult>` — resolves when task completes |
+| `cancel()` | Cancel the task |
+
+```ts
+const asyncAgent = createAsyncAgent({ agent, onComplete: (t) => notify(t.id) })
+const task = asyncAgent.submit('Research quantum computing')
+const result = await task.wait()
+```
+
+---
+
 ## Guardrails
 
 ### createSemanticValidator

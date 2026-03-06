@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/workflows",
-	"version": "0.4.3",
+	"version": "0.5.0",
 	"description": "Multi-step workflow pipelines and DAG execution for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",

@@ -67,6 +67,9 @@ Three Pillars — where each feature lives:
 - [Tools](#tools)
   - [Tool Result Formatting](#tool-result-formatting)
 - [Agents](#agents)
+  - [Streaming](#streaming)
+  - [Conversation Threads](#conversation-threads)
+  - [Async / Background Agents](#async--background-agents)
   - [Standalone Memory](#standalone-memory)
   - [Persistent Memory Stores](#persistent-memory-stores)
   - [Standalone Security & Semantic Validation](#standalone-security--semantic-validation)
@@ -1363,6 +1366,184 @@ const result = await orderBot.run('I want to check on order #12345')
 console.log(result.finalState)     // 'closing'
 console.log(result.stateHistory)   // [{ state: 'identify', transitionedTo: 'assist' }, ...]
 ```
+
+### Streaming
+
+Stream agent responses in real-time, including text deltas, tool calls, and tool results as they happen:
+
+```typescript
+import { defineAgent } from '@elsium-ai/agents'
+import { gateway } from '@elsium-ai/gateway'
+import { env } from '@elsium-ai/core'
+
+const llm = gateway({
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  apiKey: env('ANTHROPIC_API_KEY'),
+})
+
+const agent = defineAgent(
+  { name: 'streamer', system: 'You are helpful.' },
+  {
+    complete: (req) => llm.complete(req),
+    stream: (req) => llm.stream(req),
+  },
+)
+
+// Stream text deltas to the user in real-time
+const stream = agent.stream('Explain quantum computing')
+
+for await (const event of stream) {
+  switch (event.type) {
+    case 'text_delta':
+      process.stdout.write(event.text)
+      break
+    case 'tool_call_start':
+      console.log(`\n[Calling tool: ${event.toolCall.name}]`)
+      break
+    case 'tool_result':
+      console.log(`[Tool result: ${event.result.success ? 'OK' : 'FAIL'}]`)
+      break
+    case 'iteration_start':
+      console.log(`\n--- Iteration ${event.iteration} ---`)
+      break
+    case 'agent_end':
+      console.log(`\n\nDone in ${event.result.usage.iterations} iterations`)
+      break
+  }
+}
+
+// Get the final result after the stream completes
+const result = await stream.result()
+console.log(result.message.content)
+console.log(result.toolCalls)
+```
+
+**Event types:**
+
+| Event | Description |
+|---|---|
+| `text_delta` | Incremental text from the LLM |
+| `tool_call_start` | Tool call initiated (name and ID) |
+| `tool_call_delta` | Partial tool call arguments |
+| `tool_call_end` | Tool call arguments complete |
+| `tool_result` | Tool execution result (success/failure + data) |
+| `iteration_start` | New agent loop iteration began |
+| `iteration_end` | Agent loop iteration completed |
+| `agent_end` | Agent finished — contains the final `AgentResult` |
+| `error` | An error occurred during execution |
+
+When using an `LLMProvider` object as the `provider` config, streaming is automatically available — no extra setup needed.
+
+### Conversation Threads
+
+Manage persistent multi-turn conversations with automatic history tracking, forking, and pluggable storage:
+
+```typescript
+import { defineAgent, createThread, createInMemoryThreadStore } from '@elsium-ai/agents'
+
+const agent = defineAgent(
+  { name: 'assistant', system: 'You are a helpful assistant.' },
+  { complete: (req) => llm.complete(req), stream: (req) => llm.stream(req) },
+)
+
+// Create a thread
+const thread = createThread({ agent })
+
+// Send messages — history is tracked automatically
+const result1 = await thread.send('My name is Alice')
+const result2 = await thread.send('What is my name?')
+// Agent remembers: "Your name is Alice."
+
+// Inspect the conversation
+console.log(thread.getMessages())  // All messages in order
+
+// Fork a thread to explore alternatives
+const forked = thread.fork()
+await forked.send('Actually, call me Bob')
+// Original thread is unchanged
+
+// Stream within a thread
+const stream = thread.stream('Tell me a story')
+for await (const event of stream) {
+  if (event.type === 'text_delta') process.stdout.write(event.text)
+}
+```
+
+**Persistent threads with a store:**
+
+```typescript
+const store = createInMemoryThreadStore()
+
+// Create a thread with persistence
+const thread = createThread({ agent, id: 'session-123', store })
+await thread.send('Hello')
+
+// Later — resume the conversation
+import { loadThread } from '@elsium-ai/agents'
+
+const resumed = await loadThread('session-123', { agent, store })
+if (resumed) {
+  await resumed.send('Where were we?')
+}
+
+// List all threads
+const threads = await store.list({ limit: 10 })
+// [{ id, messageCount, createdAt, updatedAt, lastMessage }]
+```
+
+Implement your own `ThreadStore` for any backend (Redis, PostgreSQL, DynamoDB, etc.) by providing `load`, `save`, `delete`, and `list` methods.
+
+### Async / Background Agents
+
+Run agents as background tasks with progress tracking, cancellation, and concurrent execution:
+
+```typescript
+import { defineAgent, createAsyncAgent } from '@elsium-ai/agents'
+
+const agent = defineAgent(
+  { name: 'researcher', system: 'You research topics in depth.' },
+  { complete: (req) => llm.complete(req) },
+)
+
+const asyncAgent = createAsyncAgent({
+  agent,
+  onProgress: (task, event) => {
+    console.log(`[${task.id}] ${event.type}`)
+  },
+  onComplete: (task) => {
+    console.log(`Task ${task.id} completed`)
+  },
+  onError: (task, error) => {
+    console.error(`Task ${task.id} failed: ${error.message}`)
+  },
+})
+
+// Submit tasks — they run in the background
+const task1 = asyncAgent.submit('Research quantum computing')
+const task2 = asyncAgent.submit('Research AI safety')
+
+console.log(task1.status)  // 'pending' or 'running'
+
+// Wait for a specific task
+const result = await task1.wait()
+console.log(result.message.content)
+
+// Cancel a task
+task2.cancel()
+
+// List and filter tasks
+const running = asyncAgent.listTasks({ status: 'running' })
+const all = asyncAgent.listTasks()
+
+// Get a specific task by ID
+const task = asyncAgent.getTask(task1.id)
+
+// Cancel everything
+asyncAgent.cancelAll()
+```
+
+**Task lifecycle:** `pending` → `running` → `completed` | `failed` | `cancelled`
 
 ### Standalone Memory
 

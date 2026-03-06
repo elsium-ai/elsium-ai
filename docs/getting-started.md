@@ -107,9 +107,17 @@ const assistant = defineAgent(
 const result = await assistant.run('What is TypeScript?')
 console.log(result.message.content)
 
-// 4. Inspect the call with X-Ray
+// 4. Or stream the response in real-time
+const stream = assistant.stream('Explain TypeScript in detail')
+for await (const event of stream) {
+  if (event.type === 'text_delta') process.stdout.write(event.text)
+}
+
+// 5. Inspect the call with X-Ray
 console.log(llm.lastCall())  // { traceId, provider, model, latencyMs, request, response, usage, cost }
 ```
+
+> **Note:** Streaming requires a `stream` function in dependencies. When using an `LLMProvider` object or `provider` + `apiKey` config, streaming is auto-configured.
 
 Run it:
 

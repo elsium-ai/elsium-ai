@@ -166,6 +166,14 @@ export {
 	// Memory Stores
 	createInMemoryMemoryStore,
 	createSqliteMemoryStore,
+	// Streaming
+	createAgentStream,
+	// Threads
+	createThread,
+	loadThread,
+	createInMemoryThreadStore,
+	// Async Agent
+	createAsyncAgent,
 } from '@elsium-ai/agents'
 
 export type {
@@ -193,6 +201,23 @@ export type {
 	// Memory Store types
 	MemoryStore,
 	SqliteMemoryStoreConfig,
+	// Streaming types
+	AgentStreamEvent,
+	AgentStream,
+	StreamingAgentDependencies,
+	// Thread types
+	Thread,
+	ThreadConfig,
+	ThreadStore,
+	ThreadSnapshot,
+	ThreadSummary,
+	// Async Agent types
+	AsyncAgent,
+	AsyncAgentConfig,
+	AsyncAgentRunOptions,
+	AgentTask,
+	TaskStatus,
+	TaskProgressEvent,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────
