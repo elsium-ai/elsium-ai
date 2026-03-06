@@ -73,6 +73,9 @@ Three Pillars — where each feature lives:
   - [Standalone Memory](#standalone-memory)
   - [Persistent Memory Stores](#persistent-memory-stores)
   - [Standalone Security & Semantic Validation](#standalone-security--semantic-validation)
+  - [Channel Adapters](#channel-adapters)
+  - [Session Router](#session-router)
+  - [Task Scheduler](#task-scheduler)
 - [Multi-Agent Orchestration](#multi-agent-orchestration)
 - [RAG (Retrieval-Augmented Generation)](#rag-retrieval-augmented-generation)
   - [Standalone RAG Components](#standalone-rag-components)
@@ -1681,6 +1684,116 @@ const confidence = await scorer.score(
 )
 console.log(confidence.overall)           // 0.85
 console.log(confidence.hallucinationRisk) // 0.1
+```
+
+### Channel Adapters
+
+Connect agents to messaging platforms. Implement the `ChannelAdapter` interface for custom platforms, or use `createWebhookChannel` for HTTP-based integrations.
+
+```ts
+import {
+  createWebhookChannel, createChannelGateway,
+  createSessionRouter, defineAgent,
+} from 'elsium-ai/agents'
+
+// Create a webhook channel (e.g., for your REST API)
+const webhook = createWebhookChannel({
+  name: 'api',
+  onSend: async (userId, msg) => {
+    await pushNotification(userId, msg.text)
+  },
+})
+
+// Create a custom adapter for any platform
+const slackAdapter: ChannelAdapter = {
+  name: 'slack',
+  async start() { /* connect to Slack WebSocket */ },
+  async stop() { /* disconnect */ },
+  async send(userId, msg) { /* post to Slack channel */ },
+  onMessage(handler) { /* wire up Slack events → handler */ },
+}
+
+const agent = defineAgent({ name: 'assistant', system: 'You help users.' })
+const router = createSessionRouter({ defaultAgent: agent })
+
+const gateway = createChannelGateway({
+  adapters: [webhook, slackAdapter],
+  router,
+  agent,
+  resolveAgent: (msg) => {
+    // Route different messages to different agents
+    if (msg.text.startsWith('/billing')) return billingAgent
+    return undefined // use default
+  },
+})
+
+await gateway.start()
+
+// In your HTTP webhook handler:
+webhook.receive({ userId: 'user-123', text: 'Hello!' })
+```
+
+### Session Router
+
+Maps (channel, userId) pairs to conversation threads with concurrency control. Serial mode (default) ensures one agent turn at a time per session.
+
+```ts
+import { createSessionRouter, defineAgent } from 'elsium-ai/agents'
+
+const router = createSessionRouter({
+  defaultAgent: agent,
+  concurrency: 'serial',         // one turn at a time per session
+  sessionTimeout: 30 * 60_000,   // expire after 30 min idle
+  onSessionCreated: (s) => log.info('New session', { id: s.sessionId }),
+  onSessionExpired: (s) => log.info('Expired', { id: s.sessionId }),
+})
+
+// resolve() returns the same thread for the same channel+user
+const thread = await router.resolve({ channelName: 'slack', userId: 'U123' })
+const result = await thread.send('Help me reset my password')
+
+// Manage sessions
+router.listSessions()                       // all active sessions
+router.endSession('slack', 'U123')          // end one
+router.endAllSessions()                     // cleanup
+```
+
+### Task Scheduler
+
+Run agents on a cron schedule for autonomous tasks — daily reports, periodic monitoring, data syncs.
+
+```ts
+import { createScheduler, defineAgent } from 'elsium-ai/agents'
+
+const reporter = defineAgent({ name: 'reporter', system: 'Generate metric summaries.' })
+
+const scheduler = createScheduler({
+  agent: reporter,
+  onComplete: (task, result) => sendSlackMessage(result.message.content),
+  onError: (task, error) => alertOps(error.message),
+})
+
+// Every day at 9am
+scheduler.schedule('0 9 * * *', 'Generate the daily metrics report')
+
+// Every 30 minutes on weekdays
+scheduler.schedule('*/30 * * * 1-5', 'Check for critical alerts', {
+  name: 'alert-check',
+})
+
+// Run once immediately
+scheduler.schedule('0 0 1 1 *', 'Initial data sync', {
+  startImmediately: true,
+  maxRuns: 1,
+})
+
+scheduler.start()
+
+// Manage tasks
+scheduler.pause('alert-check')
+scheduler.resume('alert-check')
+scheduler.listTasks()
+scheduler.stop()
 ```
 
 ---

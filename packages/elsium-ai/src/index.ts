@@ -174,6 +174,16 @@ export {
 	createInMemoryThreadStore,
 	// Async Agent
 	createAsyncAgent,
+	// Channels
+	createChannelGateway,
+	createWebhookChannel,
+	// Session Router
+	createSessionRouter,
+	// Scheduler
+	createScheduler,
+	parseCronExpression,
+	cronMatchesDate,
+	getNextCronDate,
 } from '@elsium-ai/agents'
 
 export type {
@@ -218,6 +228,25 @@ export type {
 	AgentTask,
 	TaskStatus,
 	TaskProgressEvent,
+	// Channel types
+	ChannelAdapter,
+	ChannelGateway,
+	ChannelGatewayConfig,
+	IncomingMessage,
+	OutgoingMessage,
+	ChannelAttachment,
+	WebhookChannelConfig,
+	// Session Router types
+	SessionRouter,
+	SessionRouterConfig,
+	SessionInfo,
+	SessionResolveOptions,
+	// Scheduler types
+	Scheduler,
+	SchedulerConfig,
+	ScheduleOptions,
+	ScheduledTask,
+	CronFields,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────

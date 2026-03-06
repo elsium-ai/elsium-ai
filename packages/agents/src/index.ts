@@ -80,3 +80,34 @@ export type {
 	ApprovalGateConfig,
 	ApprovalGate,
 } from './approval'
+
+// Channels
+export { createChannelGateway, createWebhookChannel } from './channels'
+export type {
+	ChannelAdapter,
+	ChannelGateway,
+	ChannelGatewayConfig,
+	IncomingMessage,
+	OutgoingMessage,
+	ChannelAttachment,
+	WebhookChannelConfig,
+} from './channels'
+
+// Session Router
+export { createSessionRouter } from './session'
+export type {
+	SessionRouter,
+	SessionRouterConfig,
+	SessionInfo,
+	SessionResolveOptions,
+} from './session'
+
+// Scheduler
+export { createScheduler, parseCronExpression, cronMatchesDate, getNextCronDate } from './scheduler'
+export type {
+	Scheduler,
+	SchedulerConfig,
+	ScheduleOptions,
+	ScheduledTask,
+	CronFields,
+} from './scheduler'
