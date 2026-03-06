@@ -1,8 +1,10 @@
-import type { Message } from '@elsium-ai/core'
+import type { CompletionRequest, LLMResponse, Message } from '@elsium-ai/core'
 import { extractText } from '@elsium-ai/core'
 import type { MemoryStore } from './stores/memory-store'
 
-export type MemoryStrategy = 'sliding-window' | 'token-limited' | 'unlimited'
+export type MemoryStrategy = 'sliding-window' | 'token-limited' | 'summary' | 'unlimited'
+
+export type SummarizeFn = (messages: Message[]) => Promise<string>
 
 export interface MemoryConfig {
 	strategy: MemoryStrategy
@@ -10,6 +12,7 @@ export interface MemoryConfig {
 	maxMessages?: number
 	store?: MemoryStore
 	agentId?: string
+	summarize?: SummarizeFn
 }
 
 export interface Memory {
@@ -20,6 +23,7 @@ export interface Memory {
 	getTokenEstimate(): number
 	loadFromStore(): Promise<void>
 	saveToStore(): Promise<void>
+	summarizeIfNeeded(): Promise<void>
 }
 
 export function createMemory(config: MemoryConfig): Memory {
@@ -54,6 +58,36 @@ export function createMemory(config: MemoryConfig): Memory {
 		}
 	}
 
+	let summaryPending = false
+
+	function needsSummarization(): boolean {
+		if (config.strategy !== 'summary') return false
+		if (!config.summarize) return false
+		return messages.length > maxMessages
+	}
+
+	async function runSummarization() {
+		if (summaryPending || !config.summarize) return
+		if (messages.length <= maxMessages) return
+
+		summaryPending = true
+		try {
+			const keepCount = Math.floor(maxMessages / 2)
+			const toSummarize = messages.splice(0, messages.length - keepCount)
+			const summaryText = await config.summarize(toSummarize)
+			messages.unshift({
+				role: 'system',
+				content: `[Conversation summary]: ${summaryText}`,
+			})
+		} finally {
+			summaryPending = false
+		}
+
+		if (config.store && config.agentId) {
+			config.store.save(config.agentId, [...messages]).catch(() => {})
+		}
+	}
+
 	return {
 		strategy: config.strategy,
 
@@ -66,6 +100,8 @@ export function createMemory(config: MemoryConfig): Memory {
 					break
 				case 'token-limited':
 					trimToTokenLimit()
+					break
+				case 'summary':
 					break
 				case 'unlimited':
 					break
@@ -102,5 +138,27 @@ export function createMemory(config: MemoryConfig): Memory {
 			if (!config.store || !config.agentId) return
 			await config.store.save(config.agentId, [...messages])
 		},
+
+		async summarizeIfNeeded(): Promise<void> {
+			if (needsSummarization()) {
+				await runSummarization()
+			}
+		},
+	}
+}
+
+const SUMMARIZE_SYSTEM =
+	'You are a conversation summarizer. Given a conversation, produce a concise summary that preserves all key facts, decisions, user preferences, and context needed to continue the conversation. Be factual and complete. Do not add commentary.'
+
+export function createSummarizeFn(
+	complete: (request: CompletionRequest) => Promise<LLMResponse>,
+): SummarizeFn {
+	return async (messages: Message[]): Promise<string> => {
+		const text = messages.map((m) => `${m.role}: ${extractText(m.content)}`).join('\n')
+		const response = await complete({
+			messages: [{ role: 'user', content: `Summarize this conversation:\n\n${text}` }],
+			system: SUMMARIZE_SYSTEM,
+		})
+		return extractText(response.message.content)
 	}
 }

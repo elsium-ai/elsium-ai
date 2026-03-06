@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createMemory } from './memory'
+import { createMemory, createSummarizeFn } from './memory'
 import type { MemoryStore } from './stores/memory-store'
 
 function makeMessage(text: string, role: 'user' | 'assistant' = 'user') {
@@ -192,5 +192,132 @@ describe('createMemory — store persistence', () => {
 		await Promise.resolve()
 
 		expect(store.save).not.toHaveBeenCalled()
+	})
+})
+
+describe('createMemory — summary', () => {
+	it('does not trim immediately on add', () => {
+		const mem = createMemory({
+			strategy: 'summary',
+			maxMessages: 3,
+			summarize: vi.fn(),
+		})
+
+		mem.add(makeMessage('a'))
+		mem.add(makeMessage('b'))
+		mem.add(makeMessage('c'))
+		mem.add(makeMessage('d'))
+
+		expect(mem.getMessages()).toHaveLength(4)
+	})
+
+	it('summarizes old messages when summarizeIfNeeded is called', async () => {
+		const summarize = vi.fn().mockResolvedValue('Summary of a and b')
+		const mem = createMemory({
+			strategy: 'summary',
+			maxMessages: 3,
+			summarize,
+		})
+
+		mem.add(makeMessage('a'))
+		mem.add(makeMessage('b'))
+		mem.add(makeMessage('c'))
+		mem.add(makeMessage('d'))
+
+		await mem.summarizeIfNeeded()
+
+		const messages = mem.getMessages()
+		expect(summarize).toHaveBeenCalled()
+		expect(messages[0].role).toBe('system')
+		expect(messages[0].content).toContain('Summary of a and b')
+	})
+
+	it('keeps half of maxMessages as recent messages', async () => {
+		const summarize = vi.fn().mockResolvedValue('Summary')
+		const mem = createMemory({
+			strategy: 'summary',
+			maxMessages: 4,
+			summarize,
+		})
+
+		for (let i = 0; i < 6; i++) {
+			mem.add(makeMessage(`msg-${i}`))
+		}
+
+		await mem.summarizeIfNeeded()
+
+		const messages = mem.getMessages()
+		expect(messages[0].role).toBe('system')
+		expect(messages).toHaveLength(3)
+	})
+
+	it('does not summarize when under limit', async () => {
+		const summarize = vi.fn()
+		const mem = createMemory({
+			strategy: 'summary',
+			maxMessages: 10,
+			summarize,
+		})
+
+		mem.add(makeMessage('a'))
+		mem.add(makeMessage('b'))
+
+		await mem.summarizeIfNeeded()
+
+		expect(summarize).not.toHaveBeenCalled()
+	})
+
+	it('does nothing when no summarize function provided', async () => {
+		const mem = createMemory({
+			strategy: 'summary',
+			maxMessages: 2,
+		})
+
+		mem.add(makeMessage('a'))
+		mem.add(makeMessage('b'))
+		mem.add(makeMessage('c'))
+
+		await mem.summarizeIfNeeded()
+		expect(mem.getMessages()).toHaveLength(3)
+	})
+
+	it('passes correct messages to summarize function', async () => {
+		const summarize = vi.fn().mockResolvedValue('Summary')
+		const mem = createMemory({
+			strategy: 'summary',
+			maxMessages: 4,
+			summarize,
+		})
+
+		mem.add(makeMessage('old-1'))
+		mem.add(makeMessage('old-2'))
+		mem.add(makeMessage('old-3'))
+		mem.add(makeMessage('recent-1'))
+		mem.add(makeMessage('recent-2'))
+
+		await mem.summarizeIfNeeded()
+
+		const summarizedMessages = summarize.mock.calls[0][0]
+		expect(summarizedMessages).toHaveLength(3)
+		expect(summarizedMessages[0].content).toBe('old-1')
+		expect(summarizedMessages[2].content).toBe('old-3')
+	})
+})
+
+describe('createSummarizeFn', () => {
+	it('calls complete with summarization prompt', async () => {
+		const complete = vi.fn().mockResolvedValue({
+			message: { role: 'assistant', content: 'Conversation summary here' },
+			usage: { inputTokens: 100, outputTokens: 50 },
+			cost: { totalCost: 0 },
+		})
+
+		const summarize = createSummarizeFn(complete)
+		const result = await summarize([makeMessage('Hello'), makeMessage('Hi there', 'assistant')])
+
+		expect(complete).toHaveBeenCalledTimes(1)
+		expect(complete.mock.calls[0][0].messages[0].content).toContain('user: Hello')
+		expect(complete.mock.calls[0][0].messages[0].content).toContain('assistant: Hi there')
+		expect(result).toBe('Conversation summary here')
 	})
 })

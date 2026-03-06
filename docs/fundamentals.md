@@ -65,8 +65,10 @@ Three Pillars — where each feature lives:
 - [Output Guardrails](#output-guardrails)
 - [Batch Processing](#batch-processing)
 - [Tools](#tools)
+  - [Retrieval Tool](#retrieval-tool)
   - [Tool Result Formatting](#tool-result-formatting)
 - [Agents](#agents)
+  - [Structured Output](#structured-output)
   - [Streaming](#streaming)
   - [Conversation Threads](#conversation-threads)
   - [Async / Background Agents](#async--background-agents)
@@ -1089,6 +1091,39 @@ const utils = createToolkit('utils', [httpFetchTool, calculatorTool, jsonParseTo
 | `json_parse` | Parse JSON with path extraction | Blocks prototype pollution |
 | `current_time` | ISO timestamp with timezone | Safe IANA timezone handling |
 
+### Retrieval Tool
+
+Create a RAG-powered search tool that plugs into any agent's tool loop:
+
+```typescript
+import { createRetrievalTool } from '@elsium-ai/tools'
+
+const searchDocs = createRetrievalTool({
+  name: 'search_docs',
+  description: 'Search internal documentation',
+  topK: 5,
+  retrieve: async (query, opts) => {
+    const results = await vectorStore.query(query, opts?.topK)
+    return results.map((r) => ({
+      content: r.text,
+      score: r.score,
+      source: r.metadata.filename,
+    }))
+  },
+})
+
+const agent = defineAgent(
+  {
+    name: 'support',
+    system: 'Answer questions using the documentation.',
+    tools: [searchDocs],
+  },
+  { complete: (req) => llm.complete(req) },
+)
+```
+
+The `retrieve` function is generic — connect it to any vector store, search API, or database. Results are formatted with scores and sources by default, or provide a custom `formatResult` function.
+
 ### Tool Result Formatting
 
 Format tool execution results for display or logging:
@@ -1173,6 +1208,20 @@ const agent2 = defineAgent({
   system: 'You are helpful.',
   provider: myProvider,
 })
+
+// ProviderMesh for automatic failover and load balancing
+const mesh = createProviderMesh({
+  providers: [
+    { name: 'primary', provider: anthropic, weight: 80 },
+    { name: 'fallback', provider: openai, weight: 20 },
+  ],
+  strategy: 'weighted-round-robin',
+})
+const agent3 = defineAgent({
+  name: 'resilient-agent',
+  system: 'You are helpful.',
+  provider: mesh,
+})
 ```
 
 ### Agent with tools
@@ -1192,6 +1241,31 @@ const agent = defineAgent(
 const result = await agent.run('What is the average price of electronics products?')
 console.log(result.toolCalls)  // [{ name: 'search_products', arguments: {...}, result: {...} }, ...]
 ```
+
+### Structured output
+
+Use `agent.generate()` to get typed, validated data from agents using Zod schemas:
+
+```typescript
+import { z } from 'zod'
+
+const SentimentSchema = z.object({
+  sentiment: z.enum(['positive', 'negative', 'neutral']),
+  confidence: z.number().min(0).max(1),
+  keywords: z.array(z.string()),
+})
+
+const { data, result } = await agent.generate(
+  'Analyze the sentiment: "This product is amazing, best purchase ever!"',
+  SentimentSchema,
+)
+
+console.log(data.sentiment)   // 'positive'
+console.log(data.confidence)  // 0.95
+console.log(data.keywords)    // ['amazing', 'best purchase']
+```
+
+The agent runs through its full loop (including tools and guardrails), then parses and validates the final response against your schema. If the response doesn't match, it throws an `ElsiumError` with validation details.
 
 ### Memory strategies
 
@@ -1218,6 +1292,19 @@ const analyst = defineAgent(
   { complete: (req) => llm.complete(req) },
 )
 
+// Summary — compresses old messages into an LLM-generated summary
+import { createSummarizeFn } from '@elsium-ai/agents'
+
+const summarize = createSummarizeFn((req) => llm.complete(req))
+const longRunning = defineAgent(
+  {
+    name: 'long-running',
+    system: 'You are a helpful assistant.',
+    memory: { strategy: 'summary', maxMessages: 20, summarize },
+  },
+  { complete: (req) => llm.complete(req) },
+)
+
 // Multi-turn conversation — memory persists across calls
 await chatbot.run('My name is Alice.')
 const result = await chatbot.run('What is my name?')
@@ -1226,6 +1313,8 @@ const result = await chatbot.run('What is my name?')
 // Reset when needed
 chatbot.resetMemory()
 ```
+
+The `summary` strategy keeps the most recent half of `maxMessages` and replaces older messages with a system message containing a summary. Call `memory.summarizeIfNeeded()` to trigger summarization (it's a no-op when under the limit).
 
 ### Lifecycle hooks
 
@@ -1567,6 +1656,12 @@ memory.clear()                                  // Reset
 
 // Token-limited — keeps messages up to a token budget
 const tokenMemory = createMemory({ strategy: 'token-limited', maxTokens: 32_000 })
+
+// Summary — compresses old messages with an LLM
+import { createSummarizeFn } from '@elsium-ai/agents'
+const summarize = createSummarizeFn((req) => llm.complete(req))
+const summaryMemory = createMemory({ strategy: 'summary', maxMessages: 20, summarize })
+await summaryMemory.summarizeIfNeeded() // triggers compression when over limit
 
 // Unlimited — keeps everything (use with caution)
 const fullMemory = createMemory({ strategy: 'unlimited' })

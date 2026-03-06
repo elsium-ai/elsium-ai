@@ -327,6 +327,128 @@ describe('defineAgent', () => {
 	})
 })
 
+// ─── Agent generate() ────────────────────────────────────────────
+
+describe('agent.generate()', () => {
+	it('returns typed structured data from agent response', async () => {
+		const deps = mockDeps([
+			{ message: { role: 'assistant', content: '{"name": "Alice", "age": 30}' } },
+		])
+		const agent = defineAgent({ name: 'gen', system: 'test' }, deps)
+
+		const schema = z.object({ name: z.string(), age: z.number() })
+		const { data, result } = await agent.generate('Extract info', schema)
+
+		expect(data.name).toBe('Alice')
+		expect(data.age).toBe(30)
+		expect(result.message).toBeDefined()
+	})
+
+	it('strips markdown code fences from response', async () => {
+		const deps = mockDeps([
+			{
+				message: {
+					role: 'assistant',
+					content: '```json\n{"value": 42}\n```',
+				},
+			},
+		])
+		const agent = defineAgent({ name: 'gen', system: 'test' }, deps)
+
+		const schema = z.object({ value: z.number() })
+		const { data } = await agent.generate('Get value', schema)
+		expect(data.value).toBe(42)
+	})
+
+	it('throws when response is not valid JSON', async () => {
+		const deps = mockDeps([{ message: { role: 'assistant', content: 'This is not JSON at all' } }])
+		const agent = defineAgent({ name: 'gen', system: 'test' }, deps)
+
+		const schema = z.object({ x: z.number() })
+		await expect(agent.generate('Get x', schema)).rejects.toThrow('did not contain valid JSON')
+	})
+
+	it('throws when JSON does not match schema', async () => {
+		const deps = mockDeps([{ message: { role: 'assistant', content: '{"wrong": "field"}' } }])
+		const agent = defineAgent({ name: 'gen', system: 'test' }, deps)
+
+		const schema = z.object({ required: z.number() })
+		await expect(agent.generate('Get data', schema)).rejects.toThrow('did not match schema')
+	})
+
+	it('includes schema instructions in the request', async () => {
+		let capturedRequest: CompletionRequest | null = null
+		const deps: AgentDependencies = {
+			async complete(request: CompletionRequest): Promise<LLMResponse> {
+				capturedRequest = request
+				return mockResponse({
+					message: { role: 'assistant', content: '{"x": 1}' },
+				})
+			},
+		}
+		const agent = defineAgent({ name: 'gen', system: 'test' }, deps)
+
+		const schema = z.object({ x: z.number() })
+		await agent.generate('Get x', schema)
+
+		const userMsg = capturedRequest?.messages.find((m) => m.role === 'user')
+		const content = typeof userMsg?.content === 'string' ? userMsg.content : ''
+		expect(content).toContain('JSON')
+		expect(content).toContain('schema')
+	})
+
+	it('works with tool-using agents', async () => {
+		const tool = defineTool({
+			name: 'lookup',
+			description: 'Look up data',
+			input: z.object({ id: z.string() }),
+			async handler() {
+				return { name: 'Bob', age: 25 }
+			},
+		})
+
+		const deps = mockDeps([
+			{
+				message: {
+					role: 'assistant',
+					content: '',
+					toolCalls: [{ id: 'tc1', name: 'lookup', arguments: { id: '1' } }],
+				},
+				stopReason: 'tool_use',
+			},
+			{ message: { role: 'assistant', content: '{"name": "Bob", "age": 25}' } },
+		])
+
+		const agent = defineAgent({ name: 'gen', system: 'test', tools: [tool] }, deps)
+
+		const schema = z.object({ name: z.string(), age: z.number() })
+		const { data } = await agent.generate('Get user 1', schema)
+		expect(data.name).toBe('Bob')
+		expect(data.age).toBe(25)
+	})
+})
+
+// ─── Provider Mesh ───────────────────────────────────────────────
+
+describe('defineAgent with ProviderMesh', () => {
+	it('accepts a ProviderMesh-like object as provider', async () => {
+		const mesh = {
+			complete: vi
+				.fn()
+				.mockResolvedValue(mockResponse({ message: { role: 'assistant', content: 'From mesh' } })),
+			stream: vi.fn(),
+			providers: ['anthropic', 'openai'],
+			strategy: 'fallback' as const,
+		}
+
+		const agent = defineAgent({ name: 'mesh-agent', system: 'test', provider: mesh })
+		const result = await agent.run('Hello')
+
+		expect(result.message.content).toBe('From mesh')
+		expect(mesh.complete).toHaveBeenCalled()
+	})
+})
+
 // ─── Multi-Agent ─────────────────────────────────────────────────
 
 describe('runSequential', () => {

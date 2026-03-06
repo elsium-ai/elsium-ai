@@ -1,8 +1,10 @@
 import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-ai/core'
 import { ElsiumError, type ElsiumStream, extractText, generateTraceId } from '@elsium-ai/core'
+import { zodToJsonSchema } from '@elsium-ai/core'
 import { gateway } from '@elsium-ai/gateway'
 import type { ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
+import type { z } from 'zod'
 import { type ApprovalGate, createApprovalGate, shouldRequireApproval } from './approval'
 import { createConfidenceScorer } from './confidence'
 import { type Memory, createMemory } from './memory'
@@ -14,10 +16,20 @@ import type { AgentStream, StreamingAgentDependencies } from './streaming'
 import { createAgentStream } from './streaming'
 import type { AgentConfig, AgentResult, AgentRunOptions, GuardrailConfig } from './types'
 
+export interface AgentGenerateResult<T> {
+	data: T
+	result: AgentResult
+}
+
 export interface Agent {
 	readonly name: string
 	readonly config: AgentConfig
 	run(input: string, options?: AgentRunOptions): Promise<AgentResult>
+	generate<T>(
+		input: string,
+		schema: z.ZodType<T>,
+		options?: AgentRunOptions,
+	): Promise<AgentGenerateResult<T>>
 	stream(input: string, options?: AgentRunOptions): AgentStream
 	chat(messages: Message[], options?: AgentRunOptions): Promise<AgentResult>
 	resetMemory(): void
@@ -463,6 +475,41 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 			const userMessage: Message = { role: 'user', content: input }
 			return executeLoop([userMessage], options)
+		},
+
+		async generate<T>(
+			input: string,
+			schema: z.ZodType<T>,
+			options: AgentRunOptions = {},
+		): Promise<AgentGenerateResult<T>> {
+			validateInputText(input)
+
+			const jsonSchema = zodToJsonSchema(schema)
+			const schemaInstruction = [
+				'You MUST respond with valid JSON matching this schema:',
+				JSON.stringify(jsonSchema, null, 2),
+				'Respond ONLY with the JSON object, no markdown or explanation.',
+			].join('\n')
+
+			const augmentedInput = `${input}\n\n${schemaInstruction}`
+			const userMessage: Message = { role: 'user', content: augmentedInput }
+			const agentResult = await executeLoop([userMessage], options)
+
+			const text = extractText(agentResult.message.content)
+			const cleaned = text.replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/gm, '$1').trim()
+			const jsonMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
+			if (!jsonMatch) {
+				throw ElsiumError.validation('Agent response did not contain valid JSON')
+			}
+
+			const parsed = schema.safeParse(JSON.parse(jsonMatch[0]))
+			if (!parsed.success) {
+				throw ElsiumError.validation('Agent response did not match schema', {
+					errors: parsed.error.issues,
+				})
+			}
+
+			return { data: parsed.data, result: agentResult }
 		},
 
 		stream(input: string, options: AgentRunOptions = {}): AgentStream {

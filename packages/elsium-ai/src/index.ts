@@ -159,6 +159,7 @@ export {
 	runParallel,
 	runSupervisor,
 	createMemory,
+	createSummarizeFn,
 	createSemanticValidator,
 	createAgentSecurity,
 	createConfidenceScorer,
@@ -189,6 +190,7 @@ export {
 export type {
 	Agent,
 	AgentDependencies,
+	AgentGenerateResult,
 	AgentConfig,
 	AgentResult,
 	AgentRunOptions,
@@ -196,6 +198,7 @@ export type {
 	AgentHooks,
 	Memory,
 	MemoryConfig,
+	SummarizeFn,
 	SemanticGuardrailConfig,
 	SemanticCheck,
 	SemanticCheckResult,
@@ -259,6 +262,7 @@ export {
 	currentTimeTool,
 	formatToolResult,
 	formatToolResultAsText,
+	createRetrievalTool,
 } from '@elsium-ai/tools'
 
 export type {
@@ -267,6 +271,9 @@ export type {
 	ToolContext,
 	ToolExecutionResult,
 	Toolkit,
+	RetrievalToolConfig,
+	RetrievalResult as ToolRetrievalResult,
+	RetrieveFn,
 } from '@elsium-ai/tools'
 
 // ─── RAG ────────────────────────────────────────────────────────

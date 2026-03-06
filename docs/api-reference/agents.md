@@ -30,7 +30,7 @@ Creates an agent that can reason, use tools, and maintain memory across turns.
 | `guardrails` | `Guardrail[]` | Input/output validation guardrails |
 | `maxIterations` | `number` | Maximum tool-use loop iterations (default: 10) |
 
-**Returns** an `Agent` with a `run(input, opts?)` method.
+**Returns** an `Agent` with `run(input, opts?)`, `stream(input, opts?)`, and `generate(input, schema, opts?)` methods.
 
 ```ts
 import { defineAgent, createMemory } from 'elsium-ai/agents'
@@ -50,12 +50,44 @@ const result = await agent.run('What are the latest advances in quantum computin
 
 ---
 
+## Structured Output
+
+### agent.generate
+
+```ts
+agent.generate<T>(input: string, schema: z.ZodType<T>, options?: AgentRunOptions): Promise<AgentGenerateResult<T>>
+```
+
+Runs the full agent loop (tools, guardrails, memory) and parses the final response into a typed object validated against a Zod schema. Throws `ElsiumError` if the response is not valid JSON or doesn't match the schema.
+
+**AgentGenerateResult\<T\>:**
+
+| Field | Type | Description |
+|---|---|---|
+| `data` | `T` | Parsed and validated data |
+| `result` | `AgentResult` | Full agent execution result |
+
+```ts
+import { z } from 'zod'
+
+const schema = z.object({
+  answer: z.string(),
+  confidence: z.number(),
+  sources: z.array(z.string()),
+})
+
+const { data } = await agent.generate('What causes rain?', schema)
+// data is fully typed: { answer: string, confidence: number, sources: string[] }
+```
+
+---
+
 ## Memory
 
 ### createMemory
 
 ```ts
-createMemory(strategy: 'sliding-window' | 'token-limited' | 'unlimited', opts?: MemoryOptions): Memory
+createMemory(config: MemoryConfig): Memory
 ```
 
 Creates a memory instance with the specified retention strategy.
@@ -64,14 +96,20 @@ Creates a memory instance with the specified retention strategy.
 |---|---|
 | `sliding-window` | Keeps the last N messages (configure with `maxMessages`) |
 | `token-limited` | Keeps messages within a token budget (configure with `maxTokens`) |
+| `summary` | Compresses old messages into an LLM-generated summary (configure with `maxMessages` + `summarize`) |
 | `unlimited` | Retains all messages (use with caution) |
 
 ```ts
-import { createMemory } from 'elsium-ai/agents'
+import { createMemory, createSummarizeFn } from 'elsium-ai/agents'
 
-const memory = createMemory('sliding-window', { maxMessages: 100 })
-const tokenMemory = createMemory('token-limited', { maxTokens: 8192 })
-const fullMemory = createMemory('unlimited')
+const memory = createMemory({ strategy: 'sliding-window', maxMessages: 100 })
+const tokenMemory = createMemory({ strategy: 'token-limited', maxTokens: 8192 })
+const fullMemory = createMemory({ strategy: 'unlimited' })
+
+// Summary strategy — compresses old messages with an LLM
+const summarize = createSummarizeFn((req) => llm.complete(req))
+const summaryMemory = createMemory({ strategy: 'summary', maxMessages: 20, summarize })
+await summaryMemory.summarizeIfNeeded()
 ```
 
 ### createInMemoryMemoryStore

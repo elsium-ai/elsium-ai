@@ -1,6 +1,6 @@
 // Agent
 export { defineAgent } from './agent'
-export type { Agent, AgentDependencies } from './agent'
+export type { Agent, AgentDependencies, AgentGenerateResult } from './agent'
 
 // Types
 export type {
@@ -16,8 +16,8 @@ export type {
 } from './types'
 
 // Memory
-export { createMemory } from './memory'
-export type { Memory, MemoryConfig, MemoryStrategy } from './memory'
+export { createMemory, createSummarizeFn } from './memory'
+export type { Memory, MemoryConfig, MemoryStrategy, SummarizeFn } from './memory'
 
 // Memory Stores
 export { createInMemoryMemoryStore, createSqliteMemoryStore } from './stores/index'
