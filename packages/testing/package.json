@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/testing",
-	"version": "0.5.0",
+	"version": "0.6.0",
 	"description": "Testing utilities, mock providers, fixtures, and eval framework for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
