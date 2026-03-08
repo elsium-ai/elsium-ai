@@ -1,8 +1,10 @@
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai" target="blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
+  <br><br>
+  <strong>Reliability. Governance. Reproducible AI.</strong>
+  <br>
+  The TypeScript framework for AI systems you can trust in production.
 </p>
-<h3 align="center">Reliability. Governance. Reproducible AI.</h3>
-<p align="center">The TypeScript framework for AI systems you can trust in production.</p>
 
 https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
 <p align="center">
