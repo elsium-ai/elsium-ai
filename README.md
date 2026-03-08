@@ -4,9 +4,7 @@
 <h3 align="center">Reliability. Governance. Reproducible AI.</h3>
 <p align="center">The TypeScript framework for AI systems you can trust in production.</p>
 
-<p align="center">
-  <video src="https://github.com/elsium-ai/elsium-ai/raw/main/.github/media/demo.mov" width="720" controls></video>
-</p>
+https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
