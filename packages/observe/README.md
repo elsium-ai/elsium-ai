@@ -565,6 +565,8 @@ type AuditEventType =
   | 'approval_request'
   | 'approval_decision'
   | 'config_change'
+  | 'provider_failover'
+  | 'circuit_breaker_state_change'
 ```
 
 ### `AuditEvent`
@@ -622,6 +624,20 @@ interface AuditIntegrityResult {
 }
 ```
 
+### `AuditBatchConfig`
+
+```ts
+interface AuditBatchConfig {
+  size?: number
+  intervalMs?: number
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `size` | `number` | `100` | Flush the buffer when it reaches this many events. |
+| `intervalMs` | `number` | `50` | Flush the buffer on this interval (ms), regardless of size. |
+
 ### `AuditTrailConfig`
 
 ```ts
@@ -629,6 +645,7 @@ interface AuditTrailConfig {
   storage?: AuditStorageAdapter | 'memory'
   hashChain?: boolean
   maxEvents?: number
+  batch?: AuditBatchConfig
   onError?: (error: unknown) => void
 }
 ```
@@ -642,11 +659,26 @@ interface AuditTrail {
     data: Record<string, unknown>,
     options?: { actor?: string; traceId?: string },
   ): void
+  ready(): Promise<void>
   query(filter: AuditQueryFilter): Promise<AuditEvent[]>
   verifyIntegrity(): Promise<AuditIntegrityResult>
+  flush(): Promise<void>
+  dispose(): void
   readonly count: number
+  readonly pending: number
 }
 ```
+
+| Member | Description |
+|---|---|
+| `log()` | Append an event. In batched mode, this buffers the event without hashing — zero CPU on the hot path. |
+| `ready()` | Resolves once async initialization (e.g. `getLastHash`) has completed. |
+| `query()` | Query events by type, actor, traceId, or timestamp range. Auto-flushes pending events in batched mode. |
+| `verifyIntegrity()` | Verify the hash chain has not been tampered with. Auto-flushes pending events in batched mode. |
+| `flush()` | Drain all pending events — computes hashes and writes to storage. No-op when not in batched mode. |
+| `dispose()` | Stop the flush timer and drain remaining events. Call this on shutdown. |
+| `count` | Total events (stored + pending). |
+| `pending` | Number of buffered events not yet flushed (0 when not in batched mode). |
 
 ### `createAuditTrail()`
 
@@ -660,7 +692,8 @@ function createAuditTrail(config?: AuditTrailConfig): AuditTrail
 |---|---|---|---|
 | `config.storage` | `AuditStorageAdapter \| 'memory'` | `'memory'` | Storage backend for audit events |
 | `config.hashChain` | `boolean` | `true` | Enable SHA-256 hash chaining for tamper detection |
-| `config.maxEvents` | `number` | `10000` | Maximum events retained in memory storage |
+| `config.maxEvents` | `number` | `10000` | Maximum events retained (ring buffer — O(1) eviction) |
+| `config.batch` | `AuditBatchConfig` | `undefined` | Enable batched mode for high-volume scenarios |
 | `config.onError` | `(error: unknown) => void` | `undefined` | Error handler for async storage failures |
 
 **Returns:** `AuditTrail`
@@ -693,6 +726,33 @@ const integrity = await audit.verifyIntegrity()
 console.log('Audit chain valid:', integrity.valid)
 console.log('Total events:', integrity.totalEvents)
 ```
+
+#### Batched mode (high-volume)
+
+In high-volume scenarios, `log()` computes a SHA-256 hash on every call — blocking the hot path. Batched mode moves hashing off the critical path: `log()` buffers raw event data, and hashing + storage writes happen asynchronously on flush.
+
+```ts
+import { createAuditTrail } from '@elsium-ai/observe'
+
+const audit = createAuditTrail({
+  batch: {
+    size: 500,         // Flush after 500 events
+    intervalMs: 100,   // Or every 100ms, whichever comes first
+  },
+  maxEvents: 100_000,
+})
+
+// log() is now near-zero cost — just pushes to an internal buffer
+audit.log('llm_call', { model: 'gpt-4o', tokens: 100 })
+
+// Force-flush before reading (query/verifyIntegrity auto-flush)
+await audit.flush()
+
+// Clean up on shutdown
+process.on('SIGTERM', () => audit.dispose())
+```
+
+Hash chain integrity is fully preserved — events are hashed sequentially during flush, not during `log()`.
 
 ### `auditMiddleware()`
 

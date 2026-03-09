@@ -135,7 +135,7 @@ const llm = gateway({
 | **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern |
 | **RBAC** | Role-based permissions with inheritance and wildcard matching |
 | **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations |
-| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification |
+| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification, batched mode for high-volume, failover audit integration |
 | **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model |
 
 ---

@@ -11,6 +11,8 @@ export type AuditEventType =
 	| 'approval_request'
 	| 'approval_decision'
 	| 'config_change'
+	| 'provider_failover'
+	| 'circuit_breaker_state_change'
 
 export interface AuditEvent {
 	id: string
@@ -49,10 +51,16 @@ export interface AuditIntegrityResult {
 	chainComplete?: boolean
 }
 
+export interface AuditBatchConfig {
+	size?: number
+	intervalMs?: number
+}
+
 export interface AuditTrailConfig {
 	storage?: AuditStorageAdapter | 'memory'
 	hashChain?: boolean
 	maxEvents?: number
+	batch?: AuditBatchConfig
 	onError?: (error: unknown) => void
 }
 
@@ -66,7 +74,10 @@ export interface AuditTrail {
 	ready(): Promise<void>
 	query(filter: AuditQueryFilter): Promise<AuditEvent[]>
 	verifyIntegrity(): Promise<AuditIntegrityResult>
+	flush(): Promise<void>
+	dispose(): void
 	readonly count: number
+	readonly pending: number
 }
 
 function computeEventHash(event: Omit<AuditEvent, 'hash'>, previousHash: string): string {
@@ -83,23 +94,60 @@ function computeEventHash(event: Omit<AuditEvent, 'hash'>, previousHash: string)
 	return createHash('sha256').update(content).digest('hex')
 }
 
+const ZERO_HASH = '0'.repeat(64)
+
+class RingBuffer<T> {
+	private buffer: (T | undefined)[]
+	private head = 0
+	private size = 0
+	private readonly capacity: number
+
+	constructor(capacity: number) {
+		this.capacity = capacity
+		this.buffer = new Array(capacity)
+	}
+
+	push(item: T): void {
+		const index = (this.head + this.size) % this.capacity
+		if (this.size === this.capacity) {
+			this.head = (this.head + 1) % this.capacity
+		} else {
+			this.size++
+		}
+		this.buffer[index] = item
+	}
+
+	toArray(): T[] {
+		const result: T[] = new Array(this.size)
+		for (let i = 0; i < this.size; i++) {
+			result[i] = this.buffer[(this.head + i) % this.capacity] as T
+		}
+		return result
+	}
+
+	get length(): number {
+		return this.size
+	}
+
+	last(): T | undefined {
+		if (this.size === 0) return undefined
+		return this.buffer[(this.head + this.size - 1) % this.capacity]
+	}
+}
+
 class InMemoryAuditStorage implements AuditStorageAdapter {
-	private events: AuditEvent[] = []
-	private readonly maxEvents: number
+	private ring: RingBuffer<AuditEvent>
 
 	constructor(maxEvents?: number) {
-		this.maxEvents = maxEvents ?? 10_000
+		this.ring = new RingBuffer(maxEvents ?? 10_000)
 	}
 
 	append(event: AuditEvent): void {
-		this.events.push(event)
-		if (this.events.length > this.maxEvents) {
-			this.events = this.events.slice(-this.maxEvents)
-		}
+		this.ring.push(event)
 	}
 
 	query(filter: AuditQueryFilter): AuditEvent[] {
-		let results = [...this.events]
+		let results = this.ring.toArray()
 
 		if (filter.type) {
 			const types = Array.isArray(filter.type) ? filter.type : [filter.type]
@@ -126,34 +174,43 @@ class InMemoryAuditStorage implements AuditStorageAdapter {
 	}
 
 	count(): number {
-		return this.events.length
+		return this.ring.length
 	}
 
 	verifyIntegrity(): AuditIntegrityResult {
-		if (this.events.length === 0) {
+		const events = this.ring.toArray()
+		if (events.length === 0) {
 			return { valid: true, totalEvents: 0, chainComplete: true }
 		}
 
-		for (let i = 0; i < this.events.length; i++) {
-			const event = this.events[i]
+		for (let i = 0; i < events.length; i++) {
+			const event = events[i]
 			const expectedHash = computeEventHash(event, event.previousHash)
 			if (event.hash !== expectedHash) {
-				return { valid: false, totalEvents: this.events.length, brokenAt: i }
+				return { valid: false, totalEvents: events.length, brokenAt: i }
 			}
 
-			if (i > 0 && event.previousHash !== this.events[i - 1].hash) {
-				return { valid: false, totalEvents: this.events.length, brokenAt: i }
+			if (i > 0 && event.previousHash !== events[i - 1].hash) {
+				return { valid: false, totalEvents: events.length, brokenAt: i }
 			}
 		}
 
-		const chainComplete = this.events[0].previousHash === '0'.repeat(64)
-		return { valid: true, totalEvents: this.events.length, chainComplete }
+		const chainComplete = events[0].previousHash === ZERO_HASH
+		return { valid: true, totalEvents: events.length, chainComplete }
 	}
 
 	getLastHash(): string {
-		if (this.events.length === 0) return '0'.repeat(64)
-		return this.events[this.events.length - 1].hash
+		const last = this.ring.last()
+		return last ? last.hash : ZERO_HASH
 	}
+}
+
+interface PendingEntry {
+	type: AuditEventType
+	data: Record<string, unknown>
+	timestamp: number
+	actor?: string
+	traceId?: string
 }
 
 export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
@@ -165,13 +222,8 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 
 	let sequenceId = 0
 	let idCounter = 0
-	let previousHash = '0'.repeat(64)
+	let previousHash = ZERO_HASH
 
-	// readyPromise ensures that any log() calls arriving before an async
-	// getLastHash resolves are queued and processed only after the initial
-	// previousHash is known, preserving hash-chain integrity.
-	// When the adapter is synchronous, isReady stays true so that log() can
-	// append entries immediately without deferring to a microtask.
 	let isReady = true
 	let readyPromise: Promise<void> = Promise.resolve()
 
@@ -188,23 +240,27 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		}
 	}
 
-	function appendEntry(
-		type: AuditEventType,
-		data: Record<string, unknown>,
-		options?: { actor?: string; traceId?: string },
-	): void {
+	const batchConfig = config?.batch
+	const batchSize = batchConfig?.size ?? 100
+	const batchIntervalMs = batchConfig?.intervalMs ?? 50
+	const isBatched = !!batchConfig
+	const pendingBuffer: PendingEntry[] = []
+	let flushTimer: ReturnType<typeof setInterval> | null = null
+	const flushPromise: Promise<void> = Promise.resolve()
+
+	function buildAndAppend(entry: PendingEntry): void {
 		sequenceId++
 		idCounter++
 
 		const event: Omit<AuditEvent, 'hash'> & { hash?: string; previousHash: string } = {
-			id: `audit_${idCounter.toString(36)}_${Date.now().toString(36)}`,
+			id: `audit_${idCounter.toString(36)}_${entry.timestamp.toString(36)}`,
 			sequenceId,
-			type,
-			timestamp: Date.now(),
-			actor: options?.actor,
-			traceId: options?.traceId,
-			data,
-			previousHash: useHashChain ? previousHash : '0'.repeat(64),
+			type: entry.type,
+			timestamp: entry.timestamp,
+			actor: entry.actor,
+			traceId: entry.traceId,
+			data: entry.data,
+			previousHash: useHashChain ? previousHash : ZERO_HASH,
 		}
 
 		const hash = useHashChain
@@ -223,6 +279,45 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		}
 	}
 
+	function drainBuffer(): void {
+		let entry = pendingBuffer.shift()
+		while (entry) {
+			buildAndAppend(entry)
+			entry = pendingBuffer.shift()
+		}
+	}
+
+	if (isBatched) {
+		flushTimer = setInterval(() => {
+			if (pendingBuffer.length > 0) drainBuffer()
+		}, batchIntervalMs)
+		if (typeof flushTimer === 'object' && 'unref' in flushTimer) {
+			flushTimer.unref()
+		}
+	}
+
+	function logEntry(
+		type: AuditEventType,
+		data: Record<string, unknown>,
+		options?: { actor?: string; traceId?: string },
+	): void {
+		const entry: PendingEntry = {
+			type,
+			data,
+			timestamp: Date.now(),
+			actor: options?.actor,
+			traceId: options?.traceId,
+		}
+
+		if (isBatched) {
+			pendingBuffer.push(entry)
+			if (pendingBuffer.length >= batchSize) drainBuffer()
+			return
+		}
+
+		buildAndAppend(entry)
+	}
+
 	return {
 		log(
 			type: AuditEventType,
@@ -230,13 +325,9 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			options?: { actor?: string; traceId?: string },
 		): void {
 			if (isReady) {
-				// Synchronous path: adapter was synchronous (or had no getLastHash),
-				// so the initial hash is already set — append immediately.
-				appendEntry(type, data, options)
+				logEntry(type, data, options)
 			} else {
-				// Async path: chain onto readyPromise so entries are serialised and
-				// processed in arrival order once the initial hash resolves.
-				readyPromise = readyPromise.then(() => appendEntry(type, data, options))
+				readyPromise = readyPromise.then(() => logEntry(type, data, options))
 			}
 		},
 
@@ -244,17 +335,37 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			return readyPromise
 		},
 
+		async flush(): Promise<void> {
+			await readyPromise
+			drainBuffer()
+			await flushPromise
+		},
+
+		dispose(): void {
+			if (flushTimer) {
+				clearInterval(flushTimer)
+				flushTimer = null
+			}
+			drainBuffer()
+		},
+
 		async query(filter: AuditQueryFilter): Promise<AuditEvent[]> {
+			if (isBatched) drainBuffer()
 			return storage.query(filter)
 		},
 
 		async verifyIntegrity(): Promise<AuditIntegrityResult> {
+			if (isBatched) drainBuffer()
 			return storage.verifyIntegrity()
 		},
 
 		get count(): number {
 			const result = storage.count()
-			return typeof result === 'number' ? result : 0
+			return (typeof result === 'number' ? result : 0) + pendingBuffer.length
+		},
+
+		get pending(): number {
+			return pendingBuffer.length
 		},
 	}
 }

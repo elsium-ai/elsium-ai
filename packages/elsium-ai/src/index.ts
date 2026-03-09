@@ -135,6 +135,7 @@ export type {
 	ProviderEntry,
 	RoutingStrategy,
 	ProviderMesh,
+	MeshAuditLogger,
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,

@@ -413,7 +413,7 @@ const llm = gateway({ provider: 'google', model: 'gemini-2.0-flash', apiKey: env
 
 ### Provider Mesh — multi-provider routing
 
-Route across multiple providers with automatic failover, cost optimization, or latency racing:
+Route across multiple providers with automatic failover, cost optimization, or latency racing. Optionally pass an `audit` trail to get hash-chained records of every provider switch and circuit breaker state change (see [Audit Trail](#audit-trail)):
 
 ```typescript
 import { createProviderMesh } from '@elsium-ai/gateway'
@@ -2710,7 +2710,7 @@ import { createAuditTrail, auditMiddleware } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({
   hashChain: true,           // SHA-256 chain — each event hashes the previous
-  maxEvents: 100_000,
+  maxEvents: 100_000,        // Ring buffer — O(1) eviction when full
 })
 
 // Log events manually
@@ -2737,6 +2737,42 @@ const integrity = await audit.verifyIntegrity()
 console.log(integrity.valid)        // true
 console.log(integrity.totalEvents)  // 1,523
 console.log(integrity.brokenAt)     // undefined (no tampering detected)
+```
+
+**High-volume batched mode** — moves SHA-256 hashing off the hot path:
+
+```typescript
+const audit = createAuditTrail({
+  hashChain: true,
+  batch: { size: 500, intervalMs: 100 }, // Flush every 500 events or 100ms
+})
+
+audit.log('llm_call', { model: 'gpt-4o' }) // Near-zero cost — buffers only
+await audit.flush()                          // Hashes + writes to storage
+audit.dispose()                              // Clean shutdown
+```
+
+**Failover audit integration** — wire the audit trail into the provider mesh to get tamper-evident records of every provider switch and circuit breaker state change:
+
+```typescript
+import { createProviderMesh } from '@elsium-ai/gateway'
+import { createAuditTrail } from '@elsium-ai/observe'
+
+const audit = createAuditTrail({ hashChain: true, batch: { size: 500, intervalMs: 100 } })
+
+const mesh = createProviderMesh({
+  providers: [
+    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') } },
+    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') } },
+  ],
+  strategy: 'fallback',
+  circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 30_000 },
+  audit, // Logs provider_failover and circuit_breaker_state_change events
+})
+
+// Query failover history
+const failovers = await audit.query({ type: 'provider_failover' })
+const breakerEvents = await audit.query({ type: ['circuit_breaker_state_change'] })
 ```
 
 ---
