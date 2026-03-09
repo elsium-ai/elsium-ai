@@ -919,6 +919,14 @@ interface ProviderEntry {
 ### `ProviderMeshConfig`
 
 ```ts
+interface MeshAuditLogger {
+  log(
+    type: string,
+    data: Record<string, unknown>,
+    options?: { actor?: string; traceId?: string },
+  ): void
+}
+
 interface ProviderMeshConfig {
   providers: ProviderEntry[]
   strategy: RoutingStrategy
@@ -928,6 +936,7 @@ interface ProviderMeshConfig {
     complexityThreshold?: number
   }
   circuitBreaker?: CircuitBreakerConfig | boolean
+  audit?: MeshAuditLogger
 }
 ```
 
@@ -937,6 +946,7 @@ interface ProviderMeshConfig {
 | `strategy` | `RoutingStrategy` | Routing strategy to use. |
 | `costOptimizer` | `CostOptimizerConfig` | Configuration for the `cost-optimized` strategy. |
 | `circuitBreaker` | `CircuitBreakerConfig \| boolean` | Enable circuit breakers per provider. Pass `true` for defaults or an object to configure thresholds. |
+| `audit` | `MeshAuditLogger` | Optional audit logger. When provided, the mesh logs `provider_failover` and `circuit_breaker_state_change` events. Compatible with `AuditTrail` from `@elsium-ai/observe`. |
 
 ### `ProviderMesh`
 
@@ -1041,6 +1051,41 @@ const response = await mesh.complete({
   tools: [{ name: 'calculator', description: 'Do math', inputSchema: { type: 'object' } }],
 })
 ```
+
+#### Failover Audit Trail
+
+Pass an audit trail to the mesh to get tamper-evident records of every provider failover and circuit breaker state change:
+
+```ts
+import { createProviderMesh } from '@elsium-ai/gateway'
+import { createAuditTrail } from '@elsium-ai/observe'
+
+const audit = createAuditTrail({
+  hashChain: true,
+  batch: { size: 500, intervalMs: 100 },
+})
+
+const mesh = createProviderMesh({
+  providers: [
+    { name: 'anthropic', config: { apiKey: process.env.ANTHROPIC_API_KEY! }, model: 'claude-sonnet-4-6' },
+    { name: 'openai', config: { apiKey: process.env.OPENAI_API_KEY! }, model: 'gpt-4o' },
+  ],
+  strategy: 'fallback',
+  circuitBreaker: { failureThreshold: 5, resetTimeoutMs: 30_000 },
+  audit,
+})
+
+// If Anthropic fails and OpenAI succeeds, the audit trail records:
+//   { type: 'provider_failover', data: { fromProvider: 'anthropic', toProvider: 'openai', strategy: 'fallback', reason: '...' } }
+//
+// If the circuit breaker trips:
+//   { type: 'circuit_breaker_state_change', data: { provider: 'anthropic', fromState: 'closed', toState: 'open' } }
+
+const failovers = await audit.query({ type: 'provider_failover' })
+const breakerEvents = await audit.query({ type: ['circuit_breaker_state_change'] })
+```
+
+The `MeshAuditLogger` interface is intentionally minimal — any object with a `log(type, data, options?)` method works, so you can use `AuditTrail` from `@elsium-ai/observe` or your own logger.
 
 ---
 

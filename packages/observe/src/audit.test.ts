@@ -224,6 +224,125 @@ describe('AuditTrail', () => {
 	})
 })
 
+describe('AuditTrail batched mode', () => {
+	it('buffers events and flushes on demand', async () => {
+		const trail = createAuditTrail({ batch: { size: 100, intervalMs: 60_000 } })
+
+		trail.log('llm_call', { model: 'gpt-4o' })
+		trail.log('tool_execution', { tool: 'search' })
+
+		expect(trail.pending).toBe(2)
+
+		const beforeFlush = await trail.query({})
+		expect(beforeFlush).toHaveLength(2)
+		expect(trail.pending).toBe(0)
+
+		trail.dispose()
+	})
+
+	it('auto-flushes when batch size is reached', () => {
+		const trail = createAuditTrail({ batch: { size: 3, intervalMs: 60_000 } })
+
+		trail.log('llm_call', { i: 0 })
+		trail.log('llm_call', { i: 1 })
+		expect(trail.pending).toBe(2)
+
+		trail.log('llm_call', { i: 2 })
+		expect(trail.pending).toBe(0)
+
+		trail.dispose()
+	})
+
+	it('maintains hash chain integrity in batched mode', async () => {
+		const trail = createAuditTrail({ batch: { size: 10 } })
+
+		for (let i = 0; i < 5; i++) {
+			trail.log('llm_call', { index: i })
+		}
+
+		await trail.flush()
+		const integrity = await trail.verifyIntegrity()
+		expect(integrity.valid).toBe(true)
+		expect(integrity.totalEvents).toBe(5)
+		expect(integrity.chainComplete).toBe(true)
+
+		trail.dispose()
+	})
+
+	it('chain links events correctly in batched mode', async () => {
+		const trail = createAuditTrail({ batch: { size: 10 } })
+
+		trail.log('llm_call', { a: 1 })
+		trail.log('llm_call', { a: 2 })
+
+		await trail.flush()
+		const events = await trail.query({})
+		expect(events[1].previousHash).toBe(events[0].hash)
+
+		trail.dispose()
+	})
+
+	it('count includes pending events', () => {
+		const trail = createAuditTrail({ batch: { size: 100 } })
+
+		trail.log('llm_call', { a: 1 })
+		trail.log('llm_call', { a: 2 })
+
+		expect(trail.count).toBe(2)
+		expect(trail.pending).toBe(2)
+
+		trail.dispose()
+	})
+
+	it('dispose drains buffer and stops timer', async () => {
+		const trail = createAuditTrail({ batch: { size: 100, intervalMs: 10 } })
+
+		trail.log('llm_call', { a: 1 })
+		trail.dispose()
+
+		expect(trail.pending).toBe(0)
+		const events = await trail.query({})
+		expect(events).toHaveLength(1)
+	})
+
+	it('flush and dispose are safe to call on non-batched trails', async () => {
+		const trail = createAuditTrail()
+		trail.log('llm_call', { a: 1 })
+
+		await trail.flush()
+		trail.dispose()
+
+		expect(trail.count).toBe(1)
+		expect(trail.pending).toBe(0)
+	})
+})
+
+describe('AuditTrail ring buffer eviction', () => {
+	it('eviction is O(1) — count stays at max', () => {
+		const trail = createAuditTrail({ maxEvents: 5 })
+
+		for (let i = 0; i < 100; i++) {
+			trail.log('llm_call', { index: i })
+		}
+
+		expect(trail.count).toBe(5)
+	})
+
+	it('preserves most recent events after eviction', async () => {
+		const trail = createAuditTrail({ maxEvents: 3 })
+
+		for (let i = 0; i < 6; i++) {
+			trail.log('llm_call', { index: i })
+		}
+
+		const events = await trail.query({})
+		expect(events).toHaveLength(3)
+		expect(events[0].data.index).toBe(3)
+		expect(events[1].data.index).toBe(4)
+		expect(events[2].data.index).toBe(5)
+	})
+})
+
 describe('auditMiddleware', () => {
 	it('creates valid middleware', () => {
 		const trail = createAuditTrail()

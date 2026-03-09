@@ -29,11 +29,20 @@ export interface CostOptimizerConfig {
 	complexityThreshold?: number
 }
 
+export interface MeshAuditLogger {
+	log(
+		type: string,
+		data: Record<string, unknown>,
+		options?: { actor?: string; traceId?: string },
+	): void
+}
+
 export interface ProviderMeshConfig {
 	providers: ProviderEntry[]
 	strategy: RoutingStrategy
 	costOptimizer?: CostOptimizerConfig
 	circuitBreaker?: CircuitBreakerConfig | boolean
+	audit?: MeshAuditLogger
 }
 
 export interface ProviderMesh {
@@ -107,6 +116,8 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 	const gateways = new Map<string, Gateway>()
 	const circuitBreakers = new Map<string, CircuitBreaker>()
 
+	const audit = config.audit
+
 	for (const entry of sortedProviders) {
 		const gw = gateway({
 			provider: entry.name,
@@ -118,7 +129,19 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 
 		if (config.circuitBreaker) {
 			const cbConfig = typeof config.circuitBreaker === 'boolean' ? {} : config.circuitBreaker
-			circuitBreakers.set(entry.name, createCircuitBreaker(cbConfig))
+			const providerName = entry.name
+			const wrappedConfig: CircuitBreakerConfig = {
+				...cbConfig,
+				onStateChange(from, to) {
+					cbConfig.onStateChange?.(from, to)
+					audit?.log('circuit_breaker_state_change', {
+						provider: providerName,
+						fromState: from,
+						toState: to,
+					})
+				},
+			}
+			circuitBreakers.set(entry.name, createCircuitBreaker(wrappedConfig))
 		}
 	}
 
@@ -144,30 +167,55 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		return gw
 	}
 
-	async function fallbackComplete(request: CompletionRequest): Promise<LLMResponse> {
-		let lastError: Error | null = null
+	function attemptProvider(entry: ProviderEntry, request: CompletionRequest): Promise<LLMResponse> {
+		const gw = getGateway(entry.name)
+		return callWithCircuitBreaker(entry.name, () =>
+			gw.complete({ ...request, model: request.model ?? entry.model }),
+		)
+	}
 
-		for (const entry of sortedProviders) {
+	function logFailover(fromProvider: string, toProvider: string, reason?: string): void {
+		audit?.log('provider_failover', {
+			fromProvider,
+			toProvider,
+			strategy: config.strategy,
+			reason,
+		})
+	}
+
+	function toError(err: unknown): Error {
+		return err instanceof Error ? err : new Error(String(err))
+	}
+
+	async function tryProvidersWithAudit(
+		providers: ProviderEntry[],
+		request: CompletionRequest,
+		errorMessage: string,
+	): Promise<LLMResponse> {
+		let lastError: Error | null = null
+		let failedProvider: string | null = null
+
+		for (const entry of providers) {
 			if (!isProviderAvailable(entry.name)) continue
 
 			try {
-				const gw = getGateway(entry.name)
-				return await callWithCircuitBreaker(entry.name, () =>
-					gw.complete({ ...request, model: request.model ?? entry.model }),
-				)
+				const response = await attemptProvider(entry, request)
+				if (failedProvider) logFailover(failedProvider, entry.name, lastError?.message)
+				return response
 			} catch (err) {
-				lastError = err instanceof Error ? err : new Error(String(err))
+				failedProvider = entry.name
+				lastError = toError(err)
 			}
 		}
 
 		throw (
 			lastError ??
-			new ElsiumError({
-				code: 'PROVIDER_ERROR',
-				message: 'All providers failed',
-				retryable: false,
-			})
+			new ElsiumError({ code: 'PROVIDER_ERROR', message: errorMessage, retryable: false })
 		)
+	}
+
+	async function fallbackComplete(request: CompletionRequest): Promise<LLMResponse> {
+		return tryProvidersWithAudit(sortedProviders, request, 'All providers failed')
 	}
 
 	async function costOptimizedComplete(request: CompletionRequest): Promise<LLMResponse> {
@@ -184,7 +232,13 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 
 		try {
 			return await gw.complete({ ...request, model: target.model })
-		} catch {
+		} catch (err) {
+			audit?.log('provider_failover', {
+				fromProvider: target.provider,
+				toProvider: 'fallback-chain',
+				strategy: 'cost-optimized',
+				reason: err instanceof Error ? err.message : String(err),
+			})
 			return fallbackComplete(request)
 		}
 	}
@@ -237,35 +291,6 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		})
 	}
 
-	async function tryProviders(
-		providers: ProviderEntry[],
-		request: CompletionRequest,
-	): Promise<LLMResponse> {
-		let lastError: Error | null = null
-
-		for (const entry of providers) {
-			if (!isProviderAvailable(entry.name)) continue
-
-			try {
-				const gw = getGateway(entry.name)
-				return await callWithCircuitBreaker(entry.name, () =>
-					gw.complete({ ...request, model: request.model ?? entry.model }),
-				)
-			} catch (err) {
-				lastError = err instanceof Error ? err : new Error(String(err))
-			}
-		}
-
-		throw (
-			lastError ??
-			new ElsiumError({
-				code: 'PROVIDER_ERROR',
-				message: 'No capable provider succeeded',
-				retryable: false,
-			})
-		)
-	}
-
 	async function capabilityAwareComplete(request: CompletionRequest): Promise<LLMResponse> {
 		const capabilities = detectRequiredCapabilities(request)
 		const capable = filterCapableProviders(capabilities)
@@ -274,7 +299,7 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 			return fallbackComplete(request)
 		}
 
-		return tryProviders(capable, request)
+		return tryProvidersWithAudit(capable, request, 'No capable provider succeeded')
 	}
 
 	function defaultCapabilities(provider: string): string[] {

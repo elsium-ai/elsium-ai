@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/app",
-	"version": "0.6.0",
+	"version": "0.7.0",
 	"description": "App bootstrap, HTTP server, and API routes for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",

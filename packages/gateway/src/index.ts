@@ -75,4 +75,10 @@ export type { BatchConfig, BatchResult, BatchResultItem } from './batch'
 
 // Router
 export { createProviderMesh } from './router'
-export type { ProviderMeshConfig, ProviderEntry, RoutingStrategy, ProviderMesh } from './router'
+export type {
+	ProviderMeshConfig,
+	ProviderEntry,
+	RoutingStrategy,
+	ProviderMesh,
+	MeshAuditLogger,
+} from './router'

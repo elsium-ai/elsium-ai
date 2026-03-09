@@ -33,6 +33,7 @@ export type {
 	AuditQueryFilter,
 	AuditIntegrityResult,
 	AuditTrailConfig,
+	AuditBatchConfig,
 	AuditTrail,
 } from './audit'
 
