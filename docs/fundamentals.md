@@ -55,6 +55,7 @@ Three Pillars — where each feature lives:
   - [Plugin Registry](#plugin-registry)
 - [Gateway & Providers](#gateway--providers)
   - [Custom Providers & Provider Registry](#custom-providers--provider-registry)
+  - [OpenAI-Compatible Providers](#openai-compatible-providers)
   - [Middleware Composition](#middleware-composition)
   - [Logging & Cost Tracking Middleware](#logging--cost-tracking-middleware)
   - [Pricing & Cost Calculation](#pricing--cost-calculation)
@@ -78,12 +79,16 @@ Three Pillars — where each feature lives:
   - [Channel Adapters](#channel-adapters)
   - [Session Router](#session-router)
   - [Task Scheduler](#task-scheduler)
+  - [ReAct Agent](#react-agent)
 - [Multi-Agent Orchestration](#multi-agent-orchestration)
 - [RAG (Retrieval-Augmented Generation)](#rag-retrieval-augmented-generation)
+  - [PDF Loader](#pdf-loader)
   - [Standalone RAG Components](#standalone-rag-components)
+  - [Hybrid Search](#hybrid-search)
   - [PgVector Store](#pgvector-store)
   - [RAG Plugin Registries](#rag-plugin-registries)
 - [Workflows](#workflows)
+  - [Resumable Workflows with Checkpointing](#resumable-workflows-with-checkpointing)
 - [Reliability](#reliability)
   - [Circuit Breaker](#circuit-breaker)
   - [Bulkhead Isolation](#bulkhead-isolation)
@@ -117,6 +122,7 @@ Three Pillars — where each feature lives:
   - [Replay & Fixtures](#replay--fixtures)
   - [Prompt Versioning](#prompt-versioning)
 - [MCP (Model Context Protocol)](#mcp-model-context-protocol)
+  - [Resources & Prompts](#resources--prompts)
 - [HTTP Server](#http-server)
   - [SSE Streaming](#sse-streaming)
   - [Multi-Tenant](#multi-tenant)
@@ -485,6 +491,18 @@ const mesh = createProviderMesh({
 })
 ```
 
+**Stream failover** --- `stream()` now supports all four routing strategies (`fallback`, `cost-optimized`, `latency-optimized`, `capability-aware`) with automatic failover. If a provider fails mid-stream, the mesh transparently retries the request against the next provider:
+
+```typescript
+const stream = mesh.stream({
+	messages: [{ role: 'user', content: [{ type: 'text', text: 'Write a long essay.' }] }],
+})
+
+for await (const chunk of stream.text()) {
+	process.stdout.write(chunk)
+}
+```
+
 ### Middleware
 
 The gateway uses a chain-of-responsibility middleware pattern. Every middleware receives a context and a `next` function:
@@ -579,6 +597,25 @@ const llm = gateway({ provider: 'my-provider', apiKey: 'my-key' })
 
 // Inspect the registry
 console.log(listProviders()) // ['anthropic', 'openai', 'google', 'my-provider']
+```
+
+### OpenAI-Compatible Providers
+
+Connect to any provider that exposes an OpenAI-compatible API (Ollama, vLLM, LiteLLM, Azure OpenAI, etc.):
+
+```typescript
+import { createOpenAICompatibleProvider } from '@elsium-ai/gateway'
+
+const ollama = createOpenAICompatibleProvider({
+	baseUrl: 'http://localhost:11434/v1',
+	apiKey: 'ollama',
+	name: 'ollama',
+	defaultModel: 'llama3',
+})
+
+const response = await ollama.complete({
+	messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
+})
 ```
 
 ### Middleware Composition
@@ -1891,6 +1928,25 @@ scheduler.listTasks()
 scheduler.stop()
 ```
 
+### ReAct Agent
+
+The ReAct (Reasoning + Acting) pattern interleaves chain-of-thought reasoning with tool execution. The agent produces explicit Thought/Action/Observation steps until it reaches a final answer:
+
+```typescript
+import { defineReActAgent } from '@elsium-ai/agents'
+
+const agent = defineReActAgent({
+	name: 'researcher',
+	tools: [searchTool, calculatorTool],
+	provider: 'anthropic',
+	apiKey: env('ANTHROPIC_API_KEY'),
+	maxIterations: 10,
+})
+
+const result = await agent.run('What is the population of Tokyo?')
+// result.reasoning contains the Thought/Action/Observation steps
+```
+
 ---
 
 ## Multi-Agent Orchestration
@@ -2056,6 +2112,17 @@ ${context}`,
 const answer = await agent.run(userQuestion)
 ```
 
+### PDF Loader
+
+Load and chunk PDF documents for ingestion into a RAG pipeline:
+
+```typescript
+import { pdfLoader } from '@elsium-ai/rag'
+
+const loader = pdfLoader({ maxPages: 50 })
+const doc = await loader.load('report.pdf', pdfBuffer)
+```
+
 ### Chunking strategies
 
 Choose the right chunker for your content:
@@ -2146,6 +2213,17 @@ const diverseResults = mmrRerank(queryVector, resultsWithEmbeddings, {
   topK: 5,
   lambda: 0.7, // 1.0 = pure relevance, 0.0 = pure diversity
 })
+```
+
+### Hybrid Search
+
+Combine vector similarity with BM25 keyword matching for better retrieval quality:
+
+```typescript
+import { createHybridSearch, createBM25Index } from '@elsium-ai/rag'
+
+const hybrid = createHybridSearch(vectorStore, bm25Index, { vectorWeight: 1, bm25Weight: 0.5 })
+const results = await hybrid.search('query', queryEmbedding, 10)
 ```
 
 ### PgVector Store
@@ -2330,6 +2408,26 @@ step('process-payment', {
   // Timeout
   timeoutMs: 30_000,
 })
+```
+
+### Resumable Workflows with Checkpointing
+
+Long-running workflows can persist progress to a checkpoint store. If a step fails, resume from the last successful checkpoint instead of re-running the entire pipeline:
+
+```typescript
+import { defineResumableWorkflow, createInMemoryCheckpointStore } from '@elsium-ai/workflows'
+
+const store = createInMemoryCheckpointStore()
+const workflow = defineResumableWorkflow({
+	name: 'etl-pipeline',
+	checkpointStore: store,
+	steps: [step('extract', extractHandler), step('transform', transformHandler)],
+})
+
+const result = await workflow.run(input, { workflowId: 'run-1' })
+if (result.status === 'failed') {
+	const resumed = await workflow.resume('run-1')
+}
 ```
 
 ---
@@ -3653,6 +3751,46 @@ const server = createMCPServer({
 })
 
 await server.start() // Listens on stdio — connect from Claude Desktop, Cursor, etc.
+```
+
+### Resources & Prompts
+
+MCP servers can expose resources (structured data) and prompt templates alongside tools. Clients can discover and read them:
+
+```typescript
+import { createMCPServer } from '@elsium-ai/mcp'
+
+const server = createMCPServer({
+	name: 'knowledge-base',
+	version: '1.0.0',
+	tools: [searchTool],
+	resources: [
+		{
+			uri: 'kb://policies/returns',
+			name: 'Return Policy',
+			mimeType: 'text/markdown',
+			read: async () => fetchReturnPolicy(),
+		},
+	],
+	prompts: [
+		{
+			name: 'summarize',
+			description: 'Summarize a document',
+			arguments: [{ name: 'content', description: 'The text to summarize', required: true }],
+			render: ({ content }) => [{ role: 'user', content: `Summarize:\n${content}` }],
+		},
+	],
+})
+```
+
+On the client side, list and read resources or prompts from a connected MCP server:
+
+```typescript
+const resources = await client.listResources()
+const content = await client.readResource('kb://policies/returns')
+
+const prompts = await client.listPrompts()
+const messages = await client.getPrompt('summarize', { content: docText })
 ```
 
 ---

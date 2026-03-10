@@ -10,7 +10,7 @@ https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-735%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1494%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/bundle-77KB%20minified-blue" alt="Bundle Size">
 </p>
 
@@ -97,6 +97,7 @@ const mesh = createProviderMesh({
 | **Request Dedup** | Identical in-flight calls coalesce into one API request |
 | **Graceful Shutdown** | Drains in-flight operations before process exit |
 | **Retry with Backoff** | Exponential backoff with jitter, respects `Retry-After` headers |
+| **Stream Failover** | Provider stream fails mid-request? Automatically switches to next provider |
 
 ---
 
@@ -179,12 +180,13 @@ provenance.record({ prompt, model, config, input, output, traceId })
 The three pillars are what make ElsiumAI unique. These are the fundamentals it also delivers:
 
 - **Multi-provider gateway** — X-Ray mode, middleware, smart routing (fallback, cost-optimized, latency-racing, capability-aware)
-- **Agents** — Memory, semantic guardrails, confidence scoring, state machines, multi-agent orchestration
+- **Agents** — Memory, semantic guardrails, confidence scoring, state machines, multi-agent orchestration, ReAct reasoning loop
 - **Multimodal** — Text, image, audio, and document content across all providers
 - **Structured output** — Native JSON mode per provider (OpenAI json_schema, Anthropic tool-use, Google responseSchema)
-- **RAG** — Document loading, chunking, embeddings, vector search, PgVector store, plugin registries
-- **Workflows** — Retries, parallel execution, branching
-- **MCP** — Bidirectional client/server bridge
+- **RAG** — Document loading, PDF loading, chunking, embeddings, vector search, PgVector store, plugin registries
+- **Workflows** — Retries, parallel execution, branching, checkpointing, resumable workflows
+- **MCP** — Bidirectional client/server bridge, resources, prompts
+- **Custom providers** — OpenAI-compatible adapter for Ollama, Groq, Together, any OpenAI-compatible API
 - **Caching** — LRU response cache with TTL, custom adapters, streaming bypass
 - **Output guardrails** — PII/secret detection in responses, content policy, block/redact/warn modes
 - **Batch processing** — Concurrent LLM requests with semaphore control, per-item retry, progress callbacks
@@ -208,16 +210,19 @@ The three pillars are what make ElsiumAI unique. These are the fundamentals it a
 ├────────────────────┬────────────────┬────────────────────────────┤
 │  @elsium-ai/agents │ @elsium-ai/mcp │       @elsium-ai/cli       │
 │  memory · approval │ client · server│      init · dev · eval     │
-│  guardrails · multi│                │                            │
+│  guardrails · multi│ resources      │                            │
+│  ReAct             │ prompts        │                            │
 ├──────────┬─────────┼────────┬───────┼───────────┬────────────────┤
 │  gateway │  tools  │observe │  rag  │ workflows │   client      │
 │ providers│ define  │ trace  │ load  │   steps   │  HTTP+SSE     │
 │   mesh   │ toolkit │ audit  │ chunk │  parallel │   parsing     │
 │ security │         │ prove- │ embed │  branch   │               │
-│ bulkhead │         │ nance  │vector │           │               │
-│  cache   │         │ experi-│pgvect │           │               │
+│ bulkhead │         │ nance  │vector │checkpoint │               │
+│  cache   │         │ experi-│pgvect │ resumable │               │
 │guardrail │         │  ment  │regist │           │               │
-│  batch   │         │        │       │           │               │
+│  batch   │         │        │  PDF  │           │               │
+│ openai-  │         │        │       │           │               │
+│  compat  │         │        │       │           │               │
 ├──────────┴─────────┴────────┴───────┴───────────┴───────────────┤
 │                         @elsium-ai/core                           │
 │    types · errors · stream · logger · config · retry · result    │
@@ -247,13 +252,13 @@ Three Pillars — where each feature lives:
 | Package | Description |
 |---------|-------------|
 | [`@elsium-ai/core`](./packages/core) | Types, errors, streaming, circuit breaker, dedup, policy engine, shutdown, tokens, context manager, registry, schema |
-| [`@elsium-ai/gateway`](./packages/gateway) | Multi-provider gateway, X-Ray, provider mesh, bulkhead, PII detection, caching, output guardrails, batch processing |
-| [`@elsium-ai/agents`](./packages/agents) | Agents, memory, persistent stores (in-memory, SQLite), guardrails, approval gates, multi-agent |
+| [`@elsium-ai/gateway`](./packages/gateway) | Multi-provider gateway, X-Ray, provider mesh, OpenAI-compatible provider, bulkhead, PII detection, caching, output guardrails, batch processing |
+| [`@elsium-ai/agents`](./packages/agents) | Agents, ReAct agent, memory, persistent stores (in-memory, SQLite), guardrails, approval gates, multi-agent |
 | [`@elsium-ai/tools`](./packages/tools) | Tool definitions with Zod validation |
-| [`@elsium-ai/rag`](./packages/rag) | Document loading, chunking, embeddings, vector search, PgVector store, plugin registries |
-| [`@elsium-ai/workflows`](./packages/workflows) | Sequential, parallel, and branching workflows |
+| [`@elsium-ai/rag`](./packages/rag) | Document loading, PDF loading, chunking, embeddings, BM25, hybrid search, vector search, PgVector store, plugin registries |
+| [`@elsium-ai/workflows`](./packages/workflows) | DAG workflows, sequential, parallel, branching, checkpointing, resumable workflows |
 | [`@elsium-ai/observe`](./packages/observe) | Tracing, cost intelligence, audit trail, provenance tracking, A/B experiments |
-| [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server |
+| [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server, resources, prompts |
 | [`@elsium-ai/app`](./packages/app) | HTTP server, CORS, auth, rate limiting, RBAC, SSE streaming, multi-tenant |
 | [`@elsium-ai/client`](./packages/client) | TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers |
 | [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, pinning, determinism assertions, prompt versioning |
@@ -267,7 +272,7 @@ Beyond agents, tools, RAG, and multi-provider routing, ElsiumAI ships production
 
 | Category | Feature |
 |----------|---------|
-| **Reliability** | Circuit Breaker, Bulkhead Isolation, Request Dedup, Graceful Shutdown, Retry with Backoff |
+| **Reliability** | Circuit Breaker, Bulkhead Isolation, Request Dedup, Graceful Shutdown, Retry with Backoff, Stream Failover |
 | **Governance** | Policy Engine, RBAC, Approval Gates, Hash-Chained Audit, PII Detection, Output Guardrails, Multi-Tenant |
 | **Determinism** | Seed Propagation, Output Pinning, Determinism Assertions, Provenance Tracking, A/B Experiments |
 | **Performance** | Response Caching, Batch Processing, Token Counting, Context Management |

@@ -295,6 +295,46 @@ const response = await provider.complete({
 })
 ```
 
+### `createOpenAICompatibleProvider(config)`
+
+Creates an LLM provider for any API that follows the OpenAI chat completions format (e.g. Groq, Together, Ollama, LMStudio, Azure OpenAI).
+
+```ts
+function createOpenAICompatibleProvider(config: {
+	baseUrl: string
+	apiKey: string
+	name?: string
+	defaultModel?: string
+	capabilities?: string[]
+}): LLMProvider
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.baseUrl` | `string` | **(required)** | Base URL of the OpenAI-compatible API. |
+| `config.apiKey` | `string` | **(required)** | API key for the provider. |
+| `config.name` | `string` | `'openai-compatible'` | Provider name used in logging and routing. |
+| `config.defaultModel` | `string` | `'default'` | Default model when none is specified per-request. |
+| `config.capabilities` | `string[]` | `['streaming']` | Capabilities to advertise (used by `capability-aware` routing). |
+
+**Returns:** An `LLMProvider` that sends requests to the given base URL using the OpenAI request/response format.
+
+```ts
+import { createOpenAICompatibleProvider } from '@elsium-ai/gateway'
+
+const provider = createOpenAICompatibleProvider({
+	baseUrl: 'https://api.groq.com/openai',
+	apiKey: process.env.GROQ_API_KEY!,
+	name: 'groq',
+	defaultModel: 'llama-3.3-70b-versatile',
+	capabilities: ['tools', 'streaming'],
+})
+
+const response = await provider.complete({
+	messages: [{ role: 'user', content: 'Hello!' }],
+})
+```
+
 ### `createGoogleProvider(config)`
 
 Creates an LLM provider for the Google Gemini API.
@@ -962,7 +1002,7 @@ interface ProviderMesh {
 | Member | Description |
 |---|---|
 | `complete(request)` | Routes a completion request according to the configured strategy. |
-| `stream(request)` | Streams from the first available provider (respects circuit breaker state). |
+| `stream(request)` | Streams from the first available provider with automatic failover across all four routing strategies (respects circuit breaker state). |
 | `providers` | List of provider names in the mesh. |
 | `strategy` | The active routing strategy. |
 

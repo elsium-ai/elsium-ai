@@ -492,6 +492,83 @@ const result = await router.run({ type: 'text', content: 'Hello world' })
 
 ---
 
+## Resumable Workflows
+
+### `defineResumableWorkflow`
+
+Creates a workflow that persists its progress to a checkpoint store after each step. If the process crashes or is interrupted, the workflow can be resumed from the last successful checkpoint.
+
+```ts
+function defineResumableWorkflow(config: {
+	name: string
+	checkpointStore: CheckpointStore
+	steps: StepConfig[]
+	onStepComplete?: (result: StepResult) => void | Promise<void>
+	onComplete?: (result: WorkflowResult) => void | Promise<void>
+}): ResumableWorkflow
+```
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `config.name` | `string` | Identifier for the workflow. |
+| `config.checkpointStore` | `CheckpointStore` | Storage backend for persisting step results. |
+| `config.steps` | `StepConfig[]` | Ordered list of steps to execute sequentially. |
+| `config.onStepComplete` | `(result: StepResult) => void \| Promise<void>` | Optional callback fired after each step completes. |
+| `config.onComplete` | `(result: WorkflowResult) => void \| Promise<void>` | Optional callback fired when the workflow finishes. |
+
+**Returns:** `ResumableWorkflow`
+
+```ts
+interface ResumableWorkflow extends Workflow {
+	resume(workflowId: string, options?: WorkflowRunOptions): Promise<WorkflowResult>
+}
+```
+
+The `resume(workflowId)` method reloads the checkpoint for the given workflow run and continues execution from the first incomplete step, reusing outputs from previously completed steps.
+
+### `createInMemoryCheckpointStore`
+
+Creates an in-memory checkpoint store for development and testing.
+
+```ts
+function createInMemoryCheckpointStore(): CheckpointStore
+```
+
+```ts
+import { defineResumableWorkflow, createInMemoryCheckpointStore, step } from '@elsium-ai/workflows'
+
+const checkpointStore = createInMemoryCheckpointStore()
+
+const workflow = defineResumableWorkflow({
+	name: 'data-pipeline',
+	checkpointStore,
+	steps: [
+		step('fetch', {
+			handler: async (input: { url: string }) => {
+				return await fetch(input.url).then((r) => r.json())
+			},
+		}),
+		step('transform', {
+			handler: async (data: unknown) => {
+				return transformData(data)
+			},
+		}),
+		step('store', {
+			handler: async (transformed: unknown) => {
+				await saveToDatabase(transformed)
+				return { stored: true }
+			},
+		}),
+	],
+})
+
+const result = await workflow.run({ url: 'https://api.example.com/data' })
+
+const resumed = await workflow.resume(result.name)
+```
+
+---
+
 ## Part of ElsiumAI
 
 This package is the workflow layer of the [ElsiumAI](https://github.com/elsium-ai/elsium-ai) framework. See the [full documentation](https://github.com/elsium-ai/elsium-ai) for guides and examples.

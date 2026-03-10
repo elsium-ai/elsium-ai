@@ -186,6 +186,8 @@ interface MCPServerConfig {
   name: string
   version?: string
   tools: Tool[]
+  resources?: MCPResourceHandler[]
+  prompts?: MCPPromptHandler[]
 }
 ```
 
@@ -194,6 +196,8 @@ interface MCPServerConfig {
 | `name` | `string` | yes | -- | Server name reported in the `initialize` handshake |
 | `version` | `string` | no | `'0.1.0'` | Server version reported in the `initialize` handshake |
 | `tools` | `Tool[]` | yes | -- | Array of ElsiumAI `Tool` objects to expose over MCP |
+| `resources` | `MCPResourceHandler[]` | no | `[]` | Resource handlers to expose over MCP |
+| `prompts` | `MCPPromptHandler[]` | no | `[]` | Prompt handlers to expose over MCP |
 
 ### `MCPServer`
 
@@ -210,7 +214,7 @@ interface MCPServer {
 | Member | Description |
 | ------ | ----------- |
 | `running` | Read-only boolean indicating whether the server is currently listening for requests |
-| `start()` | Begin listening on `stdin` for incoming JSON-RPC messages. Handles `initialize`, `notifications/initialized`, `tools/list`, and `tools/call` |
+| `start()` | Begin listening on `stdin` for incoming JSON-RPC messages. Handles `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, and `prompts/get` |
 | `stop()` | Stop the server by setting the running flag to false |
 
 ### `createMCPServer(config)`
@@ -250,8 +254,155 @@ const server = createMCPServer({
 })
 
 await server.start()
-// The server is now listening on stdin/stdout.
-// MCP clients (e.g. Claude Desktop) can connect to it via stdio transport.
+```
+
+**Example -- server with resources and prompts**
+
+```typescript
+import { createMCPServer } from '@elsium-ai/mcp'
+import { createTool } from '@elsium-ai/tools'
+import { z } from 'zod'
+
+const greet = createTool({
+	name: 'greet',
+	description: 'Return a greeting for the given name',
+	input: z.object({ name: z.string() }),
+	execute: async ({ input }) => `Hello, ${input.name}!`,
+})
+
+const server = createMCPServer({
+	name: 'my-server',
+	version: '1.0.0',
+	tools: [greet],
+	resources: [
+		{
+			uri: 'config://app',
+			name: 'App Configuration',
+			description: 'Current application configuration',
+			mimeType: 'application/json',
+			read: async () => JSON.stringify({ env: 'production', version: '1.0.0' }),
+		},
+	],
+	prompts: [
+		{
+			name: 'summarize',
+			description: 'Summarize the given text',
+			arguments: [
+				{ name: 'text', description: 'Text to summarize', required: true },
+				{ name: 'style', description: 'Summary style (brief or detailed)', required: false },
+			],
+			get: async (args) => ({
+				messages: [
+					{
+						role: 'user',
+						content: `Summarize the following text in a ${args?.style ?? 'brief'} style:\n\n${args?.text}`,
+					},
+				],
+			}),
+		},
+	],
+})
+
+await server.start()
+```
+
+---
+
+## Resources
+
+### `MCPResourceHandler`
+
+Defines a resource that the MCP server can expose. Resources provide read-only data to clients (configuration, files, database records, etc.).
+
+```typescript
+interface MCPResourceHandler {
+	uri: string
+	name: string
+	description?: string
+	mimeType?: string
+	read(): Promise<string>
+}
+```
+
+| Property | Type | Required | Description |
+| -------- | ---- | -------- | ----------- |
+| `uri` | `string` | yes | Unique URI identifying the resource (e.g. `'config://app'`, `'file:///data.json'`) |
+| `name` | `string` | yes | Human-readable name for the resource |
+| `description` | `string` | no | Description of what the resource provides |
+| `mimeType` | `string` | no | MIME type of the returned content |
+| `read` | `() => Promise<string>` | yes | Async function that returns the resource content as a string |
+
+---
+
+## Prompts
+
+### `MCPPromptHandler`
+
+Defines a prompt template that the MCP server can expose. Prompts allow clients to request pre-built message sequences with optional arguments.
+
+```typescript
+interface MCPPromptHandler {
+	name: string
+	description?: string
+	arguments?: MCPPromptArgument[]
+	get(args?: Record<string, string>): Promise<{ messages: Array<{ role: string; content: string }> }>
+}
+
+interface MCPPromptArgument {
+	name: string
+	description?: string
+	required?: boolean
+}
+```
+
+| Property | Type | Required | Description |
+| -------- | ---- | -------- | ----------- |
+| `name` | `string` | yes | Unique name for the prompt |
+| `description` | `string` | no | Description of what the prompt does |
+| `arguments` | `MCPPromptArgument[]` | no | Arguments the prompt accepts |
+| `get` | `(args?) => Promise<{ messages }>` | yes | Async function that returns the prompt's message sequence |
+
+---
+
+## Client Resource and Prompt Methods
+
+The `MCPClient` also supports listing and reading resources and prompts from a connected server:
+
+```typescript
+interface MCPClient {
+	listResources(): Promise<MCPResourceInfo[]>
+	readResource(uri: string): Promise<string>
+	listPrompts(): Promise<MCPPromptInfo[]>
+	getPrompt(name: string, args?: Record<string, string>): Promise<{ messages: Array<{ role: string; content: string }> }>
+}
+```
+
+| Method | Description |
+| ------ | ----------- |
+| `listResources()` | List all resources exposed by the connected MCP server |
+| `readResource(uri)` | Read the content of a specific resource by URI |
+| `listPrompts()` | List all prompts exposed by the connected MCP server |
+| `getPrompt(name, args?)` | Get a prompt's message sequence, optionally passing arguments |
+
+```typescript
+import { createMCPClient } from '@elsium-ai/mcp'
+
+const client = createMCPClient({
+	name: 'my-client',
+	transport: 'stdio',
+	command: 'node',
+	args: ['./my-mcp-server.js'],
+})
+
+await client.connect()
+
+const resources = await client.listResources()
+const config = await client.readResource('config://app')
+
+const prompts = await client.listPrompts()
+const prompt = await client.getPrompt('summarize', { text: 'Long article...', style: 'brief' })
+
+await client.disconnect()
 ```
 
 ---

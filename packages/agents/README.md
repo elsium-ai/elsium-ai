@@ -1002,6 +1002,70 @@ interface ApprovalGate {
 
 ---
 
+## ReAct Agent
+
+### `defineReActAgent`
+
+Create a ReAct (Reasoning + Acting) agent that follows an explicit Thought/Action/Observation loop. The agent reasons about what to do, selects a tool to call, observes the result, and repeats until it has enough information to produce a final answer.
+
+```ts
+function defineReActAgent(config: {
+	name: string
+	tools: Tool[]
+	system?: string
+	maxIterations?: number
+	provider?: string | LLMProvider
+	apiKey?: string
+}): Agent
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.name` | `string` | -- | Agent name. |
+| `config.tools` | `Tool[]` | -- | Tools available to the agent during the Action step. |
+| `config.system` | `string` | Built-in ReAct prompt | Custom system prompt (merged with ReAct instructions). |
+| `config.maxIterations` | `number` | `10` | Maximum Thought/Action/Observation cycles before stopping. |
+| `config.provider` | `string \| LLMProvider` | -- | Provider name or instance. |
+| `config.apiKey` | `string` | -- | API key (used when `provider` is a string). |
+
+**Returns:** `Agent`
+
+The ReAct loop follows this cycle on each iteration:
+
+1. **Thought** -- the agent reasons about the current state and decides what to do next.
+2. **Action** -- the agent selects and calls a tool with arguments.
+3. **Observation** -- the tool result is fed back into the conversation.
+
+The loop repeats until the agent produces a final answer or `maxIterations` is reached. The agent supports both text-based parsing (extracting Thought/Action/Observation from the LLM's text output) and native tool calling (when the provider returns structured tool calls).
+
+```ts
+import { defineReActAgent } from '@elsium-ai/agents'
+import { createTool } from '@elsium-ai/tools'
+import { z } from 'zod'
+
+const searchTool = createTool({
+	name: 'search',
+	description: 'Search the web for information',
+	input: z.object({ query: z.string() }),
+	execute: async ({ input }) => {
+		return `Results for: ${input.query}`
+	},
+})
+
+const agent = defineReActAgent({
+	name: 'researcher',
+	tools: [searchTool],
+	provider: 'anthropic',
+	apiKey: process.env.ANTHROPIC_API_KEY!,
+	maxIterations: 5,
+})
+
+const result = await agent.run('What is the population of Tokyo?')
+console.log(result.message.content)
+```
+
+---
+
 ## Part of ElsiumAI
 
 This package is the agent layer of the [ElsiumAI](https://github.com/elsium-ai/elsium-ai) framework. See the [full documentation](https://github.com/elsium-ai/elsium-ai) for guides and examples.

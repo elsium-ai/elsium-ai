@@ -323,6 +323,41 @@ console.log(doc.metadata.rowCount) // 2
 console.log(doc.metadata.columns)  // ["name", "age", "bio"]
 ```
 
+### `pdfLoader`
+
+Creates a loader for PDF documents. Extracts text content from PDF files with configurable page limits and page break markers.
+
+Requires `pdf-parse` as an optional peer dependency:
+
+```bash
+npm install pdf-parse
+```
+
+```typescript
+function pdfLoader(options?: {
+	maxPages?: number
+	pageBreakMarker?: string
+}): DocumentLoader
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `options.maxPages` | `number` | `undefined` | Maximum number of pages to extract. When omitted, all pages are loaded. |
+| `options.pageBreakMarker` | `string` | `'\n\n---\n\n'` | String inserted between pages in the extracted text. |
+
+**Returns:** A `DocumentLoader` that produces documents with `type: 'pdf'`.
+
+```typescript
+import { pdfLoader } from '@elsium-ai/rag'
+import { readFileSync } from 'node:fs'
+
+const loader = pdfLoader({ maxPages: 50 })
+const content = readFileSync('report.pdf', 'base64')
+const doc = loader.load('report.pdf', content)
+
+console.log(doc.metadata.type) // "pdf"
+```
+
 ### `getLoader`
 
 Factory function that returns a `DocumentLoader` for the given `LoaderType`.
@@ -818,7 +853,7 @@ const results = bm25.search('machine learning', 5)
 
 ### `createHybridSearch`
 
-Combines a vector store with a BM25 index using Reciprocal Rank Fusion (RRF) to blend semantic and keyword search results.
+Combines a vector store with a BM25 index using Reciprocal Rank Fusion (RRF) to blend semantic and keyword search results. Use hybrid search when you need both exact keyword matching (BM25) and semantic similarity (vector) to produce higher-quality retrieval than either approach alone.
 
 ```typescript
 function createHybridSearch(
