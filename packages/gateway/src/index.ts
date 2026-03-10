@@ -22,6 +22,8 @@ export {
 export { createAnthropicProvider } from './providers/anthropic'
 export { createOpenAIProvider } from './providers/openai'
 export { createGoogleProvider } from './providers/google'
+export { createOpenAICompatibleProvider } from './providers/openai-compatible'
+export type { OpenAICompatibleConfig } from './providers/openai-compatible'
 
 // Middleware
 export {

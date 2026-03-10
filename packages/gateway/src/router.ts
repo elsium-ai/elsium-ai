@@ -5,6 +5,7 @@ import {
 	ElsiumError,
 	ElsiumStream,
 	createCircuitBreaker,
+	createStream,
 } from '@elsium-ai/core'
 import { gateway } from './gateway'
 import type { Gateway } from './gateway'
@@ -319,6 +320,191 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		}
 	}
 
+	function errorStream(message: string): ElsiumStream {
+		return new ElsiumStream(
+			(async function* () {
+				yield {
+					type: 'error' as const,
+					error: new ElsiumError({
+						code: 'PROVIDER_ERROR',
+						message,
+						retryable: false,
+					}),
+				}
+			})(),
+		)
+	}
+
+	interface StreamAttemptResult {
+		success: boolean
+		error?: Error
+	}
+
+	function logStreamFailover(provider: string, error?: Error): void {
+		audit?.log('provider_failover', {
+			fromProvider: provider,
+			toProvider: 'next',
+			strategy: config.strategy,
+			reason: error?.message,
+		})
+	}
+
+	async function tryStreamProvider(
+		entry: ProviderEntry,
+		request: CompletionRequest,
+		emit: (event: import('@elsium-ai/core').StreamEvent) => void,
+	): Promise<StreamAttemptResult> {
+		const gw = getGateway(entry.name)
+		const providerStream = await callWithCircuitBreaker(entry.name, async () =>
+			gw.stream({ ...request, model: request.model ?? entry.model }),
+		)
+
+		let hasEmittedContent = false
+
+		for await (const event of providerStream) {
+			if (event.type === 'error') {
+				const err = event.error instanceof Error ? event.error : new Error(String(event.error))
+				if (hasEmittedContent) {
+					emit(event)
+					return { success: true }
+				}
+				return { success: false, error: err }
+			}
+			hasEmittedContent = true
+			emit(event)
+		}
+
+		return { success: true }
+	}
+
+	async function runStreamFallbackLoop(
+		available: ProviderEntry[],
+		request: CompletionRequest,
+		emit: (event: import('@elsium-ai/core').StreamEvent) => void,
+	): Promise<void> {
+		let lastError: Error | null = null
+		let failedProvider: string | null = null
+
+		for (const entry of available) {
+			try {
+				const result = await tryStreamProvider(entry, request, emit)
+				if (result.success) {
+					if (failedProvider) logFailover(failedProvider, entry.name, lastError?.message)
+					return
+				}
+				lastError = result.error ?? null
+				failedProvider = entry.name
+				logStreamFailover(entry.name, result.error)
+			} catch (err) {
+				failedProvider = entry.name
+				lastError = toError(err)
+				logStreamFailover(entry.name, lastError)
+			}
+		}
+
+		emit({
+			type: 'error',
+			error:
+				lastError ??
+				new ElsiumError({
+					code: 'PROVIDER_ERROR',
+					message: 'All providers failed during streaming',
+					retryable: false,
+				}),
+		})
+	}
+
+	function streamWithFallback(
+		providers: ProviderEntry[],
+		request: CompletionRequest,
+	): ElsiumStream {
+		const available = providers.filter((e) => isProviderAvailable(e.name))
+		if (available.length === 0) {
+			return errorStream('All providers unavailable')
+		}
+
+		return createStream(async (emit) => {
+			await runStreamFallbackLoop(available, request, emit)
+		})
+	}
+
+	function streamCostOptimized(request: CompletionRequest): ElsiumStream {
+		const optimizer = config.costOptimizer
+		if (!optimizer) {
+			return streamWithFallback(sortedProviders, request)
+		}
+
+		const complexity = estimateComplexity(request)
+		const threshold = optimizer.complexityThreshold ?? 0.5
+		const target = complexity < threshold ? optimizer.simpleModel : optimizer.complexModel
+
+		return createStream(async (emit) => {
+			try {
+				const gw = getGateway(target.provider)
+				const providerStream = gw.stream({ ...request, model: target.model })
+				for await (const event of providerStream) {
+					emit(event)
+				}
+			} catch {
+				const fallbackStream = streamWithFallback(sortedProviders, request)
+				for await (const event of fallbackStream) {
+					emit(event)
+				}
+			}
+		})
+	}
+
+	function streamLatencyOptimized(request: CompletionRequest): ElsiumStream {
+		const available = sortedProviders.filter((e) => isProviderAvailable(e.name))
+		if (available.length === 0) {
+			return errorStream('All providers unavailable')
+		}
+
+		return createStream(async (emit) => {
+			const controller = new AbortController()
+
+			const racePromises = available.map(async (entry) => {
+				const gw = getGateway(entry.name)
+				return callWithCircuitBreaker(entry.name, async () => ({
+					entry,
+					stream: gw.stream({
+						...request,
+						model: request.model ?? entry.model,
+						signal: controller.signal,
+					}),
+				}))
+			})
+
+			try {
+				const winner = await Promise.any(racePromises)
+				controller.abort()
+				for await (const event of winner.stream) {
+					emit(event)
+				}
+			} catch {
+				emit({
+					type: 'error',
+					error: new ElsiumError({
+						code: 'PROVIDER_ERROR',
+						message: 'All providers failed during streaming',
+						retryable: false,
+					}),
+				})
+			}
+		})
+	}
+
+	function streamCapabilityAware(request: CompletionRequest): ElsiumStream {
+		const capabilities = detectRequiredCapabilities(request)
+		const capable = filterCapableProviders(capabilities)
+
+		if (capable.length === 0) {
+			return streamWithFallback(sortedProviders, request)
+		}
+
+		return streamWithFallback(capable, request)
+	}
+
 	return {
 		providers: sortedProviders.map((p) => p.name),
 		strategy: config.strategy,
@@ -339,39 +525,18 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		},
 
 		stream(request: CompletionRequest): ElsiumStream {
-			// Find first available provider (respects circuit breakers)
-			const available = sortedProviders.find((e) => isProviderAvailable(e.name))
-			const entry = available ?? sortedProviders[0]
-			const gw = getGateway(entry.name)
-
-			// Wrap the stream call through the circuit breaker. The cb.execute()
-			// takes a Promise-returning fn; we resolve immediately with the stream
-			// so that the open/half-open gate runs before the stream is created,
-			// and any synchronous throw from gw.stream() is counted as a failure.
-			let resolvedStream: ElsiumStream | null = null
-			callWithCircuitBreaker(entry.name, () => {
-				resolvedStream = gw.stream({ ...request, model: request.model ?? entry.model })
-				return Promise.resolve(resolvedStream)
-			}).catch(() => {
-				// Rejection means the circuit breaker gate rejected the call (open
-				// state). The error stream returned below surfaces it to the consumer.
-			})
-
-			if (resolvedStream === null) {
-				// Circuit breaker is open — surface a stream-level error event
-				const err = new ElsiumError({
-					code: 'PROVIDER_ERROR',
-					message: 'Circuit breaker is open',
-					retryable: true,
-				})
-				return new ElsiumStream(
-					(async function* () {
-						yield { type: 'error' as const, error: err }
-					})(),
-				)
+			switch (config.strategy) {
+				case 'fallback':
+					return streamWithFallback(sortedProviders, request)
+				case 'cost-optimized':
+					return streamCostOptimized(request)
+				case 'latency-optimized':
+					return streamLatencyOptimized(request)
+				case 'capability-aware':
+					return streamCapabilityAware(request)
+				default:
+					return streamWithFallback(sortedProviders, request)
 			}
-
-			return resolvedStream
 		},
 	}
 }

@@ -19,7 +19,10 @@ export function formatSSE(event: string, data: unknown): string {
 	return `event: ${event}\ndata: ${json}\n\n`
 }
 
-export function streamResponse(c: Context, source: ElsiumStream): Response {
+export function streamResponse(
+	c: Context,
+	source: ElsiumStream | AsyncIterable<unknown>,
+): Response {
 	const headers = sseHeaders()
 	for (const [key, value] of Object.entries(headers)) {
 		c.header(key, value)

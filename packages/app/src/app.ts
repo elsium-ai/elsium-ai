@@ -5,7 +5,7 @@ import {
 	createLogger,
 	createShutdownManager,
 } from '@elsium-ai/core'
-import { type Gateway, gateway } from '@elsium-ai/gateway'
+import { type Gateway, type ProviderMesh, createProviderMesh, gateway } from '@elsium-ai/gateway'
 import { type Tracer, observe } from '@elsium-ai/observe'
 
 const log = createLogger()
@@ -24,6 +24,7 @@ import type { AppConfig } from './types'
 export interface ElsiumApp {
 	readonly hono: Hono
 	readonly gateway: Gateway
+	readonly mesh: ProviderMesh | undefined
 	readonly tracer: Tracer
 	listen(port?: number): { port: number; stop: () => Promise<void> }
 }
@@ -49,15 +50,43 @@ export function createApp(config: AppConfig): ElsiumApp {
 	// ─── Gateway ──────────────────────────────────────────────
 
 	const providerNames = Object.keys(config.gateway.providers)
-	const primaryProvider = providerNames[0]
-	const primaryConfig = config.gateway.providers[primaryProvider]
 
-	const gw = gateway({
-		provider: primaryProvider,
-		model: config.gateway.defaultModel,
-		apiKey: primaryConfig.apiKey,
-		baseUrl: primaryConfig.baseUrl,
-	})
+	let gw: Gateway
+	let mesh: ProviderMesh | undefined
+
+	if (providerNames.length > 1) {
+		const entries = providerNames.map((name) => ({
+			name,
+			config: {
+				apiKey: config.gateway.providers[name].apiKey,
+				baseUrl: config.gateway.providers[name].baseUrl,
+			},
+			model: config.gateway.providers[name].model,
+		}))
+
+		mesh = createProviderMesh({
+			providers: entries,
+			strategy: config.gateway.strategy ?? 'fallback',
+		})
+
+		const primaryProvider = providerNames[0]
+		const primaryConfig = config.gateway.providers[primaryProvider]
+		gw = gateway({
+			provider: primaryProvider,
+			model: config.gateway.defaultModel,
+			apiKey: primaryConfig.apiKey,
+			baseUrl: primaryConfig.baseUrl,
+		})
+	} else {
+		const primaryProvider = providerNames[0]
+		const primaryConfig = config.gateway.providers[primaryProvider]
+		gw = gateway({
+			provider: primaryProvider,
+			model: config.gateway.defaultModel,
+			apiKey: primaryConfig.apiKey,
+			baseUrl: primaryConfig.baseUrl,
+		})
+	}
 
 	// ─── Tracer ───────────────────────────────────────────────
 
@@ -100,6 +129,7 @@ export function createApp(config: AppConfig): ElsiumApp {
 
 	const routes = createRoutes({
 		gateway: gw,
+		mesh,
 		agents: agentMap,
 		defaultAgent,
 		tracer,
@@ -115,6 +145,7 @@ export function createApp(config: AppConfig): ElsiumApp {
 	return {
 		hono: app,
 		gateway: gw,
+		mesh,
 		tracer,
 
 		listen(port?: number): { port: number; stop: () => Promise<void> } {

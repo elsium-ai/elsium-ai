@@ -531,7 +531,375 @@ describe('ProviderMesh stream() circuit breaker integration', () => {
 		expect(events).toHaveLength(1)
 		expect(events[0]).toMatchObject({
 			type: 'error',
-			error: expect.objectContaining({ message: 'Circuit breaker is open' }),
+			error: expect.objectContaining({ message: 'All providers unavailable' }),
 		})
+	})
+})
+
+describe('Stream fallback strategy', () => {
+	it('should failover to next provider when first stream errors before content', async () => {
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockReturnValue(
+					new ElsiumStream(
+						(async function* () {
+							if (provider === 'anthropic') {
+								yield { type: 'error' as const, error: new Error('stream failed') }
+								return
+							}
+							yield { type: 'text_delta' as const, text: 'hello from openai' }
+						})(),
+					),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'fallback',
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({ type: 'text_delta', text: 'hello from openai' })
+	})
+
+	it('should not failover when first stream errors after content has been emitted', async () => {
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockReturnValue(
+					new ElsiumStream(
+						(async function* () {
+							if (provider === 'anthropic') {
+								yield { type: 'text_delta' as const, text: 'partial' }
+								yield { type: 'error' as const, error: new Error('mid-stream fail') }
+								return
+							}
+							yield { type: 'text_delta' as const, text: 'from openai' }
+						})(),
+					),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'fallback',
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(2)
+		expect(events[0]).toMatchObject({ type: 'text_delta', text: 'partial' })
+		expect(events[1]).toMatchObject({
+			type: 'error',
+			error: expect.objectContaining({ message: 'mid-stream fail' }),
+		})
+	})
+
+	it('should emit error when all providers fail during stream', async () => {
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockReturnValue(
+					new ElsiumStream(
+						(async function* () {
+							yield { type: 'error' as const, error: new Error(`${provider} down`) }
+						})(),
+					),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'fallback',
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({
+			type: 'error',
+			error: expect.objectContaining({ message: 'openai down' }),
+		})
+	})
+})
+
+describe('Stream cost-optimized strategy', () => {
+	it('should route simple requests to simple model stream', async () => {
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockImplementation(
+					(req) =>
+						new ElsiumStream(
+							(async function* () {
+								yield { type: 'text_delta' as const, text: `model:${req.model}` }
+							})(),
+						),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({
+			type: 'text_delta',
+			text: 'model:claude-haiku-4-5-20251001',
+		})
+	})
+
+	it('should route complex requests to complex model stream', async () => {
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockImplementation(
+					(req) =>
+						new ElsiumStream(
+							(async function* () {
+								yield { type: 'text_delta' as const, text: `model:${req.model}` }
+							})(),
+						),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'key1' } }],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const stream = mesh.stream({
+			messages: [{ role: 'user', content: 'Prove that P ≠ NP' }],
+		})
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({
+			type: 'text_delta',
+			text: 'model:claude-sonnet-4-6',
+		})
+	})
+
+	it('should fall back to chain when primary stream throws', async () => {
+		let callCount = 0
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockImplementation((req) => {
+					callCount++
+					if (callCount === 1) {
+						throw new Error('primary stream failed')
+					}
+					return new ElsiumStream(
+						(async function* () {
+							yield { type: 'text_delta' as const, text: 'fallback response' }
+						})(),
+					)
+				}),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'cost-optimized',
+			costOptimizer: {
+				simpleModel: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+				complexModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+			},
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({ type: 'text_delta', text: 'fallback response' })
+	})
+})
+
+describe('Stream capability-aware strategy', () => {
+	it('should filter providers by capabilities for streaming', async () => {
+		const streamCalls: string[] = []
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockImplementation(() => {
+					streamCalls.push(provider)
+					return new ElsiumStream(
+						(async function* () {
+							yield { type: 'text_delta' as const, text: `from ${provider}` }
+						})(),
+					)
+				}),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' }, capabilities: ['tools', 'vision'] },
+				{ name: 'openai', config: { apiKey: 'key2' }, capabilities: ['tools'] },
+			],
+			strategy: 'capability-aware',
+		})
+
+		const stream = mesh.stream({
+			messages: [
+				{
+					role: 'user',
+					content: [
+						{ type: 'text', text: 'Describe this' },
+						{ type: 'image', source: { type: 'url', url: 'https://example.com/img.png' } },
+					],
+				},
+			],
+		})
+
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({ type: 'text_delta', text: 'from anthropic' })
+		expect(streamCalls).toEqual(['anthropic'])
+	})
+
+	it('should fall back to all providers when no provider has required capabilities', async () => {
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockImplementation(
+					() =>
+						new ElsiumStream(
+							(async function* () {
+								yield { type: 'text_delta' as const, text: `from ${provider}` }
+							})(),
+						),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' }, capabilities: [] },
+				{ name: 'openai', config: { apiKey: 'key2' }, capabilities: [] },
+			],
+			strategy: 'capability-aware',
+		})
+
+		const stream = mesh.stream({
+			messages: [
+				{
+					role: 'user',
+					content: [
+						{ type: 'text', text: 'Describe this' },
+						{ type: 'image', source: { type: 'url', url: 'https://example.com/img.png' } },
+					],
+				},
+			],
+		})
+
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({ type: 'text_delta', text: 'from anthropic' })
 	})
 })

@@ -102,6 +102,10 @@ export type {
 	SessionResolveOptions,
 } from './session'
 
+// ReAct Agent
+export { defineReActAgent } from './react'
+export type { ReActConfig, ReActResult, ReActStep, ReActAgent } from './react'
+
 // Scheduler
 export { createScheduler, parseCronExpression, cronMatchesDate, getNextCronDate } from './scheduler'
 export type {

@@ -70,6 +70,10 @@ export type { GoogleEmbeddingsConfig } from './providers/google-embeddings'
 export { createCohereEmbeddings } from './providers/cohere-embeddings'
 export type { CohereEmbeddingsConfig } from './providers/cohere-embeddings'
 
+// PDF Loader
+export { pdfLoader } from './pdf-loader'
+export type { BinaryDocumentLoader, PdfLoaderOptions } from './pdf-loader'
+
 // BM25
 export { createBM25Index } from './bm25'
 export type { BM25Index } from './bm25'

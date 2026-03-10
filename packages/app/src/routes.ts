@@ -1,6 +1,6 @@
 import type { Agent } from '@elsium-ai/agents'
 import { ElsiumError } from '@elsium-ai/core'
-import type { Gateway } from '@elsium-ai/gateway'
+import type { Gateway, ProviderMesh } from '@elsium-ai/gateway'
 import type { Tracer } from '@elsium-ai/observe'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
@@ -74,6 +74,7 @@ function buildChatResponse(
 
 export interface RoutesDeps {
 	gateway: Gateway
+	mesh?: ProviderMesh
 	agents: Map<string, Agent>
 	defaultAgent?: Agent
 	tracer?: Tracer
@@ -144,12 +145,13 @@ export function createRoutes(deps: RoutesDeps): Hono {
 		}
 
 		if (body.stream) {
-			const stream = deps.gateway.stream({
+			const streamSource = deps.mesh ?? deps.gateway
+			const agentStream = streamSource.stream({
 				messages: [{ role: 'user', content: body.message }],
 				system: resolved.agent.config.system,
 				model: resolved.agent.config.model,
 			})
-			return streamResponse(c, stream)
+			return streamResponse(c, agentStream)
 		}
 
 		let result: Awaited<ReturnType<Agent['run']>>
@@ -190,8 +192,10 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			content: m.content,
 		}))
 
+		const completeSource = deps.mesh ?? deps.gateway
+
 		if (body.stream) {
-			const stream = deps.gateway.stream({
+			const stream = completeSource.stream({
 				messages,
 				model: body.model,
 				system: body.system,
@@ -203,7 +207,7 @@ export function createRoutes(deps: RoutesDeps): Hono {
 
 		let response: Awaited<ReturnType<Gateway['complete']>>
 		try {
-			response = await deps.gateway.complete({
+			response = await completeSource.complete({
 				messages,
 				model: body.model,
 				system: body.system,

@@ -8,6 +8,16 @@ export type { Workflow, ParallelWorkflowConfig, BranchConfig } from './workflow'
 // DAG Workflow
 export { defineDagWorkflow } from './dag'
 
+// Checkpoint & Resumable Workflows
+export { defineResumableWorkflow, createInMemoryCheckpointStore } from './checkpoint'
+export type {
+	ResumableWorkflow,
+	ResumableWorkflowConfig,
+	ResumableWorkflowRunOptions,
+	WorkflowCheckpoint,
+	CheckpointStore,
+} from './checkpoint'
+
 // Types
 export type {
 	StepConfig,

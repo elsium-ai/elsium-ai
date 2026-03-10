@@ -3,8 +3,9 @@ import type { RAGPipeline } from '@elsium-ai/rag'
 
 export interface AppConfig {
 	gateway: {
-		providers: Record<string, { apiKey: string; baseUrl?: string }>
+		providers: Record<string, { apiKey: string; baseUrl?: string; model?: string }>
 		defaultModel?: string
+		strategy?: 'fallback' | 'cost-optimized' | 'latency-optimized' | 'capability-aware'
 	}
 	agents?: Agent[]
 	rag?: RAGPipeline

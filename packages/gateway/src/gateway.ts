@@ -29,6 +29,7 @@ import {
 import { createAnthropicProvider } from './providers/anthropic'
 import { createGoogleProvider } from './providers/google'
 import { createOpenAIProvider } from './providers/openai'
+import { createOpenAICompatibleProvider } from './providers/openai-compatible'
 
 export interface GatewayConfig {
 	provider: string
@@ -60,6 +61,8 @@ const PROVIDER_FACTORIES: Record<string, (config: ProviderConfig) => LLMProvider
 	anthropic: createAnthropicProvider,
 	openai: createOpenAIProvider,
 	google: createGoogleProvider,
+	'openai-compatible': (cfg) =>
+		createOpenAICompatibleProvider({ ...cfg, baseUrl: cfg.baseUrl ?? '' }),
 }
 
 // Register built-in provider metadata at module load so getProviderMetadata() works

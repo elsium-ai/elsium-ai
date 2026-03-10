@@ -25,6 +25,7 @@ export {
 	tryCatchSync,
 	// Streaming
 	createStream,
+	ElsiumStream,
 	// Logger
 	createLogger,
 	// Config
@@ -44,6 +45,20 @@ export {
 	// Tokens
 	countTokens,
 	createContextManager,
+	// Circuit Breaker
+	createCircuitBreaker,
+	// Dedup
+	createDedup,
+	dedupMiddleware,
+	// Policy
+	createPolicySet,
+	policyMiddleware,
+	modelAccessPolicy,
+	tokenLimitPolicy,
+	costLimitPolicy,
+	contentPolicy,
+	// Shutdown
+	createShutdownManager,
 } from '@elsium-ai/core'
 
 export type {
@@ -69,24 +84,48 @@ export type {
 	ToolDefinition,
 	TenantContext,
 	Middleware,
+	MiddlewareContext,
+	MiddlewareNext,
+	StreamMiddleware,
+	StreamMiddlewareNext,
 	// Result types
 	Result,
 	Ok,
 	Err,
 	// Stream types
-	ElsiumStream,
 	ResilientStreamOptions,
+	StreamTransformer,
 	// Logger types
 	LogLevel,
 	Logger,
+	LogEntry,
+	LoggerOptions,
 	// Error types
 	ErrorCode,
+	ErrorDetails,
 	// Registry types
 	Registry,
 	// Token types
 	ContextStrategy,
 	ContextManagerConfig,
 	ContextManager,
+	// Circuit Breaker types
+	CircuitBreakerConfig,
+	CircuitBreaker,
+	CircuitState,
+	// Dedup types
+	DedupConfig,
+	Dedup,
+	// Policy types
+	PolicyDecision,
+	PolicyResult,
+	PolicyContext,
+	PolicyRule,
+	PolicyConfig,
+	PolicySet,
+	// Shutdown types
+	ShutdownConfig,
+	ShutdownManager,
 } from '@elsium-ai/core'
 
 // ─── Gateway ────────────────────────────────────────────────────
@@ -100,19 +139,23 @@ export {
 	getProviderMetadata,
 	calculateCost,
 	registerPricing,
+	estimateCost,
 	composeMiddleware,
+	composeStreamMiddleware,
 	loggingMiddleware,
 	costTrackingMiddleware,
 	xrayMiddleware,
 	createAnthropicProvider,
 	createOpenAIProvider,
 	createGoogleProvider,
+	createOpenAICompatibleProvider,
 	createProviderMesh,
 	securityMiddleware,
 	detectPromptInjection,
 	detectJailbreak,
 	redactSecrets,
 	checkBlockedPatterns,
+	classifyContent,
 	// Cache
 	cacheMiddleware,
 	createInMemoryCache,
@@ -120,6 +163,9 @@ export {
 	outputGuardrailMiddleware,
 	// Batch
 	createBatch,
+	// Bulkhead
+	createBulkhead,
+	bulkheadMiddleware,
 } from '@elsium-ai/gateway'
 
 export type {
@@ -139,6 +185,9 @@ export type {
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,
+	DataClassification,
+	ClassificationResult,
+	OpenAICompatibleConfig,
 	// Cache types
 	CacheAdapter,
 	CacheStats,
@@ -151,6 +200,9 @@ export type {
 	BatchConfig,
 	BatchResult,
 	BatchResultItem,
+	// Bulkhead types
+	BulkheadConfig,
+	Bulkhead,
 } from '@elsium-ai/gateway'
 
 // ─── Agents ─────────────────────────────────────────────────────
@@ -165,9 +217,13 @@ export {
 	createAgentSecurity,
 	createConfidenceScorer,
 	executeStateMachine,
+	// ReAct Agent
+	defineReActAgent,
 	// Memory Stores
 	createInMemoryMemoryStore,
 	createSqliteMemoryStore,
+	// Shared Memory
+	createSharedMemory,
 	// Streaming
 	createAgentStream,
 	// Threads
@@ -176,6 +232,9 @@ export {
 	createInMemoryThreadStore,
 	// Async Agent
 	createAsyncAgent,
+	// Approval Gates
+	createApprovalGate,
+	shouldRequireApproval,
 	// Channels
 	createChannelGateway,
 	createWebhookChannel,
@@ -212,9 +271,19 @@ export type {
 	StateDefinition,
 	StateHistoryEntry,
 	StateMachineResult,
+	// ReAct types
+	ReActConfig,
+	ReActResult,
+	ReActStep,
+	ReActAgent,
+	// Multi-agent types
+	MultiAgentConfig,
+	MultiAgentOptions,
 	// Memory Store types
 	MemoryStore,
 	SqliteMemoryStoreConfig,
+	// Shared Memory types
+	SharedMemory,
 	// Streaming types
 	AgentStreamEvent,
 	AgentStream,
@@ -232,6 +301,12 @@ export type {
 	AgentTask,
 	TaskStatus,
 	TaskProgressEvent,
+	// Approval types
+	ApprovalRequest,
+	ApprovalDecision,
+	ApprovalCallback,
+	ApprovalGateConfig,
+	ApprovalGate,
 	// Channel types
 	ChannelAdapter,
 	ChannelGateway,
@@ -283,11 +358,36 @@ export {
 	createInMemoryStore,
 	createOpenAIEmbeddings,
 	createMockEmbeddings,
+	// Loaders
+	textLoader,
+	markdownLoader,
+	htmlLoader,
+	jsonLoader,
+	csvLoader,
+	getLoader,
+	// PDF
+	pdfLoader,
+	// Chunkers
+	fixedSizeChunker,
+	recursiveChunker,
+	sentenceChunker,
+	getChunker,
+	// Similarity
+	cosineSimilarity,
+	mmrRerank,
 	// Registries
 	vectorStoreRegistry,
 	embeddingProviderRegistry,
 	// Stores
 	createPgVectorStore,
+	createQdrantStore,
+	// Embedding Providers
+	createGoogleEmbeddings,
+	createCohereEmbeddings,
+	// BM25
+	createBM25Index,
+	// Hybrid Search
+	createHybridSearch,
 } from '@elsium-ai/rag'
 
 export type {
@@ -295,15 +395,34 @@ export type {
 	RAGPipelineConfig,
 	IngestResult,
 	Document,
+	DocumentMetadata,
 	Chunk,
+	ChunkMetadata,
 	EmbeddedChunk,
+	EmbeddingVector,
 	RetrievalResult,
 	QueryOptions,
+	LoaderType,
+	ChunkingStrategy,
+	ChunkingConfig,
+	EmbeddingConfig,
+	VectorStoreConfig,
+	RetrievalConfig,
 	EmbeddingProvider,
 	VectorStore,
 	VectorStoreFactory,
 	EmbeddingProviderFactory,
+	DocumentLoader,
+	Chunker,
 	PgVectorStoreConfig,
+	QdrantStoreConfig,
+	GoogleEmbeddingsConfig,
+	CohereEmbeddingsConfig,
+	BinaryDocumentLoader,
+	PdfLoaderOptions,
+	BM25Index,
+	HybridSearch,
+	HybridSearchConfig,
 } from '@elsium-ai/rag'
 
 // ─── Workflows ──────────────────────────────────────────────────
@@ -311,6 +430,9 @@ export {
 	defineWorkflow,
 	defineParallelWorkflow,
 	defineBranchWorkflow,
+	defineDagWorkflow,
+	defineResumableWorkflow,
+	createInMemoryCheckpointStore,
 	step,
 } from '@elsium-ai/workflows'
 
@@ -319,9 +441,21 @@ export type {
 	WorkflowConfig,
 	WorkflowResult,
 	WorkflowRunOptions,
+	WorkflowStatus,
 	StepConfig,
 	StepContext,
 	StepResult,
+	StepStatus,
+	RetryConfig,
+	ParallelWorkflowConfig,
+	BranchConfig,
+	DagStepConfig,
+	DagWorkflowConfig,
+	ResumableWorkflow,
+	ResumableWorkflowConfig,
+	ResumableWorkflowRunOptions,
+	WorkflowCheckpoint,
+	CheckpointStore,
 } from '@elsium-ai/workflows'
 
 // ─── Observe ────────────────────────────────────────────────────
@@ -330,8 +464,18 @@ export {
 	createSpan,
 	createMetrics,
 	createCostEngine,
+	registerModelTier,
+	// Audit Trail
+	createAuditTrail,
+	auditMiddleware,
+	// Provenance
+	createProvenanceTracker,
 	// Experiment
 	createExperiment,
+	createFileExperimentStore,
+	// Instrumentation
+	instrumentComplete,
+	instrumentAgent,
 	// OpenTelemetry
 	toOTelSpan,
 	toOTelExportRequest,
@@ -346,26 +490,53 @@ export type {
 	Tracer,
 	TracerConfig,
 	TracerExporter,
+	TracerOutput,
 	CostReport,
 	Span,
 	SpanData,
+	SpanEvent,
 	SpanKind,
 	SpanStatus,
+	SpanHandler,
 	MetricsCollector,
 	MetricEntry,
 	CostEngine,
 	CostEngineConfig,
+	BudgetConfig,
+	LoopDetectionConfig,
 	CostAlert,
 	CostDimension,
 	CostIntelligenceReport,
 	ModelSuggestion,
+	ModelTierEntry,
+	// Audit types
+	AuditEventType,
+	AuditEvent,
+	AuditStorageAdapter,
+	AuditQueryFilter,
+	AuditIntegrityResult,
+	AuditTrailConfig,
+	AuditBatchConfig,
+	AuditTrail,
+	// Provenance types
+	ProvenanceRecord,
+	ProvenanceTracker,
 	// Experiment types
 	Experiment,
 	ExperimentConfig,
 	ExperimentVariant,
 	ExperimentResults,
+	ExperimentStore,
+	// Instrumentation types
+	InstrumentableAgent,
 	// OTel types
 	OTelSpan,
+	OTelSpanKind,
+	OTelStatusCode,
+	OTelAttribute,
+	OTelAttributeValue,
+	OTelEvent,
+	OTelResource,
 	OTelExportRequest,
 	TraceContext,
 	OTLPExporterConfig,
@@ -395,14 +566,29 @@ export type {
 } from '@elsium-ai/app'
 
 // ─── MCP ────────────────────────────────────────────────────────
-export { createMCPClient, createMCPServer } from '@elsium-ai/mcp'
+export { createMCPClient, createMCPServer, createMCPHttpHandler } from '@elsium-ai/mcp'
 
 export type {
 	MCPClient,
 	MCPClientConfig,
+	MCPClientStdioConfig,
+	MCPClientHttpConfig,
 	MCPToolInfo,
 	MCPServer,
 	MCPServerConfig,
+	MCPHttpHandlerConfig,
+	MCPHttpHandler,
+	MCPResourceHandler,
+	MCPPromptHandler,
+	// Protocol types
+	JsonRpcRequest,
+	JsonRpcResponse,
+	MCPTransport,
+	MCPResource,
+	MCPResourceContent,
+	MCPPrompt,
+	MCPPromptArgument,
+	MCPPromptMessage,
 } from '@elsium-ai/mcp'
 
 // ─── Client ─────────────────────────────────────────────────────
