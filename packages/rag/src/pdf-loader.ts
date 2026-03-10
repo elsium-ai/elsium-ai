@@ -15,13 +15,16 @@ export function pdfLoader(options?: PdfLoaderOptions): BinaryDocumentLoader {
 
 	return {
 		async load(source: string, data: Buffer | Uint8Array): Promise<Document> {
-			let pdfParse: (
+			type PdfParseFn = (
 				buffer: Buffer,
 			) => Promise<{ text: string; numpages: number; info?: { Title?: string } }>
 
+			let pdfParse: PdfParseFn
+
 			try {
-				const mod = await import('pdf-parse')
-				pdfParse = mod.default ?? mod
+				const moduleName = 'pdf-parse'
+				const mod = (await import(moduleName)) as { default?: PdfParseFn }
+				pdfParse = mod.default ?? (mod as unknown as PdfParseFn)
 			} catch {
 				throw new Error('pdf-parse is required for PDF loading. Install it: npm install pdf-parse')
 			}
