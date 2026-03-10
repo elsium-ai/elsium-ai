@@ -340,10 +340,10 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		error?: Error
 	}
 
-	function logStreamFailover(provider: string, error?: Error): void {
+	function logStreamFailover(provider: string, toProvider: string, error?: Error): void {
 		audit?.log('provider_failover', {
 			fromProvider: provider,
-			toProvider: 'next',
+			toProvider,
 			strategy: config.strategy,
 			reason: error?.message,
 		})
@@ -385,7 +385,9 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		let lastError: Error | null = null
 		let failedProvider: string | null = null
 
-		for (const entry of available) {
+		for (let i = 0; i < available.length; i++) {
+			const entry = available[i]
+			const nextProvider = i + 1 < available.length ? available[i + 1].name : 'none'
 			try {
 				const result = await tryStreamProvider(entry, request, emit)
 				if (result.success) {
@@ -394,11 +396,11 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 				}
 				lastError = result.error ?? null
 				failedProvider = entry.name
-				logStreamFailover(entry.name, result.error)
+				logStreamFailover(entry.name, nextProvider, result.error)
 			} catch (err) {
 				failedProvider = entry.name
 				lastError = toError(err)
-				logStreamFailover(entry.name, lastError)
+				logStreamFailover(entry.name, nextProvider, lastError)
 			}
 		}
 

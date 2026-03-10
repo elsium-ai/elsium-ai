@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type {
 	AuditEvent,
 	AuditIntegrityResult,
@@ -303,6 +303,37 @@ describe('AuditTrail batched mode', () => {
 		expect(trail.pending).toBe(0)
 		const events = await trail.query({})
 		expect(events).toHaveLength(1)
+	})
+
+	it('flush waits for async storage writes to complete', async () => {
+		let appendResolved = false
+		const asyncStorage = {
+			append: vi.fn().mockImplementation(
+				() =>
+					new Promise<void>((resolve) => {
+						setTimeout(() => {
+							appendResolved = true
+							resolve()
+						}, 50)
+					}),
+			),
+			query: vi.fn().mockReturnValue([]),
+			count: vi.fn().mockReturnValue(0),
+			verifyIntegrity: vi.fn().mockReturnValue({ valid: true, totalEvents: 0 }),
+		}
+
+		const trail = createAuditTrail({ storage: asyncStorage, hashChain: false })
+
+		trail.log('llm_call', { model: 'test' })
+
+		expect(appendResolved).toBe(false)
+
+		await trail.flush()
+
+		expect(appendResolved).toBe(true)
+		expect(asyncStorage.append).toHaveBeenCalledOnce()
+
+		trail.dispose()
 	})
 
 	it('flush and dispose are safe to call on non-batched trails', async () => {

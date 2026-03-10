@@ -246,7 +246,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	const isBatched = !!batchConfig
 	const pendingBuffer: PendingEntry[] = []
 	let flushTimer: ReturnType<typeof setInterval> | null = null
-	const flushPromise: Promise<void> = Promise.resolve()
+	let flushPromise: Promise<void> = Promise.resolve()
 
 	function buildAndAppend(entry: PendingEntry): void {
 		sequenceId++
@@ -274,8 +274,10 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		}
 
 		const result = storage.append(finalEvent)
-		if (result && typeof (result as Promise<void>).catch === 'function') {
-			;(result as Promise<void>).catch((err) => config?.onError?.(err))
+		if (result && typeof (result as Promise<void>).then === 'function') {
+			flushPromise = flushPromise
+				.then(() => result as Promise<void>)
+				.catch((err) => config?.onError?.(err))
 		}
 	}
 
