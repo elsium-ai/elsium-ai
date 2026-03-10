@@ -41,7 +41,7 @@ export interface RetryConfig {
 
 // ─── Workflow ────────────────────────────────────────────────────
 
-export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type WorkflowStatus = 'pending' | 'running' | 'completed' | 'failed' | 'paused'
 
 export interface WorkflowConfig {
 	name: string

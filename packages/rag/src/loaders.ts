@@ -211,5 +211,7 @@ export function getLoader(type: LoaderType): DocumentLoader {
 			return jsonLoader()
 		case 'csv':
 			return csvLoader()
+		case 'pdf':
+			return textLoader()
 	}
 }

@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import type { ToolDefinition } from '@elsium-ai/core'
 import { ElsiumError, generateId } from '@elsium-ai/core'
 import type { Tool, ToolContext, ToolExecutionResult } from '@elsium-ai/tools'
+import type { MCPPrompt, MCPPromptMessage, MCPResource, MCPResourceContent } from './types'
 
 export interface MCPClientStdioConfig {
 	name: string
@@ -48,6 +49,10 @@ export interface MCPClient {
 	listTools(): Promise<MCPToolInfo[]>
 	callTool(name: string, args: Record<string, unknown>): Promise<unknown>
 	toElsiumTools(): Promise<Tool[]>
+	listResources(): Promise<MCPResource[]>
+	readResource(uri: string): Promise<MCPResourceContent[]>
+	listPrompts(): Promise<MCPPrompt[]>
+	getPrompt(name: string, args?: Record<string, string>): Promise<MCPPromptMessage[]>
 	readonly connected: boolean
 }
 
@@ -191,6 +196,32 @@ function createHttpMCPClient(config: MCPClientHttpConfig): MCPClient {
 				.map((c) => c.text)
 				.join('\n')
 			return textContent ?? result
+		},
+
+		async listResources(): Promise<MCPResource[]> {
+			const result = (await sendRequest('resources/list')) as { resources: MCPResource[] }
+			return result.resources ?? []
+		},
+
+		async readResource(uri: string): Promise<MCPResourceContent[]> {
+			const result = (await sendRequest('resources/read', { uri })) as {
+				contents: MCPResourceContent[]
+			}
+			return result.contents ?? []
+		},
+
+		async listPrompts(): Promise<MCPPrompt[]> {
+			const result = (await sendRequest('prompts/list')) as { prompts: MCPPrompt[] }
+			return result.prompts ?? []
+		},
+
+		async getPrompt(name: string, args?: Record<string, string>): Promise<MCPPromptMessage[]> {
+			const params: Record<string, unknown> = { name }
+			if (args) params.arguments = args
+			const result = (await sendRequest('prompts/get', params)) as {
+				messages: MCPPromptMessage[]
+			}
+			return result.messages ?? []
 		},
 
 		async toElsiumTools(): Promise<Tool[]> {
@@ -456,6 +487,32 @@ function createStdioMCPClient(config: MCPClientStdioConfig): MCPClient {
 				.join('\n')
 
 			return textContent ?? result
+		},
+
+		async listResources(): Promise<MCPResource[]> {
+			const result = (await sendRequest('resources/list')) as { resources: MCPResource[] }
+			return result.resources ?? []
+		},
+
+		async readResource(uri: string): Promise<MCPResourceContent[]> {
+			const result = (await sendRequest('resources/read', { uri })) as {
+				contents: MCPResourceContent[]
+			}
+			return result.contents ?? []
+		},
+
+		async listPrompts(): Promise<MCPPrompt[]> {
+			const result = (await sendRequest('prompts/list')) as { prompts: MCPPrompt[] }
+			return result.prompts ?? []
+		},
+
+		async getPrompt(name: string, args?: Record<string, string>): Promise<MCPPromptMessage[]> {
+			const params: Record<string, unknown> = { name }
+			if (args) params.arguments = args
+			const result = (await sendRequest('prompts/get', params)) as {
+				messages: MCPPromptMessage[]
+			}
+			return result.messages ?? []
 		},
 
 		async toElsiumTools(): Promise<Tool[]> {

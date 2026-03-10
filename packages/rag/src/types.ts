@@ -59,7 +59,7 @@ export interface QueryOptions {
 
 // ─── Provider Configs ────────────────────────────────────────────
 
-export type LoaderType = 'text' | 'markdown' | 'html' | 'json' | 'csv'
+export type LoaderType = 'text' | 'markdown' | 'html' | 'json' | 'csv' | 'pdf'
 
 export type ChunkingStrategy = 'fixed-size' | 'recursive' | 'sentence'
 
