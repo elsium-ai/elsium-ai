@@ -25,7 +25,7 @@ export { createMetrics } from './metrics'
 export type { MetricsCollector, MetricEntry } from './metrics'
 
 // Audit Trail
-export { createAuditTrail, auditMiddleware } from './audit'
+export { createAuditTrail, auditMiddleware, auditStreamMiddleware } from './audit'
 export type {
 	AuditEventType,
 	AuditEvent,
@@ -36,6 +36,16 @@ export type {
 	AuditBatchConfig,
 	AuditTrail,
 } from './audit'
+
+// Audit Sinks
+export { createSinkManager } from './audit-sink'
+export type { AuditSink, AuditSinkRetryConfig, SinkManagerConfig, SinkManager } from './audit-sink'
+export { createWebhookSink } from './audit-sink-webhook'
+export type { WebhookSinkConfig } from './audit-sink-webhook'
+export { createSplunkSink } from './audit-sink-splunk'
+export type { SplunkSinkConfig } from './audit-sink-splunk'
+export { createDatadogSink } from './audit-sink-datadog'
+export type { DatadogSinkConfig } from './audit-sink-datadog'
 
 // Provenance
 export { createProvenanceTracker } from './provenance'

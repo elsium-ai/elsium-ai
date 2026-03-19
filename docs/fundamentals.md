@@ -2804,11 +2804,16 @@ console.log(needsApproval) // true
 Tamper-proof, hash-chained event log for compliance and forensics:
 
 ```typescript
-import { createAuditTrail, auditMiddleware } from '@elsium-ai/observe'
+import { createAuditTrail, auditMiddleware, auditStreamMiddleware } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({
   hashChain: true,           // SHA-256 chain — each event hashes the previous
   maxEvents: 100_000,        // Ring buffer — O(1) eviction when full
+  context: {                 // Global fields merged into every event
+    env: 'production',
+    service: 'my-ai-service',
+    version: '1.2.0',
+  },
 })
 
 // Log events manually
@@ -2816,10 +2821,12 @@ audit.log('auth_event', { userId: 'user_123', action: 'login' }, { actor: 'user_
 audit.log('config_change', { field: 'dailyBudget', from: 50, to: 100 }, { actor: 'admin_1' })
 
 // Or use as middleware — every LLM call is automatically logged
+// auditMiddleware for completion calls, auditStreamMiddleware for streaming calls
 const llm = gateway({
   provider: 'anthropic',
   apiKey: env('ANTHROPIC_API_KEY'),
   middleware: [auditMiddleware(audit)],
+  streamMiddleware: [auditStreamMiddleware(audit)],
 })
 
 // Query the audit log
@@ -2847,7 +2854,7 @@ const audit = createAuditTrail({
 
 audit.log('llm_call', { model: 'gpt-4o' }) // Near-zero cost — buffers only
 await audit.flush()                          // Hashes + writes to storage
-audit.dispose()                              // Clean shutdown
+await audit.dispose()                        // Awaits pending writes + sink shutdown
 ```
 
 **Failover audit integration** — wire the audit trail into the provider mesh to get tamper-evident records of every provider switch and circuit breaker state change:
@@ -2872,6 +2879,47 @@ const mesh = createProviderMesh({
 const failovers = await audit.query({ type: 'provider_failover' })
 const breakerEvents = await audit.query({ type: ['circuit_breaker_state_change'] })
 ```
+
+**Audit sinks** — export audit events to external observability and governance systems. Events are dispatched asynchronously after storage — a sink failure never blocks the audit trail.
+
+```typescript
+import { createAuditTrail, createWebhookSink, createSplunkSink, createDatadogSink } from 'elsium-ai/observe'
+
+const audit = createAuditTrail({
+  sinks: [
+    // Security events only → Splunk SIEM
+    {
+      ...createSplunkSink({
+        url: 'https://splunk:8088/services/collector',
+        token: 'hec-token',
+        index: 'ai_audit',
+      }),
+      filter: (event) => event.type === 'security_violation' || event.type === 'auth_event',
+    },
+    // All events → Datadog
+    createDatadogSink({
+      apiKey: process.env.DD_API_KEY!,
+      tags: { env: 'production' },
+    }),
+  ],
+})
+```
+
+Per-sink `filter` controls which events each sink receives. Sinks without a filter receive everything.
+
+**Dead letter queue** — prevent data loss when sinks fail after retry exhaustion:
+
+```typescript
+const audit = createAuditTrail({
+  sinks: {
+    sinks: [createWebhookSink({ url: 'https://hooks.example.com/audit' })],
+    deadLetterSink: createWebhookSink({ url: 'https://dlq.example.com/audit-dlq' }),
+    retry: { maxRetries: 3 },
+  },
+})
+```
+
+Built-in sinks: `createWebhookSink` (generic HTTP POST), `createSplunkSink` (Splunk HEC), `createDatadogSink` (Datadog Logs API). Implement the `AuditSink` interface for custom destinations (Kafka, ELK, etc.). All sinks support configurable batching, retry with exponential backoff, per-sink filtering, dead letter queue, and buffer overflow protection.
 
 ---
 

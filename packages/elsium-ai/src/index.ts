@@ -468,6 +468,12 @@ export {
 	// Audit Trail
 	createAuditTrail,
 	auditMiddleware,
+	auditStreamMiddleware,
+	// Audit Sinks
+	createSinkManager,
+	createWebhookSink,
+	createSplunkSink,
+	createDatadogSink,
 	// Provenance
 	createProvenanceTracker,
 	// Experiment
@@ -518,6 +524,14 @@ export type {
 	AuditTrailConfig,
 	AuditBatchConfig,
 	AuditTrail,
+	// Audit Sink types
+	AuditSink,
+	AuditSinkRetryConfig,
+	SinkManagerConfig,
+	SinkManager,
+	WebhookSinkConfig,
+	SplunkSinkConfig,
+	DatadogSinkConfig,
 	// Provenance types
 	ProvenanceRecord,
 	ProvenanceTracker,

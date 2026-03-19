@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto'
-import type { Middleware, MiddlewareContext, MiddlewareNext } from '@elsium-ai/core'
+import type {
+	Middleware,
+	MiddlewareContext,
+	MiddlewareNext,
+	StreamMiddleware,
+} from '@elsium-ai/core'
+import type { AuditSink, SinkManager, SinkManagerConfig } from './audit-sink'
+import { createSinkManager } from './audit-sink'
 
 export type AuditEventType =
 	| 'llm_call'
@@ -61,6 +68,8 @@ export interface AuditTrailConfig {
 	hashChain?: boolean
 	maxEvents?: number
 	batch?: AuditBatchConfig
+	sinks?: AuditSink[] | SinkManagerConfig
+	context?: Record<string, unknown>
 	onError?: (error: unknown) => void
 }
 
@@ -75,7 +84,7 @@ export interface AuditTrail {
 	query(filter: AuditQueryFilter): Promise<AuditEvent[]>
 	verifyIntegrity(): Promise<AuditIntegrityResult>
 	flush(): Promise<void>
-	dispose(): void
+	dispose(): Promise<void>
 	readonly count: number
 	readonly pending: number
 }
@@ -213,12 +222,27 @@ interface PendingEntry {
 	traceId?: string
 }
 
+function resolveStorage(config?: AuditTrailConfig): AuditStorageAdapter {
+	if (config?.storage && typeof config.storage !== 'string') return config.storage
+	return new InMemoryAuditStorage(config?.maxEvents)
+}
+
+function resolveSinkManager(config?: AuditTrailConfig): SinkManager | null {
+	if (!config?.sinks) return null
+	const sinkConfig = Array.isArray(config.sinks) ? { sinks: config.sinks } : config.sinks
+	return createSinkManager(sinkConfig)
+}
+
+function resolveLastHash(storage: AuditStorageAdapter): string | Promise<string> {
+	if (!storage.getLastHash) return ZERO_HASH
+	return storage.getLastHash()
+}
+
 export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	const useHashChain = config?.hashChain !== false
-	const storage: AuditStorageAdapter =
-		config?.storage && typeof config.storage !== 'string'
-			? config.storage
-			: new InMemoryAuditStorage(config?.maxEvents)
+	const storage = resolveStorage(config)
+	const sinkManager = resolveSinkManager(config)
+	const globalContext = config?.context
 
 	let sequenceId = 0
 	let idCounter = 0
@@ -227,13 +251,13 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	let isReady = true
 	let readyPromise: Promise<void> = Promise.resolve()
 
-	if (useHashChain && storage.getLastHash) {
-		const lastHash = storage.getLastHash()
+	if (useHashChain) {
+		const lastHash = resolveLastHash(storage)
 		if (typeof lastHash === 'string') {
 			previousHash = lastHash
 		} else {
 			isReady = false
-			readyPromise = (lastHash as Promise<string>).then((hash) => {
+			readyPromise = lastHash.then((hash) => {
 				if (typeof hash === 'string') previousHash = hash
 				isReady = true
 			})
@@ -252,6 +276,8 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		sequenceId++
 		idCounter++
 
+		const data = globalContext ? { ...globalContext, ...entry.data } : entry.data
+
 		const event: Omit<AuditEvent, 'hash'> & { hash?: string; previousHash: string } = {
 			id: `audit_${idCounter.toString(36)}_${entry.timestamp.toString(36)}`,
 			sequenceId,
@@ -259,7 +285,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			timestamp: entry.timestamp,
 			actor: entry.actor,
 			traceId: entry.traceId,
-			data: entry.data,
+			data,
 			previousHash: useHashChain ? previousHash : ZERO_HASH,
 		}
 
@@ -279,6 +305,8 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 				.then(() => result as Promise<void>)
 				.catch((err) => config?.onError?.(err))
 		}
+
+		sinkManager?.dispatch(finalEvent)
 	}
 
 	function drainBuffer(): void {
@@ -341,14 +369,17 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			await readyPromise
 			drainBuffer()
 			await flushPromise
+			await sinkManager?.flush()
 		},
 
-		dispose(): void {
+		async dispose(): Promise<void> {
 			if (flushTimer) {
 				clearInterval(flushTimer)
 				flushTimer = null
 			}
 			drainBuffer()
+			await flushPromise
+			await sinkManager?.shutdown()
 		},
 
 		async query(filter: AuditQueryFilter): Promise<AuditEvent[]> {
@@ -413,5 +444,89 @@ export function auditMiddleware(auditTrail: AuditTrail): Middleware {
 
 			throw error
 		}
+	}
+}
+
+interface StreamAuditState {
+	inputTokens: number
+	outputTokens: number
+	totalTokens: number
+	stopReason?: string
+	hasUsage: boolean
+	hasError: boolean
+	errorMessage?: string
+}
+
+function emitStreamAudit(
+	auditTrail: AuditTrail,
+	ctx: MiddlewareContext,
+	state: StreamAuditState,
+	latencyMs: number,
+): void {
+	if (state.hasError && !state.hasUsage) {
+		auditTrail.log(
+			'llm_call',
+			{
+				provider: ctx.provider,
+				model: ctx.model,
+				error: state.errorMessage,
+				latencyMs,
+				success: false,
+				streaming: true,
+			},
+			{ traceId: ctx.traceId },
+		)
+	} else if (state.hasUsage) {
+		auditTrail.log(
+			'llm_call',
+			{
+				provider: ctx.provider,
+				model: ctx.model,
+				inputTokens: state.inputTokens,
+				outputTokens: state.outputTokens,
+				totalTokens: state.totalTokens,
+				latencyMs,
+				stopReason: state.stopReason,
+				streaming: true,
+			},
+			{ traceId: ctx.traceId },
+		)
+	}
+}
+
+export function auditStreamMiddleware(auditTrail: AuditTrail): StreamMiddleware {
+	return (ctx, source, next) => {
+		const startTime = performance.now()
+		const processed = next(ctx, source)
+
+		return (async function* () {
+			const state: StreamAuditState = {
+				inputTokens: 0,
+				outputTokens: 0,
+				totalTokens: 0,
+				hasUsage: false,
+				hasError: false,
+			}
+
+			try {
+				for await (const event of processed) {
+					if (event.type === 'message_end') {
+						state.inputTokens = event.usage.inputTokens
+						state.outputTokens = event.usage.outputTokens
+						state.totalTokens = event.usage.totalTokens
+						state.stopReason = event.stopReason
+						state.hasUsage = true
+					}
+					if (event.type === 'error') {
+						state.hasError = true
+						state.errorMessage = event.error.message
+					}
+					yield event
+				}
+			} finally {
+				const latencyMs = Math.round(performance.now() - startTime)
+				emitStreamAudit(auditTrail, ctx, state, latencyMs)
+			}
+		})()
 	}
 }
