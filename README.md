@@ -136,7 +136,7 @@ const llm = gateway({
 | **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern |
 | **RBAC** | Role-based permissions with inheritance and wildcard matching |
 | **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations |
-| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification, batched mode for high-volume, failover audit integration |
+| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification, batched mode for high-volume, streaming audit middleware, failover audit integration, pluggable sinks (webhook, Splunk, Datadog) with per-sink filtering and dead letter queue |
 | **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model |
 
 ---
@@ -197,7 +197,10 @@ The three pillars are what make ElsiumAI unique. These are the fundamentals it a
 - **Client SDK** — TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers
 - **Persistent storage** — SQLite memory stores for agents, PgVector for RAG
 - **Cost intelligence** — Budgets, projections, loop detection
-- **Testing** — Mock providers, evals, LLM-as-judge, prompt versioning, regression suites
+- **Testing** — Mock providers, evals, LLM-as-judge, prompt versioning, regression suites, dataset loading (JSON/CSV/JSONL), baseline comparison
+- **Structured extraction** — Zod schema → typed output, auto-retry on validation failure
+- **Dev Studio** — Local web dashboard for live traces, X-Ray, costs, streaming events
+- **AI Proxy** — OpenAI-compatible proxy with cost tracking, caching, audit — any language, zero code changes
 
 ---
 
@@ -209,8 +212,8 @@ The three pillars are what make ElsiumAI unique. These are the fundamentals it a
 │                  HTTP server · RBAC · auth · routes               │
 ├────────────────────┬────────────────┬────────────────────────────┤
 │  @elsium-ai/agents │ @elsium-ai/mcp │       @elsium-ai/cli       │
-│  memory · approval │ client · server│      init · dev · eval     │
-│  guardrails · multi│ resources      │                            │
+│  memory · approval │ client · server│  init · dev · eval · studio│
+│  guardrails · multi│ resources      │  proxy                     │
 │  ReAct             │ prompts        │                            │
 ├──────────┬─────────┼────────┬───────┼───────────┬────────────────┤
 │  gateway │  tools  │observe │  rag  │ workflows │   client      │

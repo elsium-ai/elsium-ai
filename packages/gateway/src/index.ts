@@ -1,6 +1,6 @@
 // Gateway
 export { gateway, registerProviderFactory } from './gateway'
-export type { GatewayConfig, Gateway } from './gateway'
+export type { GatewayConfig, Gateway, ExtractOptions } from './gateway'
 
 // Provider
 export type {

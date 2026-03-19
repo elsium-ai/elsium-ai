@@ -603,3 +603,116 @@ describe('loggingMiddleware', () => {
 		expect(tracker.getTotalCost()).toBe(0)
 	})
 })
+
+// ─── extract() ───────────────────────────────────────────────────
+
+describe('extract', () => {
+	const personSchema = z.object({
+		name: z.string(),
+		age: z.number(),
+	})
+
+	it('extracts data on first attempt', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Alice", "age": 25}',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		const result = await gw.extract(personSchema, 'Who is Alice?')
+
+		expect(result.name).toBe('Alice')
+		expect(result.age).toBe(25)
+	})
+
+	it('retries on validation failure and succeeds', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: 'not valid json at all',
+				},
+			},
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Bob", "age": 30}',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		const result = await gw.extract(personSchema, 'Who is Bob?')
+
+		expect(result.name).toBe('Bob')
+		expect(result.age).toBe(30)
+	})
+
+	it('throws after maxRetries exhausted', async () => {
+		const responses = Array.from({ length: 5 }, () => ({
+			message: {
+				role: 'assistant' as const,
+				content: 'invalid output',
+			},
+		}))
+		const mockProv = createMockProvider(responses)
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+
+		await expect(gw.extract(personSchema, 'Get person', { maxRetries: 2 })).rejects.toThrow()
+	})
+
+	it('includes custom system prompt', async () => {
+		let capturedSystem: string | undefined
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Eve", "age": 28}',
+				},
+			},
+		])
+		const origComplete = mockProv.complete.bind(mockProv)
+		mockProv.complete = async (req: CompletionRequest) => {
+			capturedSystem = req.system
+			return origComplete(req)
+		}
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		await gw.extract(personSchema, 'Who is Eve?', {
+			system: 'You are a helpful extractor.',
+		})
+
+		expect(capturedSystem).toContain('You are a helpful extractor.')
+	})
+
+	it('defaults maxRetries to 3', async () => {
+		let callCount = 0
+		const responses = Array.from({ length: 5 }, () => ({
+			message: {
+				role: 'assistant' as const,
+				content: 'not json',
+			},
+		}))
+		const mockProv = createMockProvider(responses)
+		const origComplete = mockProv.complete.bind(mockProv)
+		mockProv.complete = async (req: CompletionRequest) => {
+			callCount++
+			return origComplete(req)
+		}
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+
+		await expect(gw.extract(personSchema, 'Get person')).rejects.toThrow()
+		expect(callCount).toBe(4)
+	})
+})

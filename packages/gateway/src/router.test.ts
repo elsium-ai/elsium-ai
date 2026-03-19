@@ -665,6 +665,151 @@ describe('Stream fallback strategy', () => {
 	})
 })
 
+describe('Stream audit integration', () => {
+	it('should log failover with correct provider names during stream fallback', async () => {
+		const auditLog = vi.fn()
+
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockReturnValue(
+					new ElsiumStream(
+						(async function* () {
+							if (provider === 'anthropic') {
+								yield { type: 'error' as const, error: new Error('stream failed') }
+								return
+							}
+							yield { type: 'text_delta' as const, text: 'ok' }
+						})(),
+					),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'fallback',
+			audit: { log: auditLog },
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		const events: unknown[] = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(1)
+		expect(events[0]).toMatchObject({ type: 'text_delta', text: 'ok' })
+
+		expect(auditLog).toHaveBeenCalledWith(
+			'provider_failover',
+			expect.objectContaining({
+				fromProvider: 'anthropic',
+				toProvider: 'openai',
+				strategy: 'fallback',
+				reason: 'stream failed',
+			}),
+		)
+	})
+
+	it('should log failover with toProvider "none" when last provider fails', async () => {
+		const auditLog = vi.fn()
+
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockReturnValue(
+					new ElsiumStream(
+						(async function* () {
+							yield { type: 'error' as const, error: new Error(`${provider} down`) }
+						})(),
+					),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'fallback',
+			audit: { log: auditLog },
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		for await (const _event of stream) {
+			/* drain */
+		}
+
+		expect(auditLog).toHaveBeenCalledWith(
+			'provider_failover',
+			expect.objectContaining({
+				fromProvider: 'anthropic',
+				toProvider: 'openai',
+			}),
+		)
+		expect(auditLog).toHaveBeenCalledWith(
+			'provider_failover',
+			expect.objectContaining({
+				fromProvider: 'openai',
+				toProvider: 'none',
+			}),
+		)
+	})
+
+	it('should not log audit when stream succeeds on first provider', async () => {
+		const auditLog = vi.fn()
+
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn(),
+				stream: vi.fn().mockReturnValue(
+					new ElsiumStream(
+						(async function* () {
+							yield { type: 'text_delta' as const, text: 'ok' }
+						})(),
+					),
+				),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'key1' } },
+				{ name: 'openai', config: { apiKey: 'key2' } },
+			],
+			strategy: 'fallback',
+			audit: { log: auditLog },
+		})
+
+		const stream = mesh.stream({ messages: [{ role: 'user', content: 'Hi' }] })
+		for await (const _event of stream) {
+			/* drain */
+		}
+
+		expect(auditLog).not.toHaveBeenCalled()
+	})
+})
+
 describe('Stream cost-optimized strategy', () => {
 	it('should route simple requests to simple model stream', async () => {
 		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {

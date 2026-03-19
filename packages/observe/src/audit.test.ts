@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type {
 	AuditEvent,
 	AuditIntegrityResult,
 	AuditQueryFilter,
 	AuditStorageAdapter,
 } from './audit'
-import { auditMiddleware, createAuditTrail } from './audit'
+import { auditMiddleware, auditStreamMiddleware, createAuditTrail } from './audit'
 
 describe('AuditTrail', () => {
 	it('logs events and increments count', () => {
@@ -305,6 +305,37 @@ describe('AuditTrail batched mode', () => {
 		expect(events).toHaveLength(1)
 	})
 
+	it('flush waits for async storage writes to complete', async () => {
+		let appendResolved = false
+		const asyncStorage = {
+			append: vi.fn().mockImplementation(
+				() =>
+					new Promise<void>((resolve) => {
+						setTimeout(() => {
+							appendResolved = true
+							resolve()
+						}, 50)
+					}),
+			),
+			query: vi.fn().mockReturnValue([]),
+			count: vi.fn().mockReturnValue(0),
+			verifyIntegrity: vi.fn().mockReturnValue({ valid: true, totalEvents: 0 }),
+		}
+
+		const trail = createAuditTrail({ storage: asyncStorage, hashChain: false })
+
+		trail.log('llm_call', { model: 'test' })
+
+		expect(appendResolved).toBe(false)
+
+		await trail.flush()
+
+		expect(appendResolved).toBe(true)
+		expect(asyncStorage.append).toHaveBeenCalledOnce()
+
+		trail.dispose()
+	})
+
 	it('flush and dispose are safe to call on non-batched trails', async () => {
 		const trail = createAuditTrail()
 		trail.log('llm_call', { a: 1 })
@@ -343,10 +374,244 @@ describe('AuditTrail ring buffer eviction', () => {
 	})
 })
 
+describe('AuditTrail context enrichment', () => {
+	it('merges global context into every event', async () => {
+		const trail = createAuditTrail({
+			context: { env: 'production', service: 'my-app', version: '1.2.0' },
+		})
+
+		trail.log('llm_call', { model: 'gpt-4o', tokens: 100 })
+		trail.log('tool_execution', { tool: 'search' })
+
+		const events = await trail.query({})
+		expect(events).toHaveLength(2)
+
+		expect(events[0].data).toMatchObject({
+			env: 'production',
+			service: 'my-app',
+			version: '1.2.0',
+			model: 'gpt-4o',
+			tokens: 100,
+		})
+
+		expect(events[1].data).toMatchObject({
+			env: 'production',
+			service: 'my-app',
+			version: '1.2.0',
+			tool: 'search',
+		})
+	})
+
+	it('event-specific data overrides global context', async () => {
+		const trail = createAuditTrail({
+			context: { env: 'staging', source: 'default' },
+		})
+
+		trail.log('llm_call', { env: 'production', model: 'gpt-4o' })
+
+		const events = await trail.query({})
+		expect(events[0].data.env).toBe('production')
+		expect(events[0].data.source).toBe('default')
+	})
+
+	it('works without context (no enrichment)', async () => {
+		const trail = createAuditTrail()
+		trail.log('llm_call', { model: 'gpt-4o' })
+
+		const events = await trail.query({})
+		expect(events[0].data).toEqual({ model: 'gpt-4o' })
+	})
+})
+
+describe('AuditTrail async dispose', () => {
+	it('dispose awaits sink manager shutdown', async () => {
+		let shutdownCalled = false
+		const sink = {
+			name: 'test-sink',
+			send: vi.fn<[unknown[]], Promise<void>>().mockResolvedValue(undefined),
+			shutdown: vi.fn<[], Promise<void>>().mockImplementation(async () => {
+				await new Promise((r) => setTimeout(r, 10))
+				shutdownCalled = true
+			}),
+		}
+
+		const trail = createAuditTrail({ sinks: [sink] })
+		trail.log('llm_call', { model: 'test' })
+
+		await trail.dispose()
+
+		expect(shutdownCalled).toBe(true)
+		expect(sink.shutdown).toHaveBeenCalledOnce()
+	})
+
+	it('dispose awaits pending async storage writes', async () => {
+		let writeComplete = false
+		const asyncStorage = {
+			append: vi.fn().mockImplementation(
+				() =>
+					new Promise<void>((resolve) => {
+						setTimeout(() => {
+							writeComplete = true
+							resolve()
+						}, 20)
+					}),
+			),
+			query: vi.fn().mockReturnValue([]),
+			count: vi.fn().mockReturnValue(0),
+			verifyIntegrity: vi.fn().mockReturnValue({ valid: true, totalEvents: 0 }),
+		}
+
+		const trail = createAuditTrail({ storage: asyncStorage, hashChain: false })
+		trail.log('llm_call', { model: 'test' })
+
+		await trail.dispose()
+
+		expect(writeComplete).toBe(true)
+	})
+})
+
 describe('auditMiddleware', () => {
 	it('creates valid middleware', () => {
 		const trail = createAuditTrail()
 		const mw = auditMiddleware(trail)
 		expect(typeof mw).toBe('function')
+	})
+})
+
+describe('auditStreamMiddleware', () => {
+	function makeCtx(overrides: Partial<Record<string, unknown>> = {}) {
+		return {
+			request: { messages: [{ role: 'user', content: 'Hi' }] },
+			provider: 'anthropic',
+			model: 'claude-sonnet-4-6',
+			traceId: 'trc_123',
+			startTime: performance.now(),
+			metadata: {},
+			...overrides,
+		} as Parameters<ReturnType<typeof auditStreamMiddleware>>[0]
+	}
+
+	it('logs llm_call with usage from message_end event', async () => {
+		const trail = createAuditTrail()
+		const mw = auditStreamMiddleware(trail)
+
+		async function* source() {
+			yield { type: 'text_delta' as const, text: 'hello' }
+			yield {
+				type: 'message_end' as const,
+				usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+				stopReason: 'end_turn' as const,
+			}
+		}
+
+		const stream = mw(makeCtx(), source(), (_c, s) => s)
+		const events = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(2)
+
+		const logged = await trail.query({ type: 'llm_call' })
+		expect(logged).toHaveLength(1)
+		expect(logged[0].data).toMatchObject({
+			provider: 'anthropic',
+			model: 'claude-sonnet-4-6',
+			inputTokens: 100,
+			outputTokens: 50,
+			totalTokens: 150,
+			stopReason: 'end_turn',
+			streaming: true,
+		})
+		expect(logged[0].traceId).toBe('trc_123')
+	})
+
+	it('logs error when stream fails without usage', async () => {
+		const trail = createAuditTrail()
+		const mw = auditStreamMiddleware(trail)
+
+		async function* source() {
+			yield { type: 'error' as const, error: new Error('provider timeout') }
+		}
+
+		const stream = mw(makeCtx(), source(), (_c, s) => s)
+		for await (const _event of stream) {
+			/* drain */
+		}
+
+		const logged = await trail.query({ type: 'llm_call' })
+		expect(logged).toHaveLength(1)
+		expect(logged[0].data).toMatchObject({
+			error: 'provider timeout',
+			success: false,
+			streaming: true,
+		})
+	})
+
+	it('does not log when stream has no message_end or error', async () => {
+		const trail = createAuditTrail()
+		const mw = auditStreamMiddleware(trail)
+
+		async function* source() {
+			yield { type: 'text_delta' as const, text: 'partial' }
+		}
+
+		const stream = mw(makeCtx(), source(), (_c, s) => s)
+		for await (const _event of stream) {
+			/* drain */
+		}
+
+		const logged = await trail.query({ type: 'llm_call' })
+		expect(logged).toHaveLength(0)
+	})
+
+	it('passes all events through unchanged', async () => {
+		const trail = createAuditTrail()
+		const mw = auditStreamMiddleware(trail)
+
+		async function* source() {
+			yield { type: 'message_start' as const, id: 'msg_1', model: 'claude-sonnet-4-6' }
+			yield { type: 'text_delta' as const, text: 'hello' }
+			yield { type: 'text_delta' as const, text: ' world' }
+			yield {
+				type: 'message_end' as const,
+				usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+				stopReason: 'end_turn' as const,
+			}
+		}
+
+		const stream = mw(makeCtx(), source(), (_c, s) => s)
+		const events = []
+		for await (const event of stream) {
+			events.push(event)
+		}
+
+		expect(events).toHaveLength(4)
+		expect(events[0]).toMatchObject({ type: 'message_start' })
+		expect(events[1]).toMatchObject({ type: 'text_delta', text: 'hello' })
+		expect(events[2]).toMatchObject({ type: 'text_delta', text: ' world' })
+		expect(events[3]).toMatchObject({ type: 'message_end' })
+	})
+
+	it('records latency', async () => {
+		const trail = createAuditTrail()
+		const mw = auditStreamMiddleware(trail)
+
+		async function* source() {
+			await new Promise((r) => setTimeout(r, 20))
+			yield {
+				type: 'message_end' as const,
+				usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+				stopReason: 'end_turn' as const,
+			}
+		}
+
+		const stream = mw(makeCtx(), source(), (_c, s) => s)
+		for await (const _event of stream) {
+			/* drain */
+		}
+
+		const logged = await trail.query({ type: 'llm_call' })
+		expect(logged[0].data.latencyMs).toBeGreaterThanOrEqual(15)
 	})
 })

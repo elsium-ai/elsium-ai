@@ -19,8 +19,10 @@ npm install @elsium-ai/observe @elsium-ai/core
 | **Cost Engine** | `createCostEngine`, `registerModelTier`, `CostEngine`, `CostEngineConfig`, `BudgetConfig`, `LoopDetectionConfig`, `CostAlert`, `CostDimension`, `CostIntelligenceReport`, `ModelSuggestion`, `ModelTierEntry` | Budget enforcement, cost projections, loop detection, and model optimization suggestions |
 | **Tracer** | `observe`, `Tracer`, `TracerConfig`, `TracerOutput`, `TracerExporter`, `CostReport` | High-level tracing with sampling, console output, and custom exporters |
 | **Metrics** | `createMetrics`, `MetricsCollector`, `MetricEntry` | Counters, gauges, and histograms for application-level metrics |
-| **Audit Trail** | `createAuditTrail`, `auditMiddleware`, `AuditEventType`, `AuditEvent`, `AuditStorageAdapter`, `AuditQueryFilter`, `AuditIntegrityResult`, `AuditTrailConfig`, `AuditTrail` | SHA-256 hash-chained audit events with tamper detection and middleware |
+| **Audit Trail** | `createAuditTrail`, `auditMiddleware`, `auditStreamMiddleware`, `AuditEventType`, `AuditEvent`, `AuditStorageAdapter`, `AuditQueryFilter`, `AuditIntegrityResult`, `AuditTrailConfig`, `AuditTrail` | SHA-256 hash-chained audit events with tamper detection, middleware for both completion and streaming calls |
+| **Audit Sinks** | `createSinkManager`, `createWebhookSink`, `createSplunkSink`, `createDatadogSink`, `AuditSink`, `AuditSinkRetryConfig`, `SinkManagerConfig`, `SinkManager`, `WebhookSinkConfig`, `SplunkSinkConfig`, `DatadogSinkConfig` | Export audit events to external systems (webhooks, Splunk, Datadog) with batching, retry, per-sink filtering, and dead letter queue |
 | **Provenance** | `createProvenanceTracker`, `ProvenanceRecord`, `ProvenanceTracker` | Full lineage tracking per output: prompt, model, config, input, output |
+| **Studio Exporter** | `createStudioExporter`, `StudioExporter`, `StudioExporterConfig` | Write traces, X-Ray, and costs to `.elsium/` for the `elsium studio` dashboard |
 | **OpenTelemetry** | `toOTelSpan`, `toOTelExportRequest`, `toTraceparent`, `parseTraceparent`, `injectTraceContext`, `extractTraceContext`, `createOTLPExporter`, `OTelSpan`, `OTelSpanKind`, `OTelStatusCode`, `OTelAttribute`, `OTelAttributeValue`, `OTelEvent`, `OTelResource`, `OTelExportRequest`, `TraceContext`, `OTLPExporterConfig` | W3C Trace Context propagation, OTel span conversion, and OTLP JSON export |
 
 ---
@@ -646,6 +648,8 @@ interface AuditTrailConfig {
   hashChain?: boolean
   maxEvents?: number
   batch?: AuditBatchConfig
+  sinks?: AuditSink[] | SinkManagerConfig
+  context?: Record<string, unknown>
   onError?: (error: unknown) => void
 }
 ```
@@ -663,7 +667,7 @@ interface AuditTrail {
   query(filter: AuditQueryFilter): Promise<AuditEvent[]>
   verifyIntegrity(): Promise<AuditIntegrityResult>
   flush(): Promise<void>
-  dispose(): void
+  dispose(): Promise<void>
   readonly count: number
   readonly pending: number
 }
@@ -676,7 +680,7 @@ interface AuditTrail {
 | `query()` | Query events by type, actor, traceId, or timestamp range. Auto-flushes pending events in batched mode. |
 | `verifyIntegrity()` | Verify the hash chain has not been tampered with. Auto-flushes pending events in batched mode. |
 | `flush()` | Drain all pending events — computes hashes and writes to storage. No-op when not in batched mode. |
-| `dispose()` | Stop the flush timer and drain remaining events. Call this on shutdown. |
+| `dispose()` | Stop the flush timer, drain remaining events, await pending storage writes, and shut down sinks. Returns a promise — await it on shutdown. |
 | `count` | Total events (stored + pending). |
 | `pending` | Number of buffered events not yet flushed (0 when not in batched mode). |
 
@@ -694,6 +698,8 @@ function createAuditTrail(config?: AuditTrailConfig): AuditTrail
 | `config.hashChain` | `boolean` | `true` | Enable SHA-256 hash chaining for tamper detection |
 | `config.maxEvents` | `number` | `10000` | Maximum events retained (ring buffer — O(1) eviction) |
 | `config.batch` | `AuditBatchConfig` | `undefined` | Enable batched mode for high-volume scenarios |
+| `config.sinks` | `AuditSink[] \| SinkManagerConfig` | `undefined` | Export events to external systems (webhooks, SIEM, etc.) |
+| `config.context` | `Record<string, unknown>` | `undefined` | Global fields merged into every event's `data` (e.g. environment, service name, version) |
 | `config.onError` | `(error: unknown) => void` | `undefined` | Error handler for async storage failures |
 
 **Returns:** `AuditTrail`
@@ -748,11 +754,31 @@ audit.log('llm_call', { model: 'gpt-4o', tokens: 100 })
 // Force-flush before reading (query/verifyIntegrity auto-flush)
 await audit.flush()
 
-// Clean up on shutdown
-process.on('SIGTERM', () => audit.dispose())
+// Clean up on shutdown (awaits pending writes and sink delivery)
+process.on('SIGTERM', async () => await audit.dispose())
 ```
 
 Hash chain integrity is fully preserved — events are hashed sequentially during flush, not during `log()`.
+
+#### Context enrichment
+
+Add global fields to every event without repeating them at each call site:
+
+```ts
+const audit = createAuditTrail({
+  context: {
+    env: 'production',
+    service: 'my-ai-service',
+    version: '1.2.0',
+    region: 'us-east-1',
+  },
+})
+
+audit.log('llm_call', { model: 'gpt-4o', tokens: 100 })
+// event.data → { env: 'production', service: 'my-ai-service', version: '1.2.0', region: 'us-east-1', model: 'gpt-4o', tokens: 100 }
+```
+
+Event-specific data always takes precedence over global context fields.
 
 ### `auditMiddleware()`
 
@@ -779,6 +805,250 @@ const middleware = auditMiddleware(audit)
 ```
 
 The middleware automatically records `llm_call` events containing `provider`, `model`, `inputTokens`, `outputTokens`, `totalTokens`, `cost`, `latencyMs`, and `stopReason`. On errors, it records the error message and `success: false`.
+
+### `auditStreamMiddleware()`
+
+Creates a `StreamMiddleware` that audits streaming LLM calls. Intercepts `message_end` events to capture token usage and latency, and `error` events to capture failures — all without buffering or blocking the stream.
+
+```ts
+function auditStreamMiddleware(auditTrail: AuditTrail): StreamMiddleware
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `auditTrail` | `AuditTrail` | The audit trail instance to log events to |
+
+**Returns:** `StreamMiddleware` (from `@elsium-ai/core`)
+
+```ts
+import { createAuditTrail, auditStreamMiddleware } from '@elsium-ai/observe'
+
+const audit = createAuditTrail({ hashChain: true })
+const streamMw = auditStreamMiddleware(audit)
+
+// Use with an ElsiumAI gateway
+// gateway.use({ streamMiddleware: [streamMw] })
+```
+
+The middleware records `llm_call` events with `provider`, `model`, `inputTokens`, `outputTokens`, `totalTokens`, `latencyMs`, `stopReason`, and `streaming: true`. On errors, it records the error message and `success: false`.
+
+---
+
+## Audit Sinks
+
+Export audit events to external observability and governance systems. Sinks receive finalized `AuditEvent` objects after they are hashed and stored — a sink failure never blocks the audit trail or other sinks.
+
+### `AuditSink`
+
+```ts
+interface AuditSink {
+  name: string
+  filter?: (event: AuditEvent) => boolean
+  send(events: AuditEvent[]): Promise<void>
+  shutdown?(): Promise<void>
+}
+```
+
+The optional `filter` function controls which events a sink receives. When set, only events for which the filter returns `true` are sent to that sink. Sinks without a filter receive all events.
+
+### `SinkManagerConfig`
+
+```ts
+interface SinkManagerConfig {
+  sinks: AuditSink[]
+  batch?: {
+    size?: number          // default: 50
+    intervalMs?: number    // default: 5000
+  }
+  retry?: AuditSinkRetryConfig
+  maxBufferSize?: number   // default: 10000
+  deadLetterSink?: AuditSink
+  onError?: (sinkName: string, error: unknown) => void
+}
+```
+
+The `deadLetterSink` receives events that a sink failed to deliver after all retry attempts. This prevents data loss for compliance-critical audit events.
+
+### `AuditSinkRetryConfig`
+
+```ts
+interface AuditSinkRetryConfig {
+  maxRetries?: number      // default: 3
+  baseDelayMs?: number     // default: 1000
+  maxDelayMs?: number      // default: 30000
+}
+```
+
+### Quick start
+
+Pass sinks directly to `createAuditTrail()`:
+
+```ts
+import { createAuditTrail, createWebhookSink, createSplunkSink } from 'elsium-ai/observe'
+
+const audit = createAuditTrail({
+  sinks: [
+    createWebhookSink({ url: 'https://hooks.example.com/audit' }),
+    createSplunkSink({
+      url: 'https://splunk:8088/services/collector',
+      token: 'your-hec-token',
+    }),
+  ],
+})
+
+audit.log('security_violation', { threat: 'prompt_injection', score: 0.95 })
+```
+
+For advanced configuration, pass a `SinkManagerConfig`:
+
+```ts
+const audit = createAuditTrail({
+  sinks: {
+    sinks: [createWebhookSink({ url: 'https://hooks.example.com/audit' })],
+    batch: { size: 100, intervalMs: 10_000 },
+    retry: { maxRetries: 5, baseDelayMs: 2000 },
+    maxBufferSize: 50_000,
+    onError: (sinkName, error) => {
+      console.error(`Sink ${sinkName} failed:`, error)
+    },
+  },
+})
+```
+
+#### Per-sink filtering
+
+Route different event types to different destinations:
+
+```ts
+import { createAuditTrail, createSplunkSink, createDatadogSink } from 'elsium-ai/observe'
+
+const audit = createAuditTrail({
+  sinks: [
+    {
+      ...createSplunkSink({ url: 'https://splunk:8088/services/collector', token: 'tok' }),
+      filter: (event) => event.type === 'security_violation' || event.type === 'auth_event',
+    },
+    createDatadogSink({ apiKey: process.env.DD_API_KEY! }),
+  ],
+})
+```
+
+The Splunk sink only receives security and auth events; the Datadog sink receives everything.
+
+#### Dead letter queue
+
+Prevent data loss when sinks fail after all retry attempts:
+
+```ts
+const audit = createAuditTrail({
+  sinks: {
+    sinks: [createWebhookSink({ url: 'https://hooks.example.com/audit' })],
+    deadLetterSink: createWebhookSink({ url: 'https://dlq.example.com/audit-dlq' }),
+    retry: { maxRetries: 3 },
+  },
+})
+```
+
+Events that cannot be delivered after exhausting retries are sent to the dead letter sink for later replay.
+
+### `createWebhookSink()`
+
+Generic HTTP webhook sink. Sends `{ events: AuditEvent[] }` as JSON.
+
+```ts
+function createWebhookSink(config: WebhookSinkConfig): AuditSink
+```
+
+```ts
+interface WebhookSinkConfig {
+  url: string
+  headers?: Record<string, string>
+  method?: 'POST' | 'PUT'
+  timeoutMs?: number        // default: 10000
+}
+```
+
+```ts
+createWebhookSink({
+  url: 'https://hooks.example.com/audit',
+  headers: { Authorization: 'Bearer token123' },
+})
+```
+
+### `createSplunkSink()`
+
+Sends events to Splunk HTTP Event Collector (HEC) as newline-delimited JSON.
+
+```ts
+function createSplunkSink(config: SplunkSinkConfig): AuditSink
+```
+
+```ts
+interface SplunkSinkConfig {
+  url: string
+  token: string
+  index?: string
+  source?: string            // default: 'elsium-ai'
+  sourcetype?: string        // default: 'elsium:audit'
+  timeoutMs?: number         // default: 10000
+}
+```
+
+```ts
+createSplunkSink({
+  url: 'https://splunk:8088/services/collector',
+  token: 'your-hec-token',
+  index: 'ai_audit',
+})
+```
+
+### `createDatadogSink()`
+
+Sends events to the Datadog Log Intake API (v2).
+
+```ts
+function createDatadogSink(config: DatadogSinkConfig): AuditSink
+```
+
+```ts
+interface DatadogSinkConfig {
+  apiKey: string
+  site?: string              // default: 'datadoghq.com'
+  service?: string           // default: 'elsium-ai'
+  source?: string            // default: 'elsium-ai-audit'
+  tags?: Record<string, string>
+  timeoutMs?: number         // default: 10000
+}
+```
+
+```ts
+createDatadogSink({
+  apiKey: process.env.DD_API_KEY!,
+  site: 'datadoghq.eu',
+  tags: { env: 'production', team: 'platform' },
+})
+```
+
+### Custom sinks
+
+Implement the `AuditSink` interface to send events anywhere:
+
+```ts
+import type { AuditSink, AuditEvent } from 'elsium-ai/observe'
+
+const kafkaSink: AuditSink = {
+  name: 'kafka',
+  async send(events: AuditEvent[]) {
+    await producer.send({
+      topic: 'audit-events',
+      messages: events.map(e => ({ value: JSON.stringify(e) })),
+    })
+  },
+  async shutdown() {
+    await producer.disconnect()
+  },
+}
+```
 
 ---
 
@@ -1276,6 +1546,52 @@ await store.save(results)
 // Load results later
 const loaded = await store.load(results.id)
 ```
+
+---
+
+## Studio Exporter
+
+Bridges the observe system to the `.elsium/` directory so the `elsium studio` dashboard can display live traces, X-Ray data, and costs.
+
+### `createStudioExporter()`
+
+```ts
+function createStudioExporter(config?: StudioExporterConfig): StudioExporter
+```
+
+```ts
+interface StudioExporterConfig {
+  dir?: string  // default: '.elsium'
+}
+
+interface StudioExporter extends TracerExporter {
+  writeXRayEntry(entry: Record<string, unknown>): void
+  writeCostReport(report: CostReport): void
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.dir` | `string` | `'.elsium'` | Directory where trace, X-Ray, and cost files are written |
+
+**Returns:** `StudioExporter` (implements `TracerExporter` + X-Ray/cost writers)
+
+```ts
+import { observe, createStudioExporter } from '@elsium-ai/observe'
+
+const studio = createStudioExporter()
+
+const tracer = observe({ output: [studio] })
+
+const span = tracer.startSpan('my-operation', 'llm')
+span.end()
+await tracer.flush()
+
+studio.writeXRayEntry({ traceId: 'trc_123', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+studio.writeCostReport(tracer.getCostReport())
+```
+
+Then run `elsium studio` in another terminal to see the data in the web dashboard.
 
 ---
 

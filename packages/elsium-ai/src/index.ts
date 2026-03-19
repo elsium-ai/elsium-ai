@@ -176,6 +176,7 @@ export type {
 	ModelTier,
 	Gateway,
 	GatewayConfig,
+	ExtractOptions,
 	XRayStore,
 	ProviderMeshConfig,
 	ProviderEntry,
@@ -468,6 +469,12 @@ export {
 	// Audit Trail
 	createAuditTrail,
 	auditMiddleware,
+	auditStreamMiddleware,
+	// Audit Sinks
+	createSinkManager,
+	createWebhookSink,
+	createSplunkSink,
+	createDatadogSink,
 	// Provenance
 	createProvenanceTracker,
 	// Experiment
@@ -476,6 +483,8 @@ export {
 	// Instrumentation
 	instrumentComplete,
 	instrumentAgent,
+	// Studio Exporter
+	createStudioExporter,
 	// OpenTelemetry
 	toOTelSpan,
 	toOTelExportRequest,
@@ -518,6 +527,14 @@ export type {
 	AuditTrailConfig,
 	AuditBatchConfig,
 	AuditTrail,
+	// Audit Sink types
+	AuditSink,
+	AuditSinkRetryConfig,
+	SinkManagerConfig,
+	SinkManager,
+	WebhookSinkConfig,
+	SplunkSinkConfig,
+	DatadogSinkConfig,
 	// Provenance types
 	ProvenanceRecord,
 	ProvenanceTracker,
@@ -529,6 +546,9 @@ export type {
 	ExperimentStore,
 	// Instrumentation types
 	InstrumentableAgent,
+	// Studio types
+	StudioExporter,
+	StudioExporterConfig,
 	// OTel types
 	OTelSpan,
 	OTelSpanKind,
@@ -613,6 +633,14 @@ export {
 	createRegressionSuite,
 	createReplayRecorder,
 	createReplayPlayer,
+	// Dataset & Comparison
+	loadDataset,
+	loadDatasetFromJSON,
+	loadDatasetFromCSV,
+	saveBaseline,
+	loadBaseline,
+	compareResults,
+	formatComparison,
 } from '@elsium-ai/testing'
 
 export type {
@@ -636,4 +664,9 @@ export type {
 	ReplayEntry,
 	ReplayRecorder,
 	ReplayPlayer,
+	// Dataset & Comparison types
+	EvalDataset,
+	DatasetLoaderOptions,
+	EvalBaseline,
+	EvalComparison,
 } from '@elsium-ai/testing'

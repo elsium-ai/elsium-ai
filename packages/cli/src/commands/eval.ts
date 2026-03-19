@@ -1,18 +1,54 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-export async function evalCommand(args: string[]) {
-	const evalFile = args[0]
+interface EvalFlags {
+	file?: string
+	dataset?: string
+	compare?: string
+	saveBaseline: boolean
+	baselineDir: string
+}
 
-	if (!evalFile) {
-		console.log(`
-  Usage: elsium eval <file>
+function parseFlags(args: string[]): EvalFlags {
+	const flags: EvalFlags = {
+		saveBaseline: false,
+		baselineDir: join(process.cwd(), '.elsium/baselines'),
+	}
+
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i]
+		if (arg === '--dataset' && args[i + 1]) {
+			flags.dataset = args[++i]
+		} else if (arg === '--compare' && args[i + 1]) {
+			flags.compare = args[++i]
+		} else if (arg === '--save-baseline') {
+			flags.saveBaseline = true
+		} else if (arg === '--baseline-dir' && args[i + 1]) {
+			flags.baselineDir = args[++i]
+		} else if (!arg.startsWith('--')) {
+			flags.file = arg
+		}
+	}
+
+	return flags
+}
+
+const USAGE = `
+  Usage: elsium eval <file> [options]
 
   Run an evaluation suite against your prompts.
 
+  Options:
+    --dataset <path>        Load cases from external dataset file
+    --compare <name>        Compare against saved baseline
+    --save-baseline         Save current results as baseline
+    --baseline-dir <dir>    Directory for baselines (default: .elsium/baselines)
+
   Examples:
     elsium eval ./evals/suite.ts
-    elsium eval ./evals/quality.ts
+    elsium eval ./evals/quality.ts --dataset ./data/cases.json
+    elsium eval ./evals/suite.ts --save-baseline
+    elsium eval ./evals/suite.ts --compare my-eval
 
   Eval file should export a default EvalSuiteConfig:
 
@@ -35,14 +71,65 @@ export async function evalCommand(args: string[]) {
         return response
       },
     } satisfies EvalSuiteConfig
-`)
+`
+
+async function loadDatasetIfNeeded(
+	// biome-ignore lint/suspicious/noExplicitAny: dynamic import
+	testing: any,
+	// biome-ignore lint/suspicious/noExplicitAny: dynamic import
+	config: any,
+	flags: EvalFlags,
+): Promise<void> {
+	if (!flags.dataset) return
+	const datasetPath = join(process.cwd(), flags.dataset)
+	if (!existsSync(datasetPath)) {
+		console.error(`Dataset file not found: ${flags.dataset}`)
+		process.exit(1)
+	}
+	const dataset = await testing.loadDataset(datasetPath)
+	if (dataset.cases.length > 0) {
+		config.cases = dataset.cases
+	}
+}
+
+async function handleBaseline(
+	// biome-ignore lint/suspicious/noExplicitAny: dynamic import
+	testing: any,
+	// biome-ignore lint/suspicious/noExplicitAny: dynamic import
+	result: any,
+	flags: EvalFlags,
+): Promise<void> {
+	if (flags.saveBaseline) {
+		const filePath = await testing.saveBaseline(result, flags.baselineDir)
+		console.log(`  Baseline saved: ${filePath}\n`)
+	}
+
+	if (!flags.compare) return
+	const baseline = await testing.loadBaseline(flags.compare, flags.baselineDir)
+	if (!baseline) {
+		console.error(`Baseline not found: ${flags.compare}`)
+		console.error(`  Looked in: ${flags.baselineDir}`)
+		return
+	}
+	const comparison = testing.compareResults(baseline, result)
+	console.log(testing.formatComparison(comparison))
+	if (comparison.regression) {
+		process.exit(1)
+	}
+}
+
+export async function evalCommand(args: string[]) {
+	const flags = parseFlags(args)
+
+	if (!flags.file) {
+		console.log(USAGE)
 		return
 	}
 
-	const fullPath = join(process.cwd(), evalFile)
+	const fullPath = join(process.cwd(), flags.file)
 
 	if (!existsSync(fullPath)) {
-		console.error(`Eval file not found: ${evalFile}`)
+		console.error(`Eval file not found: ${flags.file}`)
 		process.exit(1)
 	}
 
@@ -55,14 +142,17 @@ export async function evalCommand(args: string[]) {
 			process.exit(1)
 		}
 
-		// Dynamic import of testing package
-		const { runEvalSuite, formatEvalReport } = await import('@elsium-ai/testing' as string)
+		const testing = await import('@elsium-ai/testing' as string)
+
+		await loadDatasetIfNeeded(testing, config, flags)
 
 		console.log(`\n  Running eval suite: ${config.name}`)
 		console.log(`  Cases: ${config.cases.length}\n`)
 
-		const result = await runEvalSuite(config)
-		console.log(formatEvalReport(result))
+		const result = await testing.runEvalSuite(config)
+		console.log(testing.formatEvalReport(result))
+
+		await handleBaseline(testing, result, flags)
 
 		if (result.failed > 0) {
 			process.exit(1)
