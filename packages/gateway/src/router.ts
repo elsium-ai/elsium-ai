@@ -377,6 +377,24 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		return { success: true }
 	}
 
+	async function attemptStreamProvider(
+		entry: ProviderEntry,
+		nextProvider: string,
+		request: CompletionRequest,
+		emit: (event: import('@elsium-ai/core').StreamEvent) => void,
+	): Promise<{ success: boolean; error?: Error }> {
+		try {
+			const result = await tryStreamProvider(entry, request, emit)
+			if (result.success) return { success: true }
+			logStreamFailover(entry.name, nextProvider, result.error)
+			return { success: false, error: result.error }
+		} catch (err) {
+			const error = toError(err)
+			logStreamFailover(entry.name, nextProvider, error)
+			return { success: false, error }
+		}
+	}
+
 	async function runStreamFallbackLoop(
 		available: ProviderEntry[],
 		request: CompletionRequest,
@@ -388,20 +406,14 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		for (let i = 0; i < available.length; i++) {
 			const entry = available[i]
 			const nextProvider = i + 1 < available.length ? available[i + 1].name : 'none'
-			try {
-				const result = await tryStreamProvider(entry, request, emit)
-				if (result.success) {
-					if (failedProvider) logFailover(failedProvider, entry.name, lastError?.message)
-					return
-				}
-				lastError = result.error ?? null
-				failedProvider = entry.name
-				logStreamFailover(entry.name, nextProvider, result.error)
-			} catch (err) {
-				failedProvider = entry.name
-				lastError = toError(err)
-				logStreamFailover(entry.name, nextProvider, lastError)
+			const attempt = await attemptStreamProvider(entry, nextProvider, request, emit)
+
+			if (attempt.success) {
+				if (failedProvider) logFailover(failedProvider, entry.name, lastError?.message)
+				return
 			}
+			lastError = attempt.error ?? null
+			failedProvider = entry.name
 		}
 
 		emit({
