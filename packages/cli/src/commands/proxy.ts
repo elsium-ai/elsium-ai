@@ -203,7 +203,7 @@ export async function proxyCommand(args: string[]) {
 	const flags = parseFlags(args)
 
 	const _require = createRequire(import.meta.url)
-	const pkg = _require('../../package.json') as { version: string }
+	const pkg = _require('../package.json') as { version: string }
 
 	const costTracker = costTrackingMiddleware()
 	const auditTrail = flags.audit ? createAuditTrail() : null
