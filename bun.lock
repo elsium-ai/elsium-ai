@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "elsium-ai",
+      "dependencies": {
+        "hono": "^4.12.8",
+      },
       "devDependencies": {
         "@biomejs/biome": "^1.9.0",
         "@changesets/cli": "^2.27.0",
@@ -43,7 +46,7 @@
     },
     "packages/agents": {
       "name": "@elsium-ai/agents",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/gateway": "workspace:*",
@@ -57,7 +60,7 @@
     },
     "packages/app": {
       "name": "@elsium-ai/app",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
@@ -76,7 +79,7 @@
     },
     "packages/cli": {
       "name": "@elsium-ai/cli",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "bin": {
         "elsium": "./dist/cli.js",
       },
@@ -90,7 +93,7 @@
     },
     "packages/client": {
       "name": "@elsium-ai/client",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -100,7 +103,7 @@
     },
     "packages/core": {
       "name": "@elsium-ai/core",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "zod": "^3.24.0",
       },
@@ -110,7 +113,7 @@
     },
     "packages/elsium-ai": {
       "name": "elsium-ai",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/app": "workspace:*",
@@ -130,7 +133,7 @@
     },
     "packages/gateway": {
       "name": "@elsium-ai/gateway",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -141,7 +144,7 @@
     },
     "packages/mcp": {
       "name": "@elsium-ai/mcp",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/tools": "workspace:*",
@@ -152,7 +155,7 @@
     },
     "packages/observe": {
       "name": "@elsium-ai/observe",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -162,7 +165,7 @@
     },
     "packages/rag": {
       "name": "@elsium-ai/rag",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -172,7 +175,7 @@
     },
     "packages/testing": {
       "name": "@elsium-ai/testing",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
@@ -185,7 +188,7 @@
     },
     "packages/tools": {
       "name": "@elsium-ai/tools",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -196,7 +199,7 @@
     },
     "packages/workflows": {
       "name": "@elsium-ai/workflows",
-      "version": "0.4.0",
+      "version": "0.8.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -641,7 +644,7 @@
 
     "has-flag": ["has-flag@4.0.0", "", {}, "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="],
 
-    "hono": ["hono@4.12.5", "", {}, "sha512-3qq+FUBtlTHhtYxbxheZgY8NIFnkkC/MR8u5TTsr7YZ3wixryQ3cCwn3iZbg8p8B88iDBBAYSfZDS75t8MN7Vg=="],
+    "hono": ["hono@4.12.8", "", {}, "sha512-VJCEvtrezO1IAR+kqEYnxUOoStaQPGrCmX3j4wDTNOcD1uRPFpGlwQUIW8niPuvHXaTUxeOUl5MMDGrl+tmO9A=="],
 
     "html-escaper": ["html-escaper@2.0.2", "", {}, "sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg=="],
 
