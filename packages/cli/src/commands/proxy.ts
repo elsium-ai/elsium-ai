@@ -1,6 +1,5 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { createRequire } from 'node:module'
 import {
 	type Gateway,
 	type Middleware,
@@ -199,11 +198,8 @@ const SUPPORTED_MODELS: OpenAIModelList = {
 	],
 }
 
-export async function proxyCommand(args: string[]) {
+export async function proxyCommand(args: string[], version = '0.0.0') {
 	const flags = parseFlags(args)
-
-	const _require = createRequire(import.meta.url)
-	const pkg = _require('../package.json') as { version: string }
 
 	const costTracker = costTrackingMiddleware()
 	const auditTrail = flags.audit ? createAuditTrail() : null
@@ -338,7 +334,7 @@ export async function proxyCommand(args: string[]) {
 		const check = (on: boolean) => (on ? '\u2713' : '\u2717')
 
 		console.log(`
-  ElsiumAI Proxy v${pkg.version}
+  ElsiumAI Proxy v${version}
 
   Listening on http://localhost:${flags.port}
 
