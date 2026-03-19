@@ -87,7 +87,7 @@ async function main() {
 			await promptCommand(args.slice(1))
 			break
 		case 'proxy':
-			await proxyCommand(args.slice(1))
+			await proxyCommand(args.slice(1), VERSION)
 			break
 		default:
 			console.error(`Unknown command: ${command}`)
