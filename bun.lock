@@ -86,6 +86,7 @@
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/observe": "workspace:*",
+        "elsium-ai": "workspace:*",
       },
       "devDependencies": {
         "typescript": "^5.7.0",

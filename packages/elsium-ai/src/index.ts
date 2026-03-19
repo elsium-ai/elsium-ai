@@ -176,6 +176,7 @@ export type {
 	ModelTier,
 	Gateway,
 	GatewayConfig,
+	ExtractOptions,
 	XRayStore,
 	ProviderMeshConfig,
 	ProviderEntry,
@@ -482,6 +483,8 @@ export {
 	// Instrumentation
 	instrumentComplete,
 	instrumentAgent,
+	// Studio Exporter
+	createStudioExporter,
 	// OpenTelemetry
 	toOTelSpan,
 	toOTelExportRequest,
@@ -543,6 +546,9 @@ export type {
 	ExperimentStore,
 	// Instrumentation types
 	InstrumentableAgent,
+	// Studio types
+	StudioExporter,
+	StudioExporterConfig,
 	// OTel types
 	OTelSpan,
 	OTelSpanKind,
@@ -627,6 +633,14 @@ export {
 	createRegressionSuite,
 	createReplayRecorder,
 	createReplayPlayer,
+	// Dataset & Comparison
+	loadDataset,
+	loadDatasetFromJSON,
+	loadDatasetFromCSV,
+	saveBaseline,
+	loadBaseline,
+	compareResults,
+	formatComparison,
 } from '@elsium-ai/testing'
 
 export type {
@@ -650,4 +664,9 @@ export type {
 	ReplayEntry,
 	ReplayRecorder,
 	ReplayPlayer,
+	// Dataset & Comparison types
+	EvalDataset,
+	DatasetLoaderOptions,
+	EvalBaseline,
+	EvalComparison,
 } from '@elsium-ai/testing'

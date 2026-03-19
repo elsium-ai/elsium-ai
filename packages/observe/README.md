@@ -22,6 +22,7 @@ npm install @elsium-ai/observe @elsium-ai/core
 | **Audit Trail** | `createAuditTrail`, `auditMiddleware`, `auditStreamMiddleware`, `AuditEventType`, `AuditEvent`, `AuditStorageAdapter`, `AuditQueryFilter`, `AuditIntegrityResult`, `AuditTrailConfig`, `AuditTrail` | SHA-256 hash-chained audit events with tamper detection, middleware for both completion and streaming calls |
 | **Audit Sinks** | `createSinkManager`, `createWebhookSink`, `createSplunkSink`, `createDatadogSink`, `AuditSink`, `AuditSinkRetryConfig`, `SinkManagerConfig`, `SinkManager`, `WebhookSinkConfig`, `SplunkSinkConfig`, `DatadogSinkConfig` | Export audit events to external systems (webhooks, Splunk, Datadog) with batching, retry, per-sink filtering, and dead letter queue |
 | **Provenance** | `createProvenanceTracker`, `ProvenanceRecord`, `ProvenanceTracker` | Full lineage tracking per output: prompt, model, config, input, output |
+| **Studio Exporter** | `createStudioExporter`, `StudioExporter`, `StudioExporterConfig` | Write traces, X-Ray, and costs to `.elsium/` for the `elsium studio` dashboard |
 | **OpenTelemetry** | `toOTelSpan`, `toOTelExportRequest`, `toTraceparent`, `parseTraceparent`, `injectTraceContext`, `extractTraceContext`, `createOTLPExporter`, `OTelSpan`, `OTelSpanKind`, `OTelStatusCode`, `OTelAttribute`, `OTelAttributeValue`, `OTelEvent`, `OTelResource`, `OTelExportRequest`, `TraceContext`, `OTLPExporterConfig` | W3C Trace Context propagation, OTel span conversion, and OTLP JSON export |
 
 ---
@@ -1545,6 +1546,52 @@ await store.save(results)
 // Load results later
 const loaded = await store.load(results.id)
 ```
+
+---
+
+## Studio Exporter
+
+Bridges the observe system to the `.elsium/` directory so the `elsium studio` dashboard can display live traces, X-Ray data, and costs.
+
+### `createStudioExporter()`
+
+```ts
+function createStudioExporter(config?: StudioExporterConfig): StudioExporter
+```
+
+```ts
+interface StudioExporterConfig {
+  dir?: string  // default: '.elsium'
+}
+
+interface StudioExporter extends TracerExporter {
+  writeXRayEntry(entry: Record<string, unknown>): void
+  writeCostReport(report: CostReport): void
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `config.dir` | `string` | `'.elsium'` | Directory where trace, X-Ray, and cost files are written |
+
+**Returns:** `StudioExporter` (implements `TracerExporter` + X-Ray/cost writers)
+
+```ts
+import { observe, createStudioExporter } from '@elsium-ai/observe'
+
+const studio = createStudioExporter()
+
+const tracer = observe({ output: [studio] })
+
+const span = tracer.startSpan('my-operation', 'llm')
+span.end()
+await tracer.flush()
+
+studio.writeXRayEntry({ traceId: 'trc_123', provider: 'anthropic', model: 'claude-sonnet-4-6' })
+studio.writeCostReport(tracer.getCostReport())
+```
+
+Then run `elsium studio` in another terminal to see the data in the web dashboard.
 
 ---
 

@@ -65,6 +65,7 @@ interface Gateway {
     data: T
     response: LLMResponse
   }>
+  extract<T>(schema: z.ZodType<T>, input: string, options?: ExtractOptions): Promise<T>
   readonly provider: LLMProvider
   lastCall(): XRayData | null
   callHistory(limit?: number): XRayData[]
@@ -76,6 +77,7 @@ interface Gateway {
 | `complete(request)` | Send a completion request and return the full response. |
 | `stream(request)` | Stream a completion request, returning an async-iterable `ElsiumStream`. |
 | `generate<T>(request)` | Structured output -- sends a Zod schema, parses and validates the LLM's JSON response. |
+| `extract<T>(schema, input, options?)` | Structured extraction -- takes a Zod schema and text input, returns typed data with auto-retry on validation failure. |
 | `provider` | Read-only reference to the underlying `LLMProvider` instance. |
 | `lastCall()` | Returns the most recent `XRayData` entry, or `null` if X-Ray is disabled. |
 | `callHistory(limit?)` | Returns up to `limit` (default 10) recent `XRayData` entries. |
@@ -139,6 +141,58 @@ const { data } = await llm.generate({
 })
 
 console.log(data.name) // "Mars"
+```
+
+#### Structured Extraction
+
+`extract()` provides a simpler API for pulling typed data out of text. It takes a Zod schema and input text, returns the parsed object directly, and auto-retries on validation failure.
+
+```ts
+interface Gateway {
+  extract<T>(
+    schema: z.ZodType<T>,
+    input: string,
+    options?: ExtractOptions,
+  ): Promise<T>
+}
+```
+
+**`ExtractOptions`**
+
+```ts
+interface ExtractOptions {
+  maxRetries?: number   // Default: 3
+  temperature?: number
+  system?: string
+  model?: string
+}
+```
+
+On validation failure, `extract()` feeds the Zod error back to the LLM and retries (up to `maxRetries`). The return type is inferred from the schema.
+
+```ts
+import { gateway } from '@elsium-ai/gateway'
+import { z } from 'zod'
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+})
+
+const ContactInfo = z.object({
+  name: z.string(),
+  email: z.string().email(),
+  role: z.string(),
+})
+
+const contact = await llm.extract(
+  ContactInfo,
+  'Reach out to Jane Smith (jane@acme.com), she is the VP of Engineering.',
+)
+
+console.log(contact.name)  // "Jane Smith"
+console.log(contact.email) // "jane@acme.com"
+console.log(contact.role)  // "VP of Engineering"
 ```
 
 #### X-Ray Mode

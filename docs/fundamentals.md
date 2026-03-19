@@ -61,6 +61,7 @@ Three Pillars — where each feature lives:
   - [Pricing & Cost Calculation](#pricing--cost-calculation)
 - [Multimodal Content](#multimodal-content)
 - [Structured Output](#structured-output)
+  - [Structured Extraction](#structured-extraction)
 - [Streaming](#streaming)
 - [Response Caching](#response-caching)
 - [Output Guardrails](#output-guardrails)
@@ -121,6 +122,8 @@ Three Pillars — where each feature lives:
   - [Snapshot Testing](#snapshot-testing)
   - [Replay & Fixtures](#replay--fixtures)
   - [Prompt Versioning](#prompt-versioning)
+  - [Eval Datasets](#eval-datasets)
+  - [Eval Baselines & Regression Detection](#eval-baselines--regression-detection)
 - [MCP (Model Context Protocol)](#mcp-model-context-protocol)
   - [Resources & Prompts](#resources--prompts)
 - [HTTP Server](#http-server)
@@ -128,6 +131,8 @@ Three Pillars — where each feature lives:
   - [Multi-Tenant](#multi-tenant)
   - [Standalone HTTP Middleware](#standalone-http-middleware)
 - [Client SDK](#client-sdk)
+- [Dev Studio](#dev-studio)
+- [AI Proxy](#ai-proxy)
 
 ---
 
@@ -826,6 +831,32 @@ await db.invoices.insert({
 | **Google** | `responseMimeType: 'application/json'` + `responseSchema` | Native JSON generation with schema validation |
 
 All providers fall back to prompt-based JSON extraction if native mode is unavailable.
+
+### Structured Extraction
+
+```typescript
+import { gateway } from '@elsium-ai/gateway'
+import { z } from 'zod'
+
+const llm = gateway({ provider: 'anthropic', apiKey: env('ANTHROPIC_API_KEY') })
+
+const UserProfile = z.object({
+  name: z.string(),
+  age: z.number(),
+  company: z.string(),
+})
+
+const user = await llm.extract(UserProfile, 'Extract from: John, 28, engineer at Acme')
+// user: { name: 'John', age: 28, company: 'Acme' } — fully typed
+
+const result = await llm.extract(UserProfile, inputText, {
+  maxRetries: 5,
+  temperature: 0,
+  system: 'Extract user information precisely.',
+})
+```
+
+On validation failure, `extract()` automatically retries by feeding the Zod error back to the LLM (up to `maxRetries`, default 3). The return type is inferred from the Zod schema.
 
 ---
 
@@ -3744,6 +3775,40 @@ const prompt = registry.render('classifier', {
 })
 ```
 
+### Eval Datasets
+
+```typescript
+import { loadDataset, runEvalSuite } from '@elsium-ai/testing'
+
+const dataset = await loadDataset('./data/test-cases.json')
+// Also supports: .csv, .jsonl
+
+const result = await runEvalSuite({
+  name: 'quality-check',
+  cases: dataset.cases,
+  runner: async (input) => agent.run(input).then(r => r.message.content),
+})
+```
+
+### Eval Baselines & Regression Detection
+
+```typescript
+import { saveBaseline, loadBaseline, compareResults, formatComparison } from '@elsium-ai/testing'
+
+await saveBaseline(result, '.elsium/baselines')
+
+const baseline = await loadBaseline('quality-check', '.elsium/baselines')
+const comparison = compareResults(baseline, result)
+console.log(formatComparison(comparison))
+// Shows delta, regressions, improvements
+```
+
+Or via CLI:
+```bash
+elsium eval ./evals/suite.ts --save-baseline
+elsium eval ./evals/suite.ts --compare quality-check
+```
+
 ---
 
 ## MCP (Model Context Protocol)
@@ -4106,6 +4171,188 @@ for await (const event of client.completeStream({
   }
 }
 ```
+
+---
+
+## Dev Studio
+
+A local web dashboard for inspecting your AI system in real time — traces, LLM requests, costs, and live events — all in your browser.
+
+### How it works
+
+ElsiumAI writes observability data to a `.elsium/` directory in your project root:
+
+```
+your-project/
+├── .elsium/
+│   ├── traces/          ← span data (one JSON file per trace)
+│   ├── xray-history.json ← LLM request/response history
+│   └── cost-report.json  ← cost breakdown by model
+├── src/
+└── ...
+```
+
+The Studio reads this directory and displays it in a web UI. When your app runs and produces new data, the Studio detects file changes and updates the dashboard in real time via Server-Sent Events.
+
+### Step 1: Wire up the Studio Exporter in your app
+
+The `createStudioExporter()` bridges the observe system to the `.elsium/` directory. Add it to your tracer and middleware:
+
+```typescript
+import { gateway } from 'elsium-ai/gateway'
+import { observe, createStudioExporter, createCostEngine } from 'elsium-ai/observe'
+import { env } from 'elsium-ai/core'
+
+const studio = createStudioExporter()
+
+const tracer = observe({
+  output: [studio],
+})
+
+const costEngine = createCostEngine({
+  onAlert: (alert) => studio.writeCostReport(tracer.getCostReport()),
+})
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [costEngine.middleware()],
+  xray: true,
+})
+
+const response = await llm.complete({
+  messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
+})
+
+costEngine.trackCall(response)
+studio.writeCostReport(tracer.getCostReport())
+
+const lastCall = llm.lastCall()
+if (lastCall) {
+  studio.writeXRayEntry(lastCall as unknown as Record<string, unknown>)
+}
+```
+
+Projects scaffolded with `elsium init` create the `.elsium/` directory automatically.
+
+### Step 2: Open the Studio
+
+In a separate terminal, run:
+
+```bash
+elsium studio              # Opens at http://localhost:4567
+elsium studio --port 8080  # Custom port
+```
+
+Then open **http://localhost:4567** in your browser.
+
+### What you see
+
+The dashboard has 4 tabs:
+
+| Tab | What it shows |
+|-----|---------------|
+| **Traces** | Span tree — name, kind, duration, status. Click to expand and see metadata and events. |
+| **Requests** | X-Ray history — provider, model, latency, tokens, cost. Color-coded by provider. Click to see full request/response. |
+| **Costs** | Summary cards (total cost, tokens, calls) + breakdown by model with bar chart. |
+| **Live** | Real-time event stream. Shows new traces and requests as they arrive. Auto-scrolls. |
+
+The dashboard auto-refreshes when your app produces new data — no manual reload needed.
+
+### How to run it during development
+
+The typical workflow is two terminals side by side:
+
+```bash
+# Terminal 1: your app
+elsium dev
+
+# Terminal 2: the studio
+elsium studio
+```
+
+Your app runs with hot reload, the Studio watches for data changes and updates the dashboard live.
+
+---
+
+## AI Proxy
+
+A standalone HTTP proxy that adds ElsiumAI's cost tracking, caching, audit trails, and logging to **any** application — without changing a single line of code. Works with Python, Go, Rust, or anything that calls the OpenAI API.
+
+### How it works
+
+The proxy implements the OpenAI API format (`POST /v1/chat/completions`). You point your app's base URL to the proxy instead of the real provider:
+
+```
+Your App  →  ElsiumAI Proxy (localhost:4000)  →  LLM Provider (OpenAI, Anthropic, Google)
+              ↓
+           Cost tracking, caching, audit, logging
+```
+
+The proxy reads the model name to detect the provider automatically:
+- `claude-*` → Anthropic
+- `gpt-*`, `o1-*`, `o3-*`, `o4-*` → OpenAI
+- `gemini-*` → Google
+
+The API key comes from each request's `Authorization: Bearer` header — the proxy never stores keys.
+
+### Quick start
+
+```bash
+elsium proxy
+```
+
+Output:
+```
+  ElsiumAI Proxy v0.8.0
+
+  Listening on http://localhost:4000
+
+  Point your app to this URL:
+    OPENAI_BASE_URL=http://localhost:4000/v1
+
+  Features:
+    ✓ Cost tracking
+    ✓ Request logging
+    ✗ Audit trail (--audit)
+    ✗ Response cache (--cache)
+```
+
+Then in your app (any language):
+
+```bash
+# Python
+export OPENAI_BASE_URL=http://localhost:4000/v1
+python my_app.py
+
+# Node.js
+OPENAI_BASE_URL=http://localhost:4000/v1 node app.js
+
+# Or pass directly in code:
+# openai.base_url = "http://localhost:4000/v1"
+```
+
+### Options
+
+```bash
+elsium proxy --port 8000              # Custom port
+elsium proxy --budget 50              # Reject requests after $50 spent
+elsium proxy --audit                  # Enable hash-chained audit trail
+elsium proxy --cache                  # Enable response caching
+elsium proxy --no-log                 # Disable request logging
+elsium proxy --audit --cache --budget 25  # All features
+```
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/chat/completions` | Main proxy — forwards to the detected provider |
+| `GET /v1/models` | Lists supported models |
+| `GET /health` | Health check |
+| `GET /stats` | Cost tracking stats (total cost, tokens, calls by model) |
+
+Streaming (`stream: true`) is fully supported — the proxy converts ElsiumAI's stream format to OpenAI's SSE chunk format transparently.
 
 ---
 

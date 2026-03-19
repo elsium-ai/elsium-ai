@@ -45,6 +45,13 @@ export interface GatewayConfig {
 	maxInputTokens?: number
 }
 
+export interface ExtractOptions {
+	model?: string
+	system?: string
+	maxRetries?: number
+	temperature?: number
+}
+
 export interface Gateway {
 	complete(request: CompletionRequest): Promise<LLMResponse>
 	stream(request: CompletionRequest): ElsiumStream
@@ -52,6 +59,7 @@ export interface Gateway {
 		data: T
 		response: LLMResponse
 	}>
+	extract<T>(schema: z.ZodType<T>, input: string, options?: ExtractOptions): Promise<T>
 	readonly provider: LLMProvider
 	lastCall(): XRayData | null
 	callHistory(limit?: number): XRayData[]
@@ -369,6 +377,42 @@ export function gateway(config: GatewayConfig): Gateway {
 			}
 
 			return { data: result.data, response }
+		},
+
+		async extract<T>(schema: z.ZodType<T>, input: string, options?: ExtractOptions): Promise<T> {
+			const maxRetries = options?.maxRetries ?? 3
+			const messages: CompletionRequest['messages'] = [{ role: 'user', content: input }]
+
+			let lastError: ElsiumError | undefined
+
+			for (let attempt = 0; attempt <= maxRetries; attempt++) {
+				try {
+					const result = await this.generate({
+						messages: [...messages],
+						schema,
+						model: options?.model,
+						system: options?.system,
+						temperature: options?.temperature,
+					})
+					return result.data
+				} catch (e) {
+					if (e instanceof ElsiumError && e.code === 'VALIDATION_ERROR') {
+						lastError = e
+						messages.push({
+							role: 'assistant',
+							content: 'Invalid output',
+						})
+						messages.push({
+							role: 'user',
+							content: `The previous response failed validation: ${e.message}. Please try again and return valid JSON matching the schema.`,
+						})
+						continue
+					}
+					throw e
+				}
+			}
+
+			throw lastError as Error
 		},
 	}
 }

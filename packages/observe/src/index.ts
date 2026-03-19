@@ -65,6 +65,10 @@ export type {
 export { instrumentComplete, instrumentAgent } from './instrument'
 export type { InstrumentableAgent } from './instrument'
 
+// Studio Exporter
+export { createStudioExporter } from './studio-exporter'
+export type { StudioExporter, StudioExporterConfig } from './studio-exporter'
+
 // OpenTelemetry compatibility
 export {
 	toOTelSpan,

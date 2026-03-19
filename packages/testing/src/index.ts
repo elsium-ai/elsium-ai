@@ -46,3 +46,11 @@ export type { Pin, PinStore, PinResult } from './pinning'
 // Determinism
 export { assertDeterministic, assertStable } from './determinism'
 export type { DeterminismResult, StabilityResult } from './determinism'
+
+// Dataset
+export { loadDataset, loadDatasetFromJSON, loadDatasetFromCSV } from './dataset'
+export type { EvalDataset, DatasetLoaderOptions } from './dataset'
+
+// Eval Comparison
+export { saveBaseline, loadBaseline, compareResults, formatComparison } from './eval-compare'
+export type { EvalBaseline, EvalComparison } from './eval-compare'
