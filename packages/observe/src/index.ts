@@ -69,6 +69,18 @@ export type { InstrumentableAgent } from './instrument'
 export { createStudioExporter } from './studio-exporter'
 export type { StudioExporter, StudioExporterConfig } from './studio-exporter'
 
+// Compliance Reporting
+export { generateComplianceReport, formatComplianceReport } from './compliance'
+export type {
+	ComplianceFramework,
+	ComplianceReportConfig,
+	ComplianceCheck,
+	ComplianceCheckResult,
+	ComplianceReport,
+	ComplianceSummary,
+	ComplianceReportEntry,
+} from './compliance'
+
 // OpenTelemetry compatibility
 export {
 	toOTelSpan,

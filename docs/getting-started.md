@@ -454,6 +454,107 @@ Run evals from the CLI:
 elsium eval ./evals/quality.ts
 ```
 
+### Multi-Turn Conversation Testing
+
+Test full agent conversations with per-turn assertions:
+
+```typescript
+import { runConversation, formatConversationReport } from '@elsium-ai/testing'
+
+const result = await runConversation({
+  name: 'support-flow',
+  turns: [
+    {
+      role: 'user',
+      content: 'I need help resetting my password',
+      assertions: [
+        { type: 'response_contains', value: 'email' },
+        { type: 'tool_called', name: 'lookupUser' },
+      ],
+    },
+    {
+      role: 'user',
+      content: 'My email is user@example.com',
+      assertions: [
+        { type: 'tool_called', name: 'sendResetEmail' },
+        { type: 'response_contains', value: 'sent' },
+      ],
+    },
+  ],
+  runner: (messages) => agent.chat(messages),
+})
+
+console.log(formatConversationReport(result))
+```
+
+### Tool Call Assertions
+
+Assert on which tools an agent called and with what arguments:
+
+```typescript
+import { assertToolCalls } from '@elsium-ai/testing'
+
+const results = assertToolCalls(agentResult.toolCalls, [
+  { type: 'called', name: 'search', times: 1 },
+  { type: 'called_with', name: 'search', args: { query: 'weather' } },
+  { type: 'called_in_order', names: ['search', 'format'] },
+  { type: 'all_succeeded' },
+])
+```
+
+### Red Team (Adversarial Testing)
+
+Test your agent against 44 built-in attack probes (36 single-turn + 8 multi-turn):
+
+```typescript
+import { runRedTeam, formatRedTeamReport } from '@elsium-ai/testing'
+
+const result = await runRedTeam({
+  name: 'security-audit',
+  runner: async (input) => {
+    const r = await agent.run(input)
+    return extractText(r.message.content)
+  },
+  multiTurnRunner: (messages) => agent.chat(messages),
+  categories: ['prompt_injection', 'jailbreak'],
+})
+
+console.log(formatRedTeamReport(result))
+```
+
+### Unified Agent Eval
+
+Mix single-turn and multi-turn cases in one eval suite:
+
+```typescript
+import { runAgentEval, formatAgentEvalReport } from '@elsium-ai/testing'
+
+const result = await runAgentEval({
+  name: 'full-eval',
+  cases: [
+    { type: 'single', name: 'factual', input: 'Capital of France?', criteria: [{ type: 'contains', value: 'Paris' }] },
+    { type: 'conversation', name: 'booking', turns: [
+      { role: 'user', content: 'Book a flight', assertions: [{ type: 'tool_called', name: 'search' }] },
+      { role: 'user', content: 'Pick the cheapest', assertions: [{ type: 'tool_called', name: 'book' }] },
+    ]},
+  ],
+  singleTurnRunner: async (input) => extractText((await agent.run(input)).message.content),
+  multiTurnRunner: (messages) => agent.chat(messages),
+})
+
+console.log(formatAgentEvalReport(result))
+```
+
+### CI Integration
+
+Output eval results in CI-compatible formats:
+
+```bash
+elsium eval ./evals/suite.ts --format junit     # JUnit XML
+elsium eval ./evals/suite.ts --format github    # GitHub Actions annotations
+elsium eval ./evals/suite.ts --format markdown  # Markdown summary
+```
+
 ## RAG (Retrieval-Augmented Generation)
 
 Build a knowledge base from your documents:

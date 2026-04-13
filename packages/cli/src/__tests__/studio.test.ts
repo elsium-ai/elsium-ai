@@ -59,6 +59,7 @@ describe('Studio Server', () => {
 	})
 
 	afterEach(async () => {
+		server.closeAllConnections()
 		await new Promise<void>((resolve) => {
 			server.close(() => resolve())
 		})
@@ -176,8 +177,12 @@ describe('Studio Server', () => {
 
 	it('should serve SSE endpoint', async () => {
 		await startServer()
-		const res = await fetch(`http://localhost:${port}/api/events`)
+		const controller = new AbortController()
+		const res = await fetch(`http://localhost:${port}/api/events`, {
+			signal: controller.signal,
+		})
 		expect(res.status).toBe(200)
 		expect(res.headers.get('content-type')).toBe('text/event-stream')
+		controller.abort()
 	})
 })

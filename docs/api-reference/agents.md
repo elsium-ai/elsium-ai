@@ -714,3 +714,148 @@ scheduler.schedule('0 0 1 1 *', 'Run initial data sync', {
 
 scheduler.start()
 ```
+
+---
+
+## Agent Identity
+
+Cryptographic agent identity with HMAC-SHA256 signing, replay protection, and cross-agent verification.
+
+### createAgentIdentity
+
+```ts
+createAgentIdentity(config: AgentIdentityConfig): AgentIdentity
+```
+
+Creates a cryptographic identity for an agent. Each identity has a unique keypair, can sign payloads with HMAC-SHA256, and verify signatures with timing-safe comparison and replay protection.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `agentId` | `string` | Unique agent identifier |
+| `secret` | `string?` | HMAC secret (auto-generated if omitted) |
+| `replayWindowMs` | `number?` | Replay protection window (default: 5 min) |
+
+```ts
+import { createAgentIdentity } from 'elsium-ai/agents'
+
+const identity = createAgentIdentity({ agentId: 'researcher' })
+
+const signed = identity.sign({ action: 'tool_call', tool: 'search' })
+
+const result = identity.verify(signed)
+// { valid: true }
+```
+
+### createIdentityRegistry
+
+```ts
+createIdentityRegistry(): IdentityRegistry
+```
+
+Central registry for managing and verifying agent identities across a multi-agent system.
+
+```ts
+import { createAgentIdentity, createIdentityRegistry } from 'elsium-ai/agents'
+
+const registry = createIdentityRegistry()
+
+const researcher = createAgentIdentity({ agentId: 'researcher' })
+const reviewer = createAgentIdentity({ agentId: 'reviewer' })
+
+registry.register(researcher)
+registry.register(reviewer)
+
+const signed = researcher.sign({ data: 'findings' })
+const verification = registry.verifySignedPayload(signed)
+// { valid: true }
+```
+
+---
+
+## Runtime Policy Enforcement
+
+Enforce policies at agent runtime — before each tool call, not just at the HTTP layer.
+
+### createRuntimePolicyEnforcer
+
+```ts
+createRuntimePolicyEnforcer(config: RuntimePolicyConfig): RuntimePolicyEnforcer
+```
+
+Creates a policy enforcer that checks RBAC, tool access, and custom policies before each tool execution inside the agent loop.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `policies` | `PolicySet` | Policy set from `@elsium-ai/core` |
+| `actor` | `string?` | Actor identity for policy context |
+| `role` | `string?` | Role for policy evaluation |
+| `allowedTools` | `string[]?` | Whitelist of allowed tool names |
+| `deniedTools` | `string[]?` | Blacklist of denied tool names |
+
+```ts
+import { createPolicySet, tokenLimitPolicy } from 'elsium-ai/core'
+import { defineAgent, createRuntimePolicyEnforcer, toolAccessPolicy } from 'elsium-ai/agents'
+
+const policies = createPolicySet([
+  tokenLimitPolicy(10_000),
+  toolAccessPolicy(['search', 'read_file']),
+])
+
+const agent = defineAgent({
+  name: 'restricted-agent',
+  system: 'You are a read-only assistant.',
+  guardrails: {
+    runtimePolicy: {
+      policies,
+      role: 'viewer',
+      allowedTools: ['search', 'read_file'],
+      deniedTools: ['delete_file', 'write_file'],
+    },
+    maxDurationMs: 30_000,
+  },
+})
+```
+
+### Built-in Policy Factories
+
+| Factory | Description |
+|---|---|
+| `toolAccessPolicy(tools: string[])` | Restricts tool execution to a whitelist |
+| `iterationLimitPolicy(max: number)` | Limits agent iteration count via policy |
+
+---
+
+## Memory Integrity
+
+SHA-256 hash-chained memory stores that detect tampering.
+
+### createSecureMemoryStore
+
+```ts
+createSecureMemoryStore(inner: MemoryStore): SecureMemoryStore
+```
+
+Wraps any `MemoryStore` with a SHA-256 hash chain. Every message gets a hash binding it to the previous message, forming a tamper-evident chain (same pattern as `createAuditTrail`).
+
+```ts
+import { createInMemoryMemoryStore, createSecureMemoryStore } from 'elsium-ai/agents'
+
+const inner = createInMemoryMemoryStore()
+const secure = createSecureMemoryStore(inner)
+
+await secure.save('agent-1', messages)
+
+const integrity = await secure.verifyIntegrity('agent-1')
+// { valid: true, totalMessages: 5, chainComplete: true }
+```
+
+### Utility Functions
+
+| Function | Description |
+|---|---|
+| `computeMessageHash(msg, index, previousHash)` | Compute SHA-256 hash for a single message in the chain |
+| `verifyMessageChain(messages, hashes)` | Verify integrity of a complete message chain |

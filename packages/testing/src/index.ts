@@ -54,3 +54,50 @@ export type { EvalDataset, DatasetLoaderOptions } from './dataset'
 // Eval Comparison
 export { saveBaseline, loadBaseline, compareResults, formatComparison } from './eval-compare'
 export type { EvalBaseline, EvalComparison } from './eval-compare'
+
+// Tool Assertions
+export { assertToolCalls, toolCallsToEvalCriteria } from './tool-assertions'
+export type { ToolCallEntry, ToolAssertion, ToolAssertionResult } from './tool-assertions'
+
+// Multi-Turn Conversation
+export { runConversation, formatConversationReport } from './multi-turn'
+export type {
+	ConversationTurn,
+	TurnAssertion,
+	TurnResult,
+	ConversationScenarioConfig,
+	ConversationResult,
+} from './multi-turn'
+
+// Red Team
+export {
+	getBuiltInProbes,
+	getBuiltInMultiTurnProbes,
+	runRedTeam,
+	formatRedTeamReport,
+} from './red-team'
+export type {
+	AttackCategory,
+	AttackProbe,
+	MultiTurnAttackProbe,
+	RedTeamConfig,
+	ProbeResult,
+	MultiTurnProbeResult,
+	RedTeamResult,
+} from './red-team'
+
+// Agent Metrics
+export { computeAgentMetrics, computeToolMetrics, formatAgentMetrics } from './agent-metrics'
+export type { AgentMetrics, ToolMetrics } from './agent-metrics'
+
+// CI Reporter
+export { toJUnitXML, toGitHubAnnotations, toMarkdownSummary } from './ci-reporter'
+
+// Agent Eval
+export { runAgentEval, formatAgentEvalReport } from './agent-eval'
+export type {
+	AgentEvalCase,
+	AgentEvalConfig,
+	AgentEvalCaseResult,
+	AgentEvalResult,
+} from './agent-eval'

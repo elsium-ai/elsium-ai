@@ -30,3 +30,15 @@ export type {
 	MCPPromptArgument,
 	MCPPromptMessage,
 } from './types'
+
+// Trust Framework
+export { createTrustedMCPClient } from './trust'
+export type {
+	MCPTrustConfig,
+	AllowedServer,
+	MCPAuditLogger,
+	MCPAuditEvent,
+	MCPToolManifest,
+	MCPToolManifestEntry,
+	TrustedMCPClient,
+} from './trust'

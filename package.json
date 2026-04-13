@@ -42,18 +42,21 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
     "@changesets/cli": "^2.27.0",
-    "@types/node": "^22.0.0",
     "@commitlint/cli": "^20.4.2",
     "@commitlint/config-conventional": "^20.4.2",
+    "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.2.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.3.0",
     "typescript": "^5.7.0",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^3.0.0",
+    "vitest": "^3.2.4",
     "zod": "^4.3.6"
   },
-  "dependencies": {
-    "hono": "^4.12.8"
+  "overrides": {
+    "yaml": ">=2.8.3",
+    "picomatch": ">=2.3.2",
+    "brace-expansion": ">=5.0.5",
+    "vite": ">=7.3.2"
   }
 }

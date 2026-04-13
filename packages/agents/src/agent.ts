@@ -7,7 +7,9 @@ import { formatToolResult } from '@elsium-ai/tools'
 import type { z } from 'zod'
 import { type ApprovalGate, createApprovalGate, shouldRequireApproval } from './approval'
 import { createConfidenceScorer } from './confidence'
+import { type AgentIdentity, createAgentIdentity } from './identity'
 import { type Memory, createMemory } from './memory'
+import { type RuntimePolicyEnforcer, createRuntimePolicyEnforcer } from './runtime-policy'
 import { createAgentSecurity } from './security'
 import type { SemanticValidationResult } from './semantic-guardrails'
 import { createSemanticValidator } from './semantic-guardrails'
@@ -88,17 +90,22 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 	const toolMap = new Map((config.tools ?? []).map((t) => [t.name, t]))
 
-	const guardrails: Required<Omit<GuardrailConfig, 'semantic' | 'security' | 'approval'>> & {
+	const guardrails: Required<
+		Omit<GuardrailConfig, 'semantic' | 'security' | 'approval' | 'runtimePolicy'>
+	> & {
 		semantic?: GuardrailConfig['semantic']
 		security?: GuardrailConfig['security']
 		approval?: GuardrailConfig['approval']
+		runtimePolicy?: GuardrailConfig['runtimePolicy']
 	} = {
 		maxIterations: config.guardrails?.maxIterations ?? 10,
 		maxTokenBudget: config.guardrails?.maxTokenBudget ?? 500_000,
+		maxDurationMs: config.guardrails?.maxDurationMs ?? 0,
 		inputValidator: config.guardrails?.inputValidator ?? (() => true),
 		outputValidator: config.guardrails?.outputValidator ?? (() => true),
 		semantic: config.guardrails?.semantic,
 		security: config.guardrails?.security,
+		runtimePolicy: config.guardrails?.runtimePolicy,
 	}
 
 	const semanticValidator = guardrails.semantic
@@ -109,6 +116,16 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 	const approvalGate: ApprovalGate | null = config.guardrails?.approval
 		? createApprovalGate(config.guardrails.approval)
 		: null
+
+	const runtimePolicy: RuntimePolicyEnforcer | null = guardrails.runtimePolicy
+		? createRuntimePolicyEnforcer(guardrails.runtimePolicy)
+		: null
+
+	const identity: AgentIdentity | null = config.identity
+		? createAgentIdentity(config.identity)
+		: null
+
+	const maxDurationMs = config.guardrails?.maxDurationMs ?? 0
 
 	const confidenceScorer = config.confidence
 		? createConfidenceScorer(typeof config.confidence === 'boolean' ? {} : config.confidence)
@@ -322,6 +339,17 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		return processed.result
 	}
 
+	function checkDuration(startTime: number): void {
+		if (maxDurationMs > 0 && performance.now() - startTime > maxDurationMs) {
+			throw new ElsiumError({
+				code: 'TIMEOUT',
+				message: `Agent "${config.name}" exceeded maximum duration (${maxDurationMs}ms)`,
+				retryable: false,
+				metadata: { maxDurationMs },
+			})
+		}
+	}
+
 	async function executeLoop(messages: Message[], options: AgentRunOptions): Promise<AgentResult> {
 		const traceId = options.traceId ?? generateTraceId()
 		let totalInputTokens = 0
@@ -329,6 +357,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		let totalCost = 0
 		let iterations = 0
 		const toolCallHistory: AgentResult['toolCalls'] = []
+		const loopStartTime = performance.now()
 
 		// Scoped copy of memory for concurrency safety
 		const scopedMessages = [...memory.getMessages()]
@@ -339,6 +368,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 			checkAborted(options)
 			checkBudget(totalInputTokens, totalOutputTokens)
+			checkDuration(loopStartTime)
 
 			const request = buildCompletionRequest(conversationMessages)
 			const response = await resolvedDeps.complete(request)
@@ -428,6 +458,16 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 					results.push(formatToolResult(deniedResult))
 					continue
 				}
+			}
+
+			if (runtimePolicy) {
+				runtimePolicy.evaluateToolCall({
+					toolName: tc.name,
+					toolArguments: tc.arguments,
+					model: config.model,
+					actor: options.metadata?.actor as string | undefined,
+					role: options.metadata?.role as string | undefined,
+				})
 			}
 
 			const tool = toolMap.get(tc.name)

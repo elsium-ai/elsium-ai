@@ -115,3 +115,38 @@ export type {
 	ScheduledTask,
 	CronFields,
 } from './scheduler'
+
+// Agent Identity
+export { createAgentIdentity, createIdentityRegistry } from './identity'
+export type {
+	AgentIdentity,
+	AgentIdentityConfig,
+	SignedPayload,
+	VerificationResult,
+	IdentityRegistry,
+} from './identity'
+
+// Runtime Policy
+export {
+	createRuntimePolicyEnforcer,
+	toolAccessPolicy,
+	iterationLimitPolicy,
+} from './runtime-policy'
+export type {
+	RuntimePolicyConfig,
+	RuntimePolicyEnforcer,
+	ToolPolicyContext,
+} from './runtime-policy'
+
+// Memory Integrity
+export {
+	createSecureMemoryStore,
+	computeMessageHash,
+	verifyMessageChain,
+} from './stores/index'
+export type {
+	SecureMemoryStore,
+	IntegrityMetadata,
+	VerifiedMessage,
+	MemoryIntegrityResult,
+} from './stores/index'

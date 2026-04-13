@@ -3,7 +3,9 @@ import type { LLMProvider, ProviderMesh } from '@elsium-ai/gateway'
 import type { Tool, ToolExecutionResult } from '@elsium-ai/tools'
 import type { ApprovalGateConfig } from './approval'
 import type { ConfidenceConfig, ConfidenceResult } from './confidence'
+import type { AgentIdentityConfig } from './identity'
 import type { MemoryConfig } from './memory'
+import type { RuntimePolicyConfig } from './runtime-policy'
 import type { AgentSecurityConfig } from './security'
 import type { SemanticGuardrailConfig } from './semantic-guardrails'
 
@@ -21,16 +23,19 @@ export interface AgentConfig {
 	provider?: string | LLMProvider | ProviderMesh
 	apiKey?: string
 	baseUrl?: string
+	identity?: AgentIdentityConfig
 }
 
 export interface GuardrailConfig {
 	maxIterations?: number
 	maxTokenBudget?: number
+	maxDurationMs?: number
 	inputValidator?: (input: string) => boolean | string
 	outputValidator?: (output: string) => boolean | string
 	semantic?: SemanticGuardrailConfig
 	security?: AgentSecurityConfig
 	approval?: ApprovalGateConfig
+	runtimePolicy?: RuntimePolicyConfig
 }
 
 // ─── State Machine Types ────────────────────────────────────────

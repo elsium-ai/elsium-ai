@@ -1,32 +1,59 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+type OutputFormat = 'text' | 'junit' | 'github' | 'markdown'
+
 interface EvalFlags {
 	file?: string
 	dataset?: string
 	compare?: string
 	saveBaseline: boolean
 	baselineDir: string
+	format: OutputFormat
 }
+
+const VALID_FORMATS = new Set<string>(['text', 'junit', 'github', 'markdown'])
 
 function parseFlags(args: string[]): EvalFlags {
 	const flags: EvalFlags = {
 		saveBaseline: false,
 		baselineDir: join(process.cwd(), '.elsium/baselines'),
+		format: 'text',
 	}
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i]
-		if (arg === '--dataset' && args[i + 1]) {
-			flags.dataset = args[++i]
-		} else if (arg === '--compare' && args[i + 1]) {
-			flags.compare = args[++i]
-		} else if (arg === '--save-baseline') {
-			flags.saveBaseline = true
-		} else if (arg === '--baseline-dir' && args[i + 1]) {
-			flags.baselineDir = args[++i]
-		} else if (!arg.startsWith('--')) {
-			flags.file = arg
+		const next = args[i + 1]
+		switch (arg) {
+			case '--dataset':
+				if (next) {
+					flags.dataset = next
+					i++
+				}
+				break
+			case '--compare':
+				if (next) {
+					flags.compare = next
+					i++
+				}
+				break
+			case '--save-baseline':
+				flags.saveBaseline = true
+				break
+			case '--baseline-dir':
+				if (next) {
+					flags.baselineDir = next
+					i++
+				}
+				break
+			case '--format':
+				if (next && VALID_FORMATS.has(next)) {
+					flags.format = next as OutputFormat
+					i++
+				}
+				break
+			default:
+				if (!arg.startsWith('--')) flags.file = arg
 		}
 	}
 
@@ -43,6 +70,7 @@ const USAGE = `
     --compare <name>        Compare against saved baseline
     --save-baseline         Save current results as baseline
     --baseline-dir <dir>    Directory for baselines (default: .elsium/baselines)
+    --format <fmt>          Output format: text, junit, github, markdown (default: text)
 
   Examples:
     elsium eval ./evals/suite.ts
@@ -150,7 +178,20 @@ export async function evalCommand(args: string[]) {
 		console.log(`  Cases: ${config.cases.length}\n`)
 
 		const result = await testing.runEvalSuite(config)
-		console.log(testing.formatEvalReport(result))
+
+		switch (flags.format) {
+			case 'junit':
+				console.log(testing.toJUnitXML(result))
+				break
+			case 'github':
+				console.log(testing.toGitHubAnnotations(result))
+				break
+			case 'markdown':
+				console.log(testing.toMarkdownSummary(result))
+				break
+			default:
+				console.log(testing.formatEvalReport(result))
+		}
 
 		await handleBaseline(testing, result, flags)
 

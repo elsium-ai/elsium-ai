@@ -361,3 +361,73 @@ const headers = new Headers()
 injectTraceContext(span, headers)
 // headers now contains 'traceparent' for downstream services
 ```
+
+---
+
+## Compliance Reporting
+
+Generate compliance reports against regulatory frameworks from audit trail data.
+
+### generateComplianceReport
+
+```ts
+generateComplianceReport(
+  auditTrail: AuditTrail,
+  config: ComplianceReportConfig,
+): Promise<ComplianceReport>
+```
+
+Generates a compliance report by evaluating audit trail events against a set of framework-specific checks.
+
+**Supported Frameworks:**
+
+| Framework | Description |
+|---|---|
+| `owasp-agentic` | OWASP Top 10 for Agentic AI Applications (6 checks) |
+| `eu-ai-act` | EU AI Act requirements for high-risk systems (5 checks) |
+| `colorado-ai-act` | Colorado AI Act requirements (3 checks) |
+| `custom` | User-defined compliance checks |
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `framework` | `ComplianceFramework` | Target regulatory framework |
+| `systemName` | `string` | Name of the AI system |
+| `systemVersion` | `string` | Version of the system |
+| `reportPeriod` | `{ from: number; to: number }` | Time range for the report |
+| `riskLevel` | `string?` | Risk classification (EU AI Act) |
+| `customChecks` | `ComplianceCheck[]?` | Custom checks for `custom` framework |
+
+```ts
+import { createAuditTrail, generateComplianceReport, formatComplianceReport } from 'elsium-ai/observe'
+
+const audit = createAuditTrail({ hashChain: true })
+
+const report = await generateComplianceReport(audit, {
+  framework: 'eu-ai-act',
+  systemName: 'medical-triage-ai',
+  systemVersion: '2.1.0',
+  reportPeriod: {
+    from: Date.now() - 30 * 24 * 60 * 60 * 1000,
+    to: Date.now(),
+  },
+  riskLevel: 'high',
+})
+
+// report.summary.overallStatus: 'compliant' | 'non-compliant' | 'needs-review'
+// report.checks: individual check results with evidence and recommendations
+```
+
+### formatComplianceReport
+
+```ts
+formatComplianceReport(report: ComplianceReport): string
+```
+
+Formats a compliance report as human-readable Markdown.
+
+```ts
+const markdown = formatComplianceReport(report)
+// Outputs structured markdown with summary table, integrity status, and per-check details
+```

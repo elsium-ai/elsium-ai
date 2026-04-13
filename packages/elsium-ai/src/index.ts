@@ -246,6 +246,17 @@ export {
 	parseCronExpression,
 	cronMatchesDate,
 	getNextCronDate,
+	// Agent Identity
+	createAgentIdentity,
+	createIdentityRegistry,
+	// Runtime Policy
+	createRuntimePolicyEnforcer,
+	toolAccessPolicy,
+	iterationLimitPolicy,
+	// Memory Integrity
+	createSecureMemoryStore,
+	computeMessageHash,
+	verifyMessageChain,
 } from '@elsium-ai/agents'
 
 export type {
@@ -327,6 +338,21 @@ export type {
 	ScheduleOptions,
 	ScheduledTask,
 	CronFields,
+	// Agent Identity types
+	AgentIdentity,
+	AgentIdentityConfig,
+	SignedPayload,
+	VerificationResult,
+	IdentityRegistry,
+	// Runtime Policy types
+	RuntimePolicyConfig,
+	RuntimePolicyEnforcer,
+	ToolPolicyContext,
+	// Memory Integrity types
+	SecureMemoryStore,
+	IntegrityMetadata,
+	VerifiedMessage,
+	MemoryIntegrityResult,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────
@@ -485,6 +511,9 @@ export {
 	instrumentAgent,
 	// Studio Exporter
 	createStudioExporter,
+	// Compliance
+	generateComplianceReport,
+	formatComplianceReport,
 	// OpenTelemetry
 	toOTelSpan,
 	toOTelExportRequest,
@@ -549,6 +578,14 @@ export type {
 	// Studio types
 	StudioExporter,
 	StudioExporterConfig,
+	// Compliance types
+	ComplianceFramework,
+	ComplianceReportConfig,
+	ComplianceCheck,
+	ComplianceCheckResult,
+	ComplianceReport,
+	ComplianceSummary,
+	ComplianceReportEntry,
 	// OTel types
 	OTelSpan,
 	OTelSpanKind,
@@ -586,7 +623,12 @@ export type {
 } from '@elsium-ai/app'
 
 // ─── MCP ────────────────────────────────────────────────────────
-export { createMCPClient, createMCPServer, createMCPHttpHandler } from '@elsium-ai/mcp'
+export {
+	createMCPClient,
+	createMCPServer,
+	createMCPHttpHandler,
+	createTrustedMCPClient,
+} from '@elsium-ai/mcp'
 
 export type {
 	MCPClient,
@@ -609,6 +651,14 @@ export type {
 	MCPPrompt,
 	MCPPromptArgument,
 	MCPPromptMessage,
+	// MCP Trust types
+	MCPTrustConfig,
+	AllowedServer,
+	MCPAuditLogger,
+	MCPAuditEvent,
+	MCPToolManifest,
+	MCPToolManifestEntry,
+	TrustedMCPClient,
 } from '@elsium-ai/mcp'
 
 // ─── Client ─────────────────────────────────────────────────────
@@ -641,6 +691,28 @@ export {
 	loadBaseline,
 	compareResults,
 	formatComparison,
+	// Tool Assertions
+	assertToolCalls,
+	toolCallsToEvalCriteria,
+	// Multi-Turn Conversation
+	runConversation,
+	formatConversationReport,
+	// Red Team
+	getBuiltInProbes,
+	getBuiltInMultiTurnProbes,
+	runRedTeam,
+	formatRedTeamReport,
+	// Agent Metrics
+	computeAgentMetrics,
+	computeToolMetrics,
+	formatAgentMetrics,
+	// CI Reporter
+	toJUnitXML,
+	toGitHubAnnotations,
+	toMarkdownSummary,
+	// Agent Eval
+	runAgentEval,
+	formatAgentEvalReport,
 } from '@elsium-ai/testing'
 
 export type {
@@ -669,4 +741,30 @@ export type {
 	DatasetLoaderOptions,
 	EvalBaseline,
 	EvalComparison,
+	// Tool Assertion types
+	ToolCallEntry,
+	ToolAssertion,
+	ToolAssertionResult,
+	// Multi-Turn types
+	ConversationTurn,
+	TurnAssertion,
+	TurnResult,
+	ConversationScenarioConfig,
+	ConversationResult,
+	// Red Team types
+	AttackCategory,
+	AttackProbe,
+	MultiTurnAttackProbe,
+	RedTeamConfig,
+	ProbeResult,
+	MultiTurnProbeResult,
+	RedTeamResult,
+	// Agent Metrics types
+	AgentMetrics,
+	ToolMetrics,
+	// Agent Eval types
+	AgentEvalCase,
+	AgentEvalConfig,
+	AgentEvalCaseResult,
+	AgentEvalResult,
 } from '@elsium-ai/testing'
