@@ -124,6 +124,12 @@ Three Pillars — where each feature lives:
   - [Prompt Versioning](#prompt-versioning)
   - [Eval Datasets](#eval-datasets)
   - [Eval Baselines & Regression Detection](#eval-baselines--regression-detection)
+  - [Multi-Turn Conversation Testing](#multi-turn-conversation-testing)
+  - [Tool Call Assertions](#tool-call-assertions)
+  - [Red Team (Adversarial Testing)](#red-team-adversarial-testing)
+  - [Agent Metrics](#agent-metrics)
+  - [Unified Agent Eval](#unified-agent-eval)
+  - [CI Reporters](#ci-reporters)
 - [MCP (Model Context Protocol)](#mcp-model-context-protocol)
   - [Resources & Prompts](#resources--prompts)
 - [HTTP Server](#http-server)
@@ -2656,9 +2662,14 @@ Who called which model? Did they have permission? Can you prove the audit log ha
 | Feature | What it does | Package |
 |---------|-------------|---------|
 | **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern | `core` |
+| **Runtime Policy Enforcement** | Enforce policies inside the agent loop — before each tool call, not just HTTP | `agents` |
 | **RBAC** | Role-based permissions with inheritance and wildcard matching | `app` |
 | **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations | `agents` |
+| **Agent Identity** | HMAC-SHA256 signed agent requests with replay protection and cross-agent verification | `agents` |
+| **Memory Integrity** | SHA-256 hash-chained message stores — detect tampering in agent memory | `agents` |
 | **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification | `observe` |
+| **Compliance Reporting** | Generate reports against OWASP Agentic, EU AI Act, Colorado AI Act | `observe` |
+| **MCP Trust Framework** | Server allowlists, tool filtering, output validation, manifest integrity | `mcp` |
 | **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model | `gateway` |
 
 ### Policy Engine
@@ -2951,6 +2962,121 @@ const audit = createAuditTrail({
 ```
 
 Built-in sinks: `createWebhookSink` (generic HTTP POST), `createSplunkSink` (Splunk HEC), `createDatadogSink` (Datadog Logs API). Implement the `AuditSink` interface for custom destinations (Kafka, ELK, etc.). All sinks support configurable batching, retry with exponential backoff, per-sink filtering, dead letter queue, and buffer overflow protection.
+
+### Agent Identity (OWASP: Identity Abuse)
+
+Cryptographic agent identity prevents impersonation and replay attacks in multi-agent systems:
+
+```typescript
+import { createAgentIdentity, createIdentityRegistry } from '@elsium-ai/agents'
+
+const researcher = createAgentIdentity({ agentId: 'researcher', secret: env('RESEARCHER_SECRET') })
+const reviewer = createAgentIdentity({ agentId: 'reviewer', secret: env('REVIEWER_SECRET') })
+
+const registry = createIdentityRegistry()
+registry.register(researcher)
+registry.register(reviewer)
+
+const signed = researcher.sign({ action: 'submit_findings', data: findings })
+const verification = registry.verifySignedPayload(signed)
+// { valid: true } — proves the request came from the real researcher agent
+
+// Replay attacks are blocked — each nonce can only be used once
+registry.verifySignedPayload(signed) // { valid: false, reason: 'Nonce already used' }
+```
+
+### Runtime Policy Enforcement (OWASP: Tool Abuse, Privilege Escalation)
+
+Enforce policies inside the agent execution loop — check permissions before every tool call:
+
+```typescript
+import { createPolicySet, tokenLimitPolicy } from '@elsium-ai/core'
+import { defineAgent, toolAccessPolicy } from '@elsium-ai/agents'
+
+const agent = defineAgent({
+  name: 'restricted-agent',
+  system: 'You assist with read-only data queries.',
+  tools: [searchTool, readFileTool, deleteFileTool],
+  guardrails: {
+    maxDurationMs: 30_000,
+    runtimePolicy: {
+      policies: createPolicySet([
+        tokenLimitPolicy(10_000),
+        toolAccessPolicy(['search', 'read_file']),
+      ]),
+      role: 'viewer',
+      deniedTools: ['delete_file'],
+    },
+  },
+})
+// deleteFileTool is in the tool list but will be blocked at runtime by the policy enforcer
+```
+
+### Memory Integrity (OWASP: Memory Poisoning)
+
+Hash-chained memory stores detect tampering — same pattern as the audit trail:
+
+```typescript
+import { createInMemoryMemoryStore, createSecureMemoryStore } from '@elsium-ai/agents'
+
+const secure = createSecureMemoryStore(createInMemoryMemoryStore())
+
+await secure.save('agent-1', conversationMessages)
+const integrity = await secure.verifyIntegrity('agent-1')
+// { valid: true, totalMessages: 12, chainComplete: true }
+
+// If someone tampers with the underlying store, verification fails:
+// { valid: false, totalMessages: 12, brokenAt: 3 }
+```
+
+### MCP Trust Framework (OWASP: Supply Chain Attacks)
+
+Secure MCP connections with server allowlists, tool filtering, and manifest integrity:
+
+```typescript
+import { createTrustedMCPClient } from '@elsium-ai/mcp'
+
+const client = createTrustedMCPClient(
+  { name: 'data-tools', transport: 'http', url: 'http://localhost:3001/mcp' },
+  {
+    allowedServers: [{
+      name: 'data-tools',
+      transport: 'http',
+      urlPattern: '^http://localhost:3001',
+      allowedTools: ['query_db', 'list_tables'],
+      deniedTools: ['drop_table', 'truncate'],
+    }],
+    maxToolOutputSize: 512 * 1024,
+    auditLog: { log: (event) => auditTrail.log('tool_execution', event) },
+  },
+)
+
+// Generate a manifest to pin tool definitions
+const manifest = await client.generateManifest()
+// Later, verify the server hasn't changed
+const isValid = await client.verifyManifest(manifest)
+```
+
+### Compliance Reporting
+
+Generate compliance reports against regulatory frameworks directly from audit trail data:
+
+```typescript
+import { createAuditTrail, generateComplianceReport, formatComplianceReport } from '@elsium-ai/observe'
+
+const report = await generateComplianceReport(auditTrail, {
+  framework: 'eu-ai-act',
+  systemName: 'medical-triage-ai',
+  systemVersion: '2.1.0',
+  reportPeriod: { from: thirtyDaysAgo, to: now },
+  riskLevel: 'high',
+})
+
+// report.summary.overallStatus: 'compliant' | 'non-compliant' | 'needs-review'
+console.log(formatComplianceReport(report))
+```
+
+Supported frameworks: `owasp-agentic` (6 checks), `eu-ai-act` (5 checks), `colorado-ai-act` (3 checks), `custom` (user-defined).
 
 ---
 
@@ -3807,6 +3933,147 @@ Or via CLI:
 ```bash
 elsium eval ./evals/suite.ts --save-baseline
 elsium eval ./evals/suite.ts --compare quality-check
+```
+
+### Multi-Turn Conversation Testing
+
+Test full agent conversations with per-turn assertions:
+
+```typescript
+import { runConversation, formatConversationReport } from '@elsium-ai/testing'
+
+const result = await runConversation({
+  name: 'support-flow',
+  turns: [
+    {
+      role: 'user',
+      content: 'I need help resetting my password',
+      assertions: [
+        { type: 'response_contains', value: 'email' },
+        { type: 'tool_called', name: 'lookupUser' },
+      ],
+    },
+    {
+      role: 'user',
+      content: 'My email is user@example.com',
+      assertions: [
+        { type: 'tool_called', name: 'sendResetEmail' },
+        { type: 'response_contains', value: 'sent' },
+      ],
+    },
+    {
+      role: 'user',
+      content: (history) => history[1].output.includes('link') ? 'Got it, thanks!' : 'Can you resend?',
+      assertions: [{ type: 'response_matches', pattern: 'welcome|glad' }],
+    },
+  ],
+  runner: (messages) => agent.chat(messages),
+})
+
+console.log(formatConversationReport(result))
+```
+
+### Tool Call Assertions
+
+Assert on which tools an agent called, in what order, and with what arguments:
+
+```typescript
+import { assertToolCalls } from '@elsium-ai/testing'
+
+const results = assertToolCalls(agentResult.toolCalls, [
+  { type: 'called', name: 'search', times: 1 },
+  { type: 'called_with', name: 'search', args: { query: 'weather' } },
+  { type: 'called_in_order', names: ['search', 'format', 'respond'] },
+  { type: 'not_called', name: 'deleteUser' },
+  { type: 'all_succeeded' },
+  { type: 'call_count', min: 1, max: 5 },
+  { type: 'no_repeated_calls' },
+])
+```
+
+### Red Team (Adversarial Testing)
+
+Test agents against 44 built-in attack probes (36 single-turn + 8 multi-turn):
+
+```typescript
+import { runRedTeam, formatRedTeamReport } from '@elsium-ai/testing'
+
+const result = await runRedTeam({
+  name: 'security-audit',
+  runner: async (input) => extractText((await agent.run(input)).message.content),
+  multiTurnRunner: (messages) => agent.chat(messages),
+  categories: ['prompt_injection', 'jailbreak'],
+  concurrency: 5,
+})
+
+console.log(formatRedTeamReport(result))
+// Score: 94.3% | 33 resisted, 2 compromised, 0 errors | 1250ms
+```
+
+### Agent Metrics
+
+Compute aggregated performance metrics from agent conversations:
+
+```typescript
+import { runConversation, computeAgentMetrics, formatAgentMetrics } from '@elsium-ai/testing'
+
+const result = await runConversation(config)
+const metrics = computeAgentMetrics(result)
+
+console.log(metrics.toolCallEfficiency)   // 0.92 (1.0 = no redundant calls)
+console.log(metrics.errorRecoveryRate)    // 1.0 (100% recovery from tool errors)
+console.log(metrics.costPerTurn)          // 0.0012
+console.log(metrics.turnsToCompletion)    // 3
+
+console.log(formatAgentMetrics(metrics))
+```
+
+### Unified Agent Eval
+
+Mix single-turn and multi-turn cases in one eval suite:
+
+```typescript
+import { runAgentEval, formatAgentEvalReport } from '@elsium-ai/testing'
+
+const result = await runAgentEval({
+  name: 'full-eval',
+  cases: [
+    { type: 'single', name: 'factual', input: 'Capital of France?', criteria: [{ type: 'contains', value: 'Paris' }] },
+    { type: 'conversation', name: 'booking', turns: [
+      { role: 'user', content: 'Book a flight', assertions: [{ type: 'tool_called', name: 'search' }] },
+      { role: 'user', content: 'Pick cheapest', assertions: [{ type: 'tool_called', name: 'book' }] },
+    ]},
+  ],
+  singleTurnRunner: async (input) => extractText((await agent.run(input)).message.content),
+  multiTurnRunner: (messages) => agent.chat(messages),
+})
+
+console.log(formatAgentEvalReport(result))
+// Includes aggregated AgentMetrics: efficiency, recovery, cost
+```
+
+### CI Reporters
+
+Output results in CI-compatible formats:
+
+```typescript
+import { toJUnitXML, toGitHubAnnotations, toMarkdownSummary } from '@elsium-ai/testing'
+
+// JUnit XML for Jenkins/CI
+writeFileSync('results.xml', toJUnitXML(result))
+
+// GitHub Actions inline annotations
+console.log(toGitHubAnnotations(result))
+
+// Markdown for PR comments / $GITHUB_STEP_SUMMARY
+writeFileSync(process.env.GITHUB_STEP_SUMMARY!, toMarkdownSummary(result))
+```
+
+Or via CLI:
+```bash
+elsium eval ./evals/suite.ts --format junit
+elsium eval ./evals/suite.ts --format github
+elsium eval ./evals/suite.ts --format markdown
 ```
 
 ---

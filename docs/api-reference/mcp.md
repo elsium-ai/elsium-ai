@@ -174,3 +174,84 @@ await server.start()
 | `MCPToolInfo` | Tool info returned by `listTools`: `name`, `description`, `inputSchema` |
 | `MCPServer` | Server interface: `start`, `stop`, `running` |
 | `MCPServerConfig` | Server config: `name`, `version?`, `tools` |
+
+---
+
+## MCP Trust Framework
+
+Security layer for MCP connections: server allowlists, tool filtering, output validation, manifest integrity, and audit logging.
+
+### createTrustedMCPClient
+
+```ts
+createTrustedMCPClient(config: MCPClientConfig, trustConfig: MCPTrustConfig): TrustedMCPClient
+```
+
+Wraps a standard MCP client with security controls. Rejects connections to servers not in the allowlist, filters tools, validates output sizes, and logs all operations.
+
+**MCPTrustConfig:**
+
+| Field | Type | Description |
+|---|---|---|
+| `allowedServers` | `AllowedServer[]?` | Server allowlist with transport/URL/command verification |
+| `validateToolOutputs` | `boolean?` | Enable output validation |
+| `auditLog` | `MCPAuditLogger?` | Logger for all MCP operations |
+| `maxToolOutputSize` | `number?` | Max tool output size in bytes (default: 1MB) |
+
+**AllowedServer:**
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Server name to match |
+| `transport` | `'stdio' \| 'http'` | Expected transport type |
+| `commandHash` | `string?` | SHA-256 hash of `command:args` for stdio servers |
+| `urlPattern` | `string?` | Regex pattern for HTTP server URL |
+| `allowedTools` | `string[]?` | Tool whitelist for this server |
+| `deniedTools` | `string[]?` | Tool blacklist for this server |
+
+```ts
+import { createTrustedMCPClient } from 'elsium-ai/mcp'
+
+const client = createTrustedMCPClient(
+  { name: 'data-tools', transport: 'http', url: 'http://localhost:3001/mcp' },
+  {
+    allowedServers: [
+      {
+        name: 'data-tools',
+        transport: 'http',
+        urlPattern: '^http://localhost:3001',
+        allowedTools: ['query_db', 'list_tables'],
+        deniedTools: ['drop_table'],
+      },
+    ],
+    maxToolOutputSize: 512 * 1024,
+    auditLog: { log: (event) => console.log(event) },
+  },
+)
+
+await client.connect()
+const tools = await client.listTools() // only returns allowed tools
+```
+
+### Tool Manifests
+
+Generate and verify tool manifests for supply chain integrity:
+
+```ts
+const manifest = await client.generateManifest()
+// { serverName, tools: [{ name, description, inputSchemaHash }], hash }
+
+const isValid = await client.verifyManifest(manifest)
+// false if server tools have changed since manifest was generated
+```
+
+### Types
+
+| Export | Description |
+|---|---|
+| `TrustedMCPClient` | Extended MCPClient with `manifest`, `generateManifest()`, `verifyManifest()` |
+| `MCPTrustConfig` | Trust configuration: allowlist, validation, audit |
+| `AllowedServer` | Server allowlist entry with tool filtering |
+| `MCPAuditLogger` | Audit logger interface |
+| `MCPAuditEvent` | Audit event: `type`, `serverName`, `timestamp`, `data` |
+| `MCPToolManifest` | Tool manifest with hash for integrity verification |

@@ -35,7 +35,7 @@ ElsiumAI is built on three pillars that most frameworks ignore entirely:
 | Pillar | The guarantee |
 |--------|--------------|
 | **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown |
-| **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail |
+| **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail, agent identity, runtime policy enforcement, memory integrity, MCP trust framework, compliance reporting (OWASP Agentic, EU AI Act, Colorado AI Act) |
 | **Reproducible AI** | Tools to measure, pin, and reproduce AI outputs — seed propagation, output pinning, provenance tracking, determinism assertions |
 
 It also does everything you'd expect — multi-provider gateway, agents, tools, RAG, workflows, MCP, streaming, cost tracking. But those are table stakes. The three pillars are what make ElsiumAI different.
@@ -134,9 +134,14 @@ const llm = gateway({
 | Feature | What it does |
 |---------|-------------|
 | **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern |
+| **Runtime Policy Enforcement** | Enforce policies inside the agent loop — check permissions before every tool call |
 | **RBAC** | Role-based permissions with inheritance and wildcard matching |
 | **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations |
-| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification, batched mode for high-volume, streaming audit middleware, failover audit integration, pluggable sinks (webhook, Splunk, Datadog) with per-sink filtering and dead letter queue |
+| **Agent Identity** | HMAC-SHA256 signed agent requests with replay protection and cross-agent verification |
+| **Memory Integrity** | SHA-256 hash-chained message stores — detect tampering in agent memory |
+| **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification, pluggable sinks (webhook, Splunk, Datadog) |
+| **Compliance Reporting** | Generate reports against OWASP Agentic, EU AI Act, Colorado AI Act frameworks |
+| **MCP Trust Framework** | Server allowlists, tool filtering, output validation, manifest integrity for MCP |
 | **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model |
 
 ---
@@ -197,7 +202,7 @@ The three pillars are what make ElsiumAI unique. These are the fundamentals it a
 - **Client SDK** — TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers
 - **Persistent storage** — SQLite memory stores for agents, PgVector for RAG
 - **Cost intelligence** — Budgets, projections, loop detection
-- **Testing** — Mock providers, evals, LLM-as-judge, prompt versioning, regression suites, dataset loading (JSON/CSV/JSONL), baseline comparison
+- **Testing** — Mock providers, evals, LLM-as-judge, prompt versioning, regression suites, dataset loading (JSON/CSV/JSONL), baseline comparison, multi-turn conversation testing, tool call assertions, automated red-teaming (44 adversarial probes including multi-turn), agent metrics (efficiency, recovery, cost), unified agent eval runner, CI reporters (JUnit XML, GitHub Actions, Markdown)
 - **Structured extraction** — Zod schema → typed output, auto-retry on validation failure
 - **Dev Studio** — Local web dashboard for live traces, X-Ray, costs, streaming events
 - **AI Proxy** — OpenAI-compatible proxy with cost tracking, caching, audit — any language, zero code changes
@@ -264,7 +269,7 @@ Three Pillars — where each feature lives:
 | [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server, resources, prompts |
 | [`@elsium-ai/app`](./packages/app) | HTTP server, CORS, auth, rate limiting, RBAC, SSE streaming, multi-tenant |
 | [`@elsium-ai/client`](./packages/client) | TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers |
-| [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, pinning, determinism assertions, prompt versioning |
+| [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, multi-turn agent testing, tool assertions, red-teaming (single + multi-turn), agent metrics, CI reporters |
 | [`@elsium-ai/cli`](./packages/cli) | Scaffolding, dev server, X-Ray inspection |
 
 ---
@@ -276,7 +281,7 @@ Beyond agents, tools, RAG, and multi-provider routing, ElsiumAI ships production
 | Category | Feature |
 |----------|---------|
 | **Reliability** | Circuit Breaker, Bulkhead Isolation, Request Dedup, Graceful Shutdown, Retry with Backoff, Stream Failover |
-| **Governance** | Policy Engine, RBAC, Approval Gates, Hash-Chained Audit, PII Detection, Output Guardrails, Multi-Tenant |
+| **Governance** | Policy Engine, Runtime Policy Enforcement, RBAC, Approval Gates, Agent Identity, Memory Integrity, Hash-Chained Audit, Compliance Reporting, MCP Trust Framework, PII Detection, Output Guardrails, Multi-Tenant |
 | **Determinism** | Seed Propagation, Output Pinning, Determinism Assertions, Provenance Tracking, A/B Experiments |
 | **Performance** | Response Caching, Batch Processing, Token Counting, Context Management |
 | **Multimodal** | Text, Image, Audio, Document across Anthropic, OpenAI, Google |
