@@ -7,7 +7,6 @@ import { formatToolResult } from '@elsium-ai/tools'
 import type { z } from 'zod'
 import { type ApprovalGate, createApprovalGate, shouldRequireApproval } from './approval'
 import { createConfidenceScorer } from './confidence'
-import { type AgentIdentity, createAgentIdentity } from './identity'
 import { type Memory, createMemory } from './memory'
 import { type RuntimePolicyEnforcer, createRuntimePolicyEnforcer } from './runtime-policy'
 import { createAgentSecurity } from './security'
@@ -82,22 +81,17 @@ function resolveDependencies(config: AgentConfig, deps?: AgentDependencies): Age
 	}
 }
 
-export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agent {
-	const resolvedDeps = resolveDependencies(config, deps)
-	const memory: Memory = createMemory(
-		config.memory ?? { strategy: 'sliding-window', maxMessages: 50 },
-	)
+type ResolvedGuardrails = Required<
+	Omit<GuardrailConfig, 'semantic' | 'security' | 'approval' | 'runtimePolicy'>
+> & {
+	semantic?: GuardrailConfig['semantic']
+	security?: GuardrailConfig['security']
+	approval?: GuardrailConfig['approval']
+	runtimePolicy?: GuardrailConfig['runtimePolicy']
+}
 
-	const toolMap = new Map((config.tools ?? []).map((t) => [t.name, t]))
-
-	const guardrails: Required<
-		Omit<GuardrailConfig, 'semantic' | 'security' | 'approval' | 'runtimePolicy'>
-	> & {
-		semantic?: GuardrailConfig['semantic']
-		security?: GuardrailConfig['security']
-		approval?: GuardrailConfig['approval']
-		runtimePolicy?: GuardrailConfig['runtimePolicy']
-	} = {
+function resolveGuardrails(config: AgentConfig): ResolvedGuardrails {
+	return {
 		maxIterations: config.guardrails?.maxIterations ?? 10,
 		maxTokenBudget: config.guardrails?.maxTokenBudget ?? 500_000,
 		maxDurationMs: config.guardrails?.maxDurationMs ?? 0,
@@ -107,6 +101,16 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		security: config.guardrails?.security,
 		runtimePolicy: config.guardrails?.runtimePolicy,
 	}
+}
+
+export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agent {
+	const resolvedDeps = resolveDependencies(config, deps)
+	const memory: Memory = createMemory(
+		config.memory ?? { strategy: 'sliding-window', maxMessages: 50 },
+	)
+
+	const toolMap = new Map((config.tools ?? []).map((t) => [t.name, t]))
+	const guardrails = resolveGuardrails(config)
 
 	const semanticValidator = guardrails.semantic
 		? createSemanticValidator(guardrails.semantic, resolvedDeps.complete)
@@ -119,10 +123,6 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 	const runtimePolicy: RuntimePolicyEnforcer | null = guardrails.runtimePolicy
 		? createRuntimePolicyEnforcer(guardrails.runtimePolicy)
-		: null
-
-	const identity: AgentIdentity | null = config.identity
-		? createAgentIdentity(config.identity)
 		: null
 
 	const maxDurationMs = config.guardrails?.maxDurationMs ?? 0
@@ -424,6 +424,62 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		})
 	}
 
+	async function checkApprovalGate(tc: ToolCall): Promise<ToolExecutionResult | null> {
+		if (!approvalGate) return null
+		if (
+			!shouldRequireApproval(config.guardrails?.approval?.requireApprovalFor, {
+				toolName: tc.name,
+			})
+		)
+			return null
+
+		const decision = await approvalGate.requestApproval('tool_call', `Execute tool: ${tc.name}`, {
+			toolName: tc.name,
+			arguments: tc.arguments,
+		})
+		if (decision.approved) return null
+
+		return {
+			success: false,
+			error: `Tool call denied: ${decision.reason ?? 'Approval denied'}`,
+			toolCallId: tc.id,
+			durationMs: 0,
+		}
+	}
+
+	function checkRuntimePolicy(tc: ToolCall, options: AgentRunOptions): void {
+		if (!runtimePolicy) return
+		runtimePolicy.evaluateToolCall({
+			toolName: tc.name,
+			toolArguments: tc.arguments,
+			model: config.model,
+			actor: options.metadata?.actor as string | undefined,
+			role: options.metadata?.role as string | undefined,
+		})
+	}
+
+	async function executeSingleToolCall(
+		tc: ToolCall,
+		options: AgentRunOptions,
+	): Promise<ToolExecutionResult> {
+		const denied = await checkApprovalGate(tc)
+		if (denied) return denied
+
+		checkRuntimePolicy(tc, options)
+
+		const tool = toolMap.get(tc.name)
+		if (!tool) {
+			return {
+				success: false,
+				error: `Unknown tool: ${tc.name}. Available: ${Array.from(toolMap.keys()).join(', ')}`,
+				toolCallId: tc.id,
+				durationMs: 0,
+			}
+		}
+
+		return tool.execute(tc.arguments, { toolCallId: tc.id, signal: options.signal })
+	}
+
 	async function executeToolCalls(
 		toolCalls: ToolCall[],
 		history: AgentResult['toolCalls'],
@@ -433,61 +489,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 		for (const tc of toolCalls) {
 			await safeHook(() => config.hooks?.onToolCall?.({ name: tc.name, arguments: tc.arguments }))
-
-			// Check approval gate before executing tool
-			if (
-				approvalGate &&
-				shouldRequireApproval(config.guardrails?.approval?.requireApprovalFor, {
-					toolName: tc.name,
-				})
-			) {
-				const decision = await approvalGate.requestApproval(
-					'tool_call',
-					`Execute tool: ${tc.name}`,
-					{ toolName: tc.name, arguments: tc.arguments },
-				)
-				if (!decision.approved) {
-					const deniedResult: ToolExecutionResult = {
-						success: false,
-						error: `Tool call denied: ${decision.reason ?? 'Approval denied'}`,
-						toolCallId: tc.id,
-						durationMs: 0,
-					}
-					await safeHook(() => config.hooks?.onToolResult?.(deniedResult))
-					history.push({ name: tc.name, arguments: tc.arguments, result: deniedResult })
-					results.push(formatToolResult(deniedResult))
-					continue
-				}
-			}
-
-			if (runtimePolicy) {
-				runtimePolicy.evaluateToolCall({
-					toolName: tc.name,
-					toolArguments: tc.arguments,
-					model: config.model,
-					actor: options.metadata?.actor as string | undefined,
-					role: options.metadata?.role as string | undefined,
-				})
-			}
-
-			const tool = toolMap.get(tc.name)
-			if (!tool) {
-				const errorResult: ToolExecutionResult = {
-					success: false,
-					error: `Unknown tool: ${tc.name}. Available: ${Array.from(toolMap.keys()).join(', ')}`,
-					toolCallId: tc.id,
-					durationMs: 0,
-				}
-				await safeHook(() => config.hooks?.onToolResult?.(errorResult))
-				history.push({ name: tc.name, arguments: tc.arguments, result: errorResult })
-				results.push(formatToolResult(errorResult))
-				continue
-			}
-
-			const result = await tool.execute(tc.arguments, {
-				toolCallId: tc.id,
-				signal: options.signal,
-			})
+			const result = await executeSingleToolCall(tc, options)
 			await safeHook(() => config.hooks?.onToolResult?.(result))
 			history.push({ name: tc.name, arguments: tc.arguments, result })
 			results.push(formatToolResult(result))

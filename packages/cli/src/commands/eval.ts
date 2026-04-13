@@ -14,6 +14,12 @@ interface EvalFlags {
 
 const VALID_FORMATS = new Set<string>(['text', 'junit', 'github', 'markdown'])
 
+const STRING_FLAGS: Record<string, keyof Pick<EvalFlags, 'dataset' | 'compare' | 'baselineDir'>> = {
+	'--dataset': 'dataset',
+	'--compare': 'compare',
+	'--baseline-dir': 'baselineDir',
+}
+
 function parseFlags(args: string[]): EvalFlags {
 	const flags: EvalFlags = {
 		saveBaseline: false,
@@ -24,36 +30,18 @@ function parseFlags(args: string[]): EvalFlags {
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i]
 		const next = args[i + 1]
-		switch (arg) {
-			case '--dataset':
-				if (next) {
-					flags.dataset = next
-					i++
-				}
-				break
-			case '--compare':
-				if (next) {
-					flags.compare = next
-					i++
-				}
-				break
-			case '--save-baseline':
-				flags.saveBaseline = true
-				break
-			case '--baseline-dir':
-				if (next) {
-					flags.baselineDir = next
-					i++
-				}
-				break
-			case '--format':
-				if (next && VALID_FORMATS.has(next)) {
-					flags.format = next as OutputFormat
-					i++
-				}
-				break
-			default:
-				if (!arg.startsWith('--')) flags.file = arg
+		const stringKey = STRING_FLAGS[arg]
+
+		if (stringKey && next) {
+			flags[stringKey] = next
+			i++
+		} else if (arg === '--save-baseline') {
+			flags.saveBaseline = true
+		} else if (arg === '--format' && next && VALID_FORMATS.has(next)) {
+			flags.format = next as OutputFormat
+			i++
+		} else if (!arg.startsWith('--')) {
+			flags.file = arg
 		}
 	}
 
