@@ -137,6 +137,60 @@ describe('defineTool', () => {
 		expect(result.success).toBe(false)
 		expect(result.error).toContain('timed out')
 	})
+
+	// Regression: external AbortSignal cancellation reported "timed out" instead of
+	// "aborted" because both code paths shared a single ElsiumError.timeout reject.
+	it('reports "aborted" (not "timed out") when cancelled by an external signal', async () => {
+		const slowTool = defineTool({
+			name: 'abort_tool',
+			description: 'Long-running tool',
+			input: z.object({}),
+			timeoutMs: 30_000,
+			handler: async (_, ctx) =>
+				new Promise<Record<string, never>>((resolve, reject) => {
+					const t = setTimeout(() => resolve({}), 5_000)
+					ctx.signal?.addEventListener('abort', () => {
+						clearTimeout(t)
+						reject(new Error('handler-side abort'))
+					})
+				}),
+		})
+
+		const controller = new AbortController()
+		setTimeout(() => controller.abort(), 50)
+
+		const result = await slowTool.execute({}, { signal: controller.signal })
+
+		expect(result.success).toBe(false)
+		expect(result.error).toMatch(/aborted/i)
+		expect(result.error).not.toMatch(/timed out/i)
+	})
+
+	// Regression: when the caller passes their own AbortSignal, the previous code
+	// stored the user's signal in ctx and aborted a separate controller, so the
+	// framework timeout never fired. Now both share one controller.
+	it('still enforces timeoutMs when the caller passes their own AbortSignal', async () => {
+		const tool = defineTool({
+			name: 'slow_with_user_signal',
+			description: '',
+			input: z.object({}),
+			timeoutMs: 50,
+			handler: async (_, ctx) =>
+				new Promise<Record<string, never>>((resolve, reject) => {
+					const t = setTimeout(() => resolve({}), 5_000)
+					ctx.signal?.addEventListener('abort', () => {
+						clearTimeout(t)
+						reject(new Error('handler-side abort'))
+					})
+				}),
+		})
+
+		const neverAbortController = new AbortController()
+		const result = await tool.execute({}, { signal: neverAbortController.signal })
+
+		expect(result.success).toBe(false)
+		expect(result.error).toMatch(/timed out/i)
+	})
 })
 
 // ─── Sandbox integration ─────────────────────────────────────────

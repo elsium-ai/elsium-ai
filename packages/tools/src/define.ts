@@ -1,8 +1,25 @@
 import type { ToolDefinition } from '@elsium-ai/core'
-import { ElsiumError, generateId, zodToJsonSchema } from '@elsium-ai/core'
+import { ElsiumError, createLogger, generateId, zodToJsonSchema } from '@elsium-ai/core'
 import type { z } from 'zod'
 import { createWorkerSandboxRunner } from './sandbox/runner'
 import type { SandboxConfig, SandboxRunner } from './sandbox/types'
+
+const log = createLogger()
+
+const IS_BUN =
+	typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined' ||
+	(typeof process !== 'undefined' &&
+		Boolean((process.versions as Record<string, string | undefined>).bun))
+
+let bunSandboxWarningShown = false
+
+function warnBunSandboxOnce(toolName: string): void {
+	if (bunSandboxWarningShown) return
+	bunSandboxWarningShown = true
+	log.warn(
+		`Tool "${toolName}" uses sandbox.mode="worker" under Bun. Crash isolation is incomplete on Bun: process.exit() inside the handler does NOT terminate the worker (it does on Node). Other guarantees (process, memory, closure-state, timeout, abort) hold. Track: https://github.com/elsium-ai/elsium-ai/issues — search for "Bun crash isolation".`,
+	)
+}
 
 export interface ToolConfig<TInput = unknown, TOutput = unknown> {
 	name: string
@@ -73,6 +90,45 @@ function buildExecutionSuccess<T>(
 	}
 }
 
+function wireUserSignalToController(
+	controller: AbortController,
+	userSignal: AbortSignal | undefined,
+): void {
+	if (!userSignal) return
+	if (userSignal.aborted) {
+		controller.abort()
+		return
+	}
+	userSignal.addEventListener('abort', () => controller.abort(), { once: true })
+}
+
+function createAbortRejection(
+	signal: AbortSignal,
+	isTimeout: () => boolean,
+	name: string,
+	timeoutMs: number,
+): Promise<never> {
+	return new Promise<never>((_, reject) => {
+		signal.addEventListener(
+			'abort',
+			() => {
+				if (isTimeout()) {
+					reject(ElsiumError.timeout(name, timeoutMs))
+				} else {
+					reject(
+						new ElsiumError({
+							code: 'TOOL_ERROR',
+							message: `Tool "${name}" was aborted`,
+							retryable: false,
+						}),
+					)
+				}
+			},
+			{ once: true },
+		)
+	})
+}
+
 export function defineTool<TInput, TOutput>(
 	config: ToolConfig<TInput, TOutput>,
 ): Tool<TInput, TOutput> {
@@ -91,6 +147,10 @@ export function defineTool<TInput, TOutput>(
 		throw ElsiumError.validation(
 			`Tool "${config.name}" sandbox.mode must be "worker" (received "${(config.sandbox as { mode: string }).mode}")`,
 		)
+	}
+
+	if (config.sandbox && IS_BUN) {
+		warnBunSandboxOnce(config.name)
 	}
 
 	const { name, description, output, sandbox, timeoutMs = 30_000 } = config
@@ -143,21 +203,24 @@ export function defineTool<TInput, TOutput>(
 			}
 
 			const controller = new AbortController()
-			const timer = setTimeout(() => controller.abort(), timeoutMs)
+			let timedOut = false
+			const timer = setTimeout(() => {
+				timedOut = true
+				controller.abort()
+			}, timeoutMs)
+
+			wireUserSignalToController(controller, partialCtx?.signal)
+
 			const context: ToolContext = {
 				toolCallId,
 				traceId: partialCtx?.traceId,
-				signal: partialCtx?.signal ?? controller.signal,
+				signal: controller.signal,
 			}
 
 			try {
 				const result = await Promise.race([
 					runHandler(parsed.data, context),
-					new Promise<never>((_, reject) => {
-						context.signal?.addEventListener('abort', () => {
-							reject(ElsiumError.timeout(name, timeoutMs))
-						})
-					}),
+					createAbortRejection(controller.signal, () => timedOut, name, timeoutMs),
 				])
 
 				if (output) {
