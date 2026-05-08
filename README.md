@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://github.com/elsium-ai/elsium-ai" target="blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
+  <a href="https://elsiumai.com" target="_blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
   <br><br>
   <strong>Reliability. Governance. Reproducible AI.</strong>
   <br>
@@ -12,6 +12,16 @@ https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/tests-1494%20passing-brightgreen" alt="Tests">
   <img src="https://img.shields.io/badge/bundle-77KB%20minified-blue" alt="Bundle Size">
+</p>
+
+<p align="center">
+  <a href="https://elsiumai.com"><strong>Website</strong></a>
+  ·
+  <a href="https://www.youtube.com/@FuturmilleAIStudio"><strong>Demos</strong></a>
+  ·
+  <a href="./docs/getting-started.md"><strong>Docs</strong></a>
+  ·
+  <a href="https://github.com/elsium-ai/elsium-ai/discussions"><strong>Discussions</strong></a>
 </p>
 
 ---
