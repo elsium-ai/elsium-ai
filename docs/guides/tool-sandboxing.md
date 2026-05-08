@@ -84,6 +84,18 @@ await tool.dispose?.()  // optional, only present when sandbox is configured
 
 The Worker is created with `unref()`, so an unclean exit (forgotten `dispose`) does **not** prevent the host process from terminating.
 
+## Runtime caveat: Bun and `process.exit()`
+
+The Worker-thread backend is implemented on top of `node:worker_threads`. Most isolation guarantees behave identically across Node and Bun (Bun ships a `worker_threads` polyfill on top of its `Worker` primitive). One exception:
+
+> **Under Bun, `process.exit()` inside a sandboxed handler does NOT terminate the worker.** The handler keeps running and may return a normal-looking value that the framework records as `success: true`. Under Node, `process.exit()` correctly terminates the worker thread and the framework reports the failure.
+
+Other guarantees (process isolation, memory isolation, closure-state isolation, timeout enforcement, abort propagation) hold under both runtimes. Only the `process.exit()` death path is different.
+
+The framework emits a one-time `log.warn` on construction of any `sandbox: { mode: 'worker' }` tool when running under Bun, so this isn't silent.
+
+If you need bullet-proof crash isolation against `process.exit()`-style attacks under Bun, deploy under Node until a future `mode: 'process'` (using `child_process.fork`) lands. That mode will give true OS-level process isolation with consistent `process.exit()` semantics across runtimes.
+
 ## What's enforced today vs. declared
 
 This is the most important part of the threat model. Be precise about what you can rely on.
@@ -92,7 +104,7 @@ This is the most important part of the threat model. Be precise about what you c
 |---|---|---|
 | Process isolation (separate event loop) | ✅ enforced | Worker thread |
 | Memory isolation (separate V8 heap) | ✅ enforced | Worker thread |
-| Crash isolation (`process.exit` only kills the worker) | ✅ enforced | Worker thread |
+| Crash isolation (`process.exit` only kills the worker) | ✅ enforced under **Node**; ⚠️ under Bun `process.exit()` inside a worker does not terminate it (see "Runtime caveat") | Worker thread |
 | Closure-state isolation (host module variables invisible) | ✅ enforced | Handler is loaded as a separate module via `await import()` |
 | Timeout enforcement (worker terminated after `timeoutMs`) | ✅ enforced | `Worker.terminate()` |
 | Network capability allowlist (`capabilities: ['network:host.com']`) | ⚠️ declared, **not enforced in v1** | Will require interceptor over `fetch`/`http`/`https` modules |
@@ -110,7 +122,7 @@ If you need real network egress control today, run your sandboxed tools behind a
 | Attack | Without sandbox | With sandbox (v1) |
 |---|---|---|
 | LLM-generated handler exfiltrates `process.env` | Full env exposed | Worker has its own env (you control what `workerData` you pass) — **mitigated** |
-| Third-party tool from npm calls `process.exit()` | Whole app crashes | Only the worker dies; host process continues — **mitigated** |
+| Third-party tool from npm calls `process.exit()` | Whole app crashes | Only the worker dies; host process continues — **mitigated under Node**; under Bun the worker keeps running and the call is reported as `success: true` (see "Runtime caveat" above) |
 | Tool with prompt-injected shell command (`child_process.exec`) | Shell runs with host's privileges | Same — *not yet enforced via capabilities* — **partially mitigated** |
 | Tool with `while(true){}` infinite loop | Host event loop blocked | Worker is terminated on `timeoutMs` — **mitigated** |
 | Tool reads files via `fs.readFileSync('/etc/passwd')` | Reads succeed | Same — *not yet enforced via capabilities* — **partially mitigated** |
