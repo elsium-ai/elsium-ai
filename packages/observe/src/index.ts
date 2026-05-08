@@ -46,6 +46,8 @@ export { createSplunkSink } from './audit-sink-splunk'
 export type { SplunkSinkConfig } from './audit-sink-splunk'
 export { createDatadogSink } from './audit-sink-datadog'
 export type { DatadogSinkConfig } from './audit-sink-datadog'
+export { createJsonlSink } from './audit-sink-jsonl'
+export type { JsonlSinkConfig } from './audit-sink-jsonl'
 
 // Provenance
 export { createProvenanceTracker } from './provenance'

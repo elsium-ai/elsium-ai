@@ -36,7 +36,7 @@ ElsiumAI is built on three pillars that most frameworks ignore entirely:
 |--------|--------------|
 | **Reliability** | Your system stays up when providers break — circuit breakers, bulkhead isolation, request dedup, graceful shutdown |
 | **Governance** | You control who does what, and you can prove it — policy engine, RBAC, approval gates, hash-chained audit trail, agent identity, runtime policy enforcement, memory integrity, MCP trust framework, compliance reporting (OWASP Agentic, EU AI Act, Colorado AI Act) |
-| **Reproducible AI** | Tools to measure, pin, and reproduce AI outputs — seed propagation, output pinning, provenance tracking, determinism assertions |
+| **Reproducible AI** | Tools to measure, pin, and trace AI outputs — seed propagation, output pinning, provenance tracking, determinism assertions (see caveats below) |
 
 It also does everything you'd expect — multi-provider gateway, agents, tools, RAG, workflows, MCP, streaming, cost tracking. But those are table stakes. The three pillars are what make ElsiumAI different.
 
@@ -148,22 +148,22 @@ const llm = gateway({
 
 ## Reproducible AI
 
-LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, measure, and track output consistency.
+LLMs are non-deterministic by nature. ElsiumAI gives you the tools to constrain, measure, and track output consistency — but the framework cannot make a hosted model deterministic on its own. See the caveats below.
 
 ```typescript
 import { assertDeterministic } from '@elsium-ai/testing'
 import { createProvenanceTracker } from '@elsium-ai/observe'
 
-// Verify: same input → same output
+// Measure: how stable is the output across N runs?
 const result = await assertDeterministic(
   (seed) => llm.complete({
     messages: [{ role: 'user', content: [{ type: 'text', text: 'Classify: spam' }] }],
     temperature: 0,
-    seed,  // Propagated to provider API automatically
+    seed,  // Forwarded to provider API where supported
   }).then(r => extractText(r.message.content)),
   { runs: 5, seed: 42, tolerance: 0 },
 )
-// { deterministic: true, variance: 0, uniqueOutputs: 1 }
+// { deterministic: true | false, variance: number, uniqueOutputs: number }
 
 // Prove: who/what/when produced this output
 const provenance = createProvenanceTracker()
@@ -172,11 +172,13 @@ provenance.record({ prompt, model, config, input, output, traceId })
 
 | Feature | What it does |
 |---------|-------------|
-| **Seed Propagation** | Passes seed through the stack to OpenAI, Google, and Anthropic APIs |
+| **Seed Propagation** | Forwards `seed` to providers that accept it (OpenAI, Google). Anthropic does not expose a seed parameter; calls without one rely on `temperature: 0` alone. |
 | **Output Pinning** | Locks expected outputs — model update changes your classifier? CI catches it |
-| **Determinism Assertions** | Run N times, verify all outputs match, fail in CI if they don't |
+| **Determinism Assertions** | Runs N times and reports variance. Does not *enforce* determinism — it surfaces drift so you fail builds before users see it. |
 | **Provenance Tracking** | SHA-256 hashes every prompt/config/input/output — full lineage per traceId |
 | **Request-Matched Fixtures** | Replay test fixtures by content hash, not sequence order |
+
+> **Reproducibility caveats.** True bit-exact reproducibility against a hosted provider requires `temperature: 0` AND a stable `system_fingerprint` (OpenAI rotates these between deploys, so identical `(prompt, seed, temperature)` calls can still differ across days). Tool calls that hit external APIs are not seedable. For full reproducibility, pair these primitives with `mockProvider` from `@elsium-ai/testing` or replay-recorder fixtures — the determinism assertions then catch real drift instead of provider noise.
 
 ---
 
