@@ -139,6 +139,126 @@ describe('defineTool', () => {
 	})
 })
 
+// ─── Sandbox integration ─────────────────────────────────────────
+
+describe('defineTool with sandbox config', () => {
+	const ECHO_HANDLER = new URL('./sandbox/__test_handlers__/echo.mjs', import.meta.url)
+	const THROWS_HANDLER = new URL('./sandbox/__test_handlers__/throws.mjs', import.meta.url)
+	const IDENTITY_HANDLER = new URL('./sandbox/__test_handlers__/identity.mjs', import.meta.url)
+
+	it('rejects when neither handler nor sandbox is provided', () => {
+		expect(() =>
+			defineTool({
+				name: 'invalid',
+				description: 'no handler nor sandbox',
+				input: z.object({}),
+			}),
+		).toThrow(/requires either an inline "handler" or a "sandbox"/)
+	})
+
+	it('rejects sandbox.mode that is not "worker"', () => {
+		expect(() =>
+			defineTool({
+				name: 'invalid',
+				description: 'bad sandbox mode',
+				input: z.object({}),
+				sandbox: { mode: 'isolated-vm', handler: ECHO_HANDLER } as never,
+			}),
+		).toThrow(/sandbox.mode must be "worker"/)
+	})
+
+	it('runs the handler in a sandboxed worker and returns the result', async () => {
+		const tool = defineTool({
+			name: 'echo_sandboxed',
+			description: 'Echo via sandbox',
+			input: z.object({ msg: z.string() }),
+			sandbox: { mode: 'worker', handler: ECHO_HANDLER },
+		})
+		try {
+			const result = await tool.execute({ msg: 'hello' })
+			expect(result.success).toBe(true)
+			expect((result.data as { received: { msg: string } }).received.msg).toBe('hello')
+		} finally {
+			await tool.dispose?.()
+		}
+	})
+
+	it('reports handler errors as a failed execution result', async () => {
+		const tool = defineTool({
+			name: 'throws_sandboxed',
+			description: 'Always throws',
+			input: z.object({}),
+			sandbox: { mode: 'worker', handler: THROWS_HANDLER },
+		})
+		try {
+			const result = await tool.execute({})
+			expect(result.success).toBe(false)
+			expect(result.error).toContain('fixture error')
+		} finally {
+			await tool.dispose?.()
+		}
+	})
+
+	it('runs the handler in a different thread (process isolation)', async () => {
+		const tool = defineTool({
+			name: 'identity_sandboxed',
+			description: 'Reports thread/pid identity',
+			input: z.object({}),
+			sandbox: { mode: 'worker', handler: IDENTITY_HANDLER },
+		})
+		try {
+			const result = await tool.execute({})
+			expect(result.success).toBe(true)
+			const data = result.data as { pid: number; threadId: number; isMainThread: boolean }
+			expect(data.pid).toBe(process.pid)
+			expect(data.isMainThread).toBe(false)
+		} finally {
+			await tool.dispose?.()
+		}
+	})
+
+	it('exposes the sandbox config on the resulting Tool', () => {
+		const tool = defineTool({
+			name: 'has_sandbox',
+			description: 'checks sandbox is exposed',
+			input: z.object({}),
+			sandbox: {
+				mode: 'worker',
+				handler: ECHO_HANDLER,
+				timeoutMs: 1000,
+				capabilities: ['network'],
+			},
+		})
+		expect(tool.sandbox?.mode).toBe('worker')
+		expect(tool.sandbox?.timeoutMs).toBe(1000)
+		expect(tool.sandbox?.capabilities).toEqual(['network'])
+	})
+
+	it('disposes the worker cleanly', async () => {
+		const tool = defineTool({
+			name: 'disposable',
+			description: '',
+			input: z.object({}),
+			sandbox: { mode: 'worker', handler: ECHO_HANDLER },
+		})
+		await tool.execute({})
+		await expect(tool.dispose?.()).resolves.toBeUndefined()
+	})
+
+	it('does not break inline-handler tools (regression)', async () => {
+		const tool = defineTool({
+			name: 'inline_handler',
+			description: '',
+			input: z.object({ x: z.number() }),
+			handler: async ({ x }) => ({ doubled: x * 2 }),
+		})
+		const result = await tool.execute({ x: 21 })
+		expect(result.success).toBe(true)
+		expect((result.data as { doubled: number }).doubled).toBe(42)
+		expect(tool.sandbox).toBeUndefined()
+	})
+})
+
 // ─── Toolkit ─────────────────────────────────────────────────────
 
 describe('createToolkit', () => {
