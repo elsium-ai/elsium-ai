@@ -1,5 +1,12 @@
 # @elsium-ai/mcp
 
+## 0.11.0
+
+### Patch Changes
+
+- @elsium-ai/core@0.11.0
+- @elsium-ai/tools@0.11.0
+
 ## 0.2.1
 
 ### Patch Changes
