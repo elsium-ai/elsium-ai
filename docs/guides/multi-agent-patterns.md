@@ -8,15 +8,15 @@ A guide to composing agents into systems that collaborate, delegate, and share s
 
 ## Overview
 
-A single agent handles one task well. Real applications need multiple agents working together — researching, analyzing, routing, and summarizing. ElsiumAI provides composable primitives for multi-agent orchestration:
+A single agent handles one task well. Real applications need multiple agents working together: researching, analyzing, routing, and summarizing. ElsiumAI provides composable primitives for multi-agent orchestration:
 
-| Pattern | Use case |
-|---------|----------|
-| **Sequential** | Pipeline — each agent's output feeds the next |
-| **Parallel** | Fan-out — run agents concurrently, collect results |
-| **Supervisor** | Delegation — a coordinator routes to specialized workers |
-| **Shared memory** | Cross-agent data sharing without tight coupling |
-| **State machine** | Typed state transitions for complex workflows |
+| Pattern           | Use case                                                            |
+| ----------------- | ------------------------------------------------------------------- |
+| **Sequential**    | Pipeline where each agent's output feeds the next                   |
+| **Parallel**      | Fan-out where agents run concurrently and results are collected     |
+| **Supervisor**    | Routing prompt where a coordinator reasons over worker descriptions |
+| **Shared memory** | Cross-agent data sharing without tight coupling                     |
+| **State machine** | Typed state transitions for complex workflows                       |
 
 ---
 
@@ -25,38 +25,54 @@ A single agent handles one task well. Real applications need multiple agents wor
 Agents execute in order. Each receives the previous agent's output as input. Use this for multi-step processing pipelines.
 
 ```ts
-import { createAgent, runSequential } from 'elsium-ai/agents'
-import { createGateway } from 'elsium-ai/gateway'
+import {
+  defineAgent,
+  runSequential,
+  type AgentDependencies,
+} from "@elsium-ai/agents";
+import { gateway } from "@elsium-ai/gateway";
 
-const gateway = createGateway({
-  providers: { anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! } },
-})
+const llm = gateway({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
 
-const researcher = createAgent({
-  name: 'researcher',
-  gateway,
-  systemPrompt: 'You are a research assistant. Find key facts about the given topic.',
-})
+const deps: AgentDependencies = {
+  complete: (request) => llm.complete(request),
+  stream: (request) => llm.stream(request),
+};
 
-const analyst = createAgent({
-  name: 'analyst',
-  gateway,
-  systemPrompt: 'You are an analyst. Given research notes, identify trends and insights.',
-})
+const researcher = defineAgent(
+  {
+    name: "researcher",
+    system: "Find key facts about the given topic.",
+  },
+  deps,
+);
 
-const writer = createAgent({
-  name: 'writer',
-  gateway,
-  systemPrompt: 'You are a technical writer. Produce a concise summary from the analysis.',
-})
+const analyst = defineAgent(
+  {
+    name: "analyst",
+    system: "Identify trends and insights from research notes.",
+  },
+  deps,
+);
 
-const result = await runSequential({
-  agents: [researcher, analyst, writer],
-  input: 'The current state of open-source AI frameworks',
-})
+const writer = defineAgent(
+  {
+    name: "writer",
+    system: "Produce a concise summary from the analysis.",
+  },
+  deps,
+);
 
-// result.output contains the writer's final summary
-// result.steps contains each agent's individual output
+const results = await runSequential(
+  [researcher, analyst, writer],
+  "The current state of open-source AI frameworks",
+);
+
+// results[0] is the researcher result, results[1] is the analyst result,
+// and results[2] is the writer's final result.
 ```
 
 ---
@@ -66,228 +82,311 @@ const result = await runSequential({
 Agents run concurrently and their results are collected. Use this when tasks are independent and you want lower latency or diverse perspectives.
 
 ```ts
-import { createAgent, runParallel } from 'elsium-ai/agents'
+import {
+  defineAgent,
+  runParallel,
+  type AgentDependencies,
+} from "@elsium-ai/agents";
+import { gateway } from "@elsium-ai/gateway";
 
-const factChecker = createAgent({
-  name: 'fact-checker',
-  gateway,
-  systemPrompt: 'Verify the factual accuracy of the given claims.',
-})
+const llm = gateway({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
 
-const sentimentAnalyzer = createAgent({
-  name: 'sentiment',
-  gateway,
-  systemPrompt: 'Analyze the sentiment and tone of the given text.',
-})
+const deps: AgentDependencies = {
+  complete: (request) => llm.complete(request),
+  stream: (request) => llm.stream(request),
+};
 
-const topicClassifier = createAgent({
-  name: 'classifier',
-  gateway,
-  systemPrompt: 'Classify the text into relevant topic categories.',
-})
+const factChecker = defineAgent(
+  {
+    name: "fact-checker",
+    system: "Verify the factual accuracy of the given claims.",
+  },
+  deps,
+);
 
-const results = await runParallel({
-  agents: [factChecker, sentimentAnalyzer, topicClassifier],
-  input: 'ElsiumAI provides enterprise-grade reliability for AI applications.',
-})
+const sentimentAnalyzer = defineAgent(
+  {
+    name: "sentiment",
+    system: "Analyze the sentiment and tone of the given text.",
+  },
+  deps,
+);
 
-// results is an array — one entry per agent, in the same order
-// results[0].output — fact-checker's assessment
-// results[1].output — sentiment analysis
-// results[2].output — topic classification
+const topicClassifier = defineAgent(
+  {
+    name: "classifier",
+    system: "Classify the text into relevant topic categories.",
+  },
+  deps,
+);
+
+const results = await runParallel(
+  [factChecker, sentimentAnalyzer, topicClassifier],
+  "ElsiumAI provides enterprise-grade reliability for AI applications.",
+);
+
+// results is an array with one entry per agent.
 ```
 
 ---
 
 ## Supervisor Pattern
 
-A supervisor agent receives the user's request, decides which specialized worker should handle it, and delegates. Use this for routing, triage, and customer support flows.
+A supervisor agent receives the user's request plus descriptions of the available workers, then produces the response itself. The helper does not execute the worker agents; use it for lightweight routing, triage, and planning prompts where worker names and responsibilities are enough context.
 
 ```ts
-import { createAgent, createSupervisor } from 'elsium-ai/agents'
+import {
+  defineAgent,
+  runSupervisor,
+  type AgentDependencies,
+} from "@elsium-ai/agents";
+import { gateway } from "@elsium-ai/gateway";
 
-const billingAgent = createAgent({
-  name: 'billing',
-  gateway,
-  systemPrompt: 'You handle billing questions: invoices, payments, refunds.',
-})
+const llm = gateway({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
 
-const technicalAgent = createAgent({
-  name: 'technical',
-  gateway,
-  systemPrompt: 'You handle technical support: bugs, configuration, integrations.',
-})
+const deps: AgentDependencies = {
+  complete: (request) => llm.complete(request),
+  stream: (request) => llm.stream(request),
+};
 
-const generalAgent = createAgent({
-  name: 'general',
-  gateway,
-  systemPrompt: 'You handle general inquiries that do not fit billing or technical.',
-})
-
-const supervisor = createSupervisor({
-  name: 'support-router',
-  gateway,
-  workers: {
-    billing: billingAgent,
-    technical: technicalAgent,
-    general: generalAgent,
+const supervisor = defineAgent(
+  {
+    name: "support-router",
+    system:
+      "Route support requests by choosing the best worker description and explaining the next step.",
   },
-  routingPrompt: `You are a customer support router. Based on the user's message,
-    delegate to the appropriate worker: "billing", "technical", or "general".
-    Respond with only the worker name.`,
-})
+  deps,
+);
 
-const result = await supervisor.run('I was charged twice for my last invoice.')
-// result.delegatedTo — "billing"
-// result.output — billing agent's response
+const billingAgent = defineAgent(
+  {
+    name: "billing",
+    system: "Handle billing questions: invoices, payments, and refunds.",
+  },
+  deps,
+);
+
+const technicalAgent = defineAgent(
+  {
+    name: "technical",
+    system: "Handle technical support: bugs, configuration, and integrations.",
+  },
+  deps,
+);
+
+const generalAgent = defineAgent(
+  {
+    name: "general",
+    system: "Handle general inquiries that do not fit billing or technical.",
+  },
+  deps,
+);
+
+const result = await runSupervisor(
+  supervisor,
+  [billingAgent, technicalAgent, generalAgent],
+  "I was charged twice for my last invoice.",
+);
+
+// result is produced by the supervisor agent after seeing the worker descriptions.
 ```
 
 ---
 
 ## Shared Memory
 
-When agents need to read and write shared state without direct coupling, use `createSharedMemory`. This is a typed key-value store accessible by all agents in a group.
+When agents need to read and write shared state without direct coupling, use `createSharedMemory`. Multi-agent helpers write each agent's output into shared memory under that agent's name.
 
 ```ts
-import { createAgent, runSequential, createSharedMemory } from 'elsium-ai/agents'
+import {
+  createSharedMemory,
+  defineAgent,
+  runSequential,
+  type AgentDependencies,
+} from "@elsium-ai/agents";
+import { gateway } from "@elsium-ai/gateway";
 
-const memory = createSharedMemory<{
-  facts: string[]
-  sentiment: string
-  finalReport: string
-}>()
+const llm = gateway({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
 
-const researcher = createAgent({
-  name: 'researcher',
-  gateway,
-  systemPrompt: 'Extract key facts from the input. Store them as a list.',
-  onComplete: async (output, ctx) => {
-    ctx.sharedMemory.set('facts', JSON.parse(output))
+const deps: AgentDependencies = {
+  complete: (request) => llm.complete(request),
+  stream: (request) => llm.stream(request),
+};
+
+const memory = createSharedMemory();
+
+const researcher = defineAgent(
+  {
+    name: "researcher",
+    system: "Extract key facts from the input.",
   },
-})
+  deps,
+);
 
-const analyst = createAgent({
-  name: 'analyst',
-  gateway,
-  systemPrompt: 'Analyze sentiment of the facts provided.',
-  onStart: async (ctx) => {
-    const facts = ctx.sharedMemory.get('facts')
-    return `Analyze these facts: ${JSON.stringify(facts)}`
+const analyst = defineAgent(
+  {
+    name: "analyst",
+    system: "Analyze the sentiment of the facts provided.",
   },
-  onComplete: async (output, ctx) => {
-    ctx.sharedMemory.set('sentiment', output)
-  },
-})
+  deps,
+);
 
-const result = await runSequential({
-  agents: [researcher, analyst],
-  input: 'Review of the Q4 earnings report...',
-  sharedMemory: memory,
-})
+await runSequential(
+  [researcher, analyst],
+  "Review of the Q4 earnings report...",
+  { sharedMemory: memory },
+);
 
-// memory.get('facts') — researcher's extracted facts
-// memory.get('sentiment') — analyst's sentiment assessment
+const researcherOutput = memory.get("researcher");
+const analystOutput = memory.get("analyst");
 ```
 
 ---
 
 ## State Machines
 
-For workflows with branching logic and typed state transitions, define a state machine. Each state maps to an agent, and transitions are determined by the agent's output or custom logic.
+For workflows with branching logic and typed state transitions, run an agent through `executeStateMachine`. Each state supplies its own prompt and transition function.
 
 ```ts
-import { createStateMachine } from 'elsium-ai/agents'
+import { executeStateMachine, type AgentResult } from "@elsium-ai/agents";
+import type { CompletionRequest } from "@elsium-ai/core";
+import { gateway } from "@elsium-ai/gateway";
 
-interface OrderContext {
-  orderId: string
-  items: string[]
-  total: number
-  approved: boolean
-}
+const llm = gateway({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
 
-const orderFlow = createStateMachine<OrderContext>({
-  initial: 'validate',
-  context: { orderId: '', items: [], total: 0, approved: false },
-  states: {
-    validate: {
-      agent: createAgent({
-        name: 'validator',
-        gateway,
-        systemPrompt: 'Validate the order details. Respond "valid" or "invalid:<reason>".',
-      }),
-      transitions: {
-        valid: 'approve',
-        invalid: 'reject',
-      },
-    },
-    approve: {
-      agent: createAgent({
-        name: 'approver',
-        gateway,
-        systemPrompt: 'Check if the order total is within budget. Respond "approved" or "needs_review".',
-      }),
-      transitions: {
-        approved: 'fulfill',
-        needs_review: 'review',
-      },
-    },
-    review: {
-      agent: createAgent({
-        name: 'reviewer',
-        gateway,
-        systemPrompt: 'Review the flagged order and make a final decision.',
-      }),
-      transitions: {
-        approved: 'fulfill',
-        rejected: 'reject',
-      },
-    },
-    fulfill: { type: 'final' },
-    reject: { type: 'final' },
+const deps = {
+  complete: (request: CompletionRequest) => llm.complete(request),
+  stream: (request: CompletionRequest) => llm.stream(request),
+};
+
+const result = await executeStateMachine(
+  {
+    name: "order-flow",
+    system: "Process customer orders safely.",
   },
-})
+  {
+    initialState: "validate",
+    states: {
+      validate: {
+        system:
+          'Validate the order details. Respond with "valid" or "invalid".',
+        transition: (stateResult: AgentResult) => {
+          const output = String(stateResult.message.content)
+            .trim()
+            .toLowerCase();
+          return output.startsWith("valid") ? "approve" : "reject";
+        },
+      },
+      approve: {
+        system: "Check whether the order can be approved.",
+        transition: () => "fulfill",
+      },
+      fulfill: {
+        system: "Summarize fulfillment steps.",
+        terminal: true,
+        transition: () => "fulfill",
+      },
+      reject: {
+        system: "Explain why the order cannot proceed.",
+        terminal: true,
+        transition: () => "reject",
+      },
+    },
+  },
+  deps,
+  "Order ORD-1234 contains two widgets and totals $299.99.",
+);
 
-const result = await orderFlow.run({
-  orderId: 'ORD-1234',
-  items: ['Widget A', 'Widget B'],
-  total: 299.99,
-  approved: false,
-})
-
-// result.finalState — "fulfill" or "reject"
-// result.context — updated OrderContext
-// result.history — array of state transitions taken
+// result.finalState is "fulfill" or "reject".
+// result.stateHistory contains the state transitions taken.
 ```
 
 ---
 
 ## Combining Patterns
 
-Patterns compose naturally. A common setup uses shared memory with both sequential and parallel stages:
+Patterns compose naturally. A common setup uses shared memory with both parallel and sequential stages:
 
 ```ts
 import {
-  createAgent,
-  runSequential,
-  runParallel,
   createSharedMemory,
-} from 'elsium-ai/agents'
+  defineAgent,
+  runParallel,
+  runSequential,
+  type AgentResult,
+  type AgentDependencies,
+} from "@elsium-ai/agents";
+import { gateway } from "@elsium-ai/gateway";
 
-const memory = createSharedMemory()
+const llm = gateway({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
 
-// Stage 1: Parallel research from multiple perspectives
-const perspectives = await runParallel({
-  agents: [technicalResearcher, businessResearcher, userResearcher],
-  input: 'Evaluate the migration to a new database',
-  sharedMemory: memory,
-})
+const deps: AgentDependencies = {
+  complete: (request) => llm.complete(request),
+  stream: (request) => llm.stream(request),
+};
 
-// Stage 2: Sequential synthesis
-const report = await runSequential({
-  agents: [synthesizer, editor],
-  input: JSON.stringify(perspectives.map(p => p.output)),
-  sharedMemory: memory,
-})
+const memory = createSharedMemory();
+
+const technicalResearcher = defineAgent(
+  {
+    name: "technical-researcher",
+    system: "Evaluate technical risks.",
+  },
+  deps,
+);
+
+const businessResearcher = defineAgent(
+  {
+    name: "business-researcher",
+    system: "Evaluate business risks.",
+  },
+  deps,
+);
+
+const synthesizer = defineAgent(
+  {
+    name: "synthesizer",
+    system: "Combine research findings into a decision brief.",
+  },
+  deps,
+);
+
+const editor = defineAgent(
+  {
+    name: "editor",
+    system: "Polish the decision brief for executives.",
+  },
+  deps,
+);
+
+const perspectives = await runParallel(
+  [technicalResearcher, businessResearcher],
+  "Evaluate the migration to a new database",
+  { sharedMemory: memory },
+);
+
+const report = await runSequential(
+  [synthesizer, editor],
+  JSON.stringify(
+    perspectives.map((result: AgentResult) => result.message.content),
+  ),
+  { sharedMemory: memory },
+);
 ```
 
 ---
@@ -298,7 +397,7 @@ const report = await runSequential({
 
 2. **Use shared memory for coordination.** Prefer shared memory over passing large payloads between agents. It decouples agents and makes the data flow explicit.
 
-3. **Handle failures at the pattern level.** Use `onError` callbacks on `runSequential` and `runParallel` to decide whether to retry, skip, or abort.
+3. **Handle failures around the pattern.** Wrap `runSequential`, `runParallel`, or `runSupervisor` in your own retry, fallback, or partial-result policy.
 
 4. **Set budgets per agent.** In multi-agent systems, costs can compound quickly. Assign per-agent token and cost budgets to stay within limits.
 
@@ -307,12 +406,12 @@ const report = await runSequential({
 6. **Test with mock providers.** Use `@elsium-ai/testing` to mock LLM responses and test your orchestration logic without real API calls.
 
 ```ts
-import { createMockGateway } from '@elsium-ai/testing'
+import { mockProvider } from "@elsium-ai/testing";
 
-const mockGateway = createMockGateway({
-  responses: {
-    researcher: 'Fact 1, Fact 2, Fact 3',
-    analyst: 'Positive trend detected',
-  },
-})
+const mock = mockProvider({
+  responses: [
+    { content: "Fact 1, Fact 2, Fact 3" },
+    { content: "Positive trend detected" },
+  ],
+});
 ```
