@@ -70,6 +70,8 @@ export function createJsonFileTaskStore(config: JsonFileTaskStoreConfig): TaskSt
 	let initialized = false
 	let initPromise: Promise<void> | null = null
 
+	const writeChains = new Map<string, Promise<unknown>>()
+
 	async function ensureDir(): Promise<void> {
 		if (initialized) return
 		if (initPromise) return initPromise
@@ -82,6 +84,16 @@ export function createJsonFileTaskStore(config: JsonFileTaskStoreConfig): TaskSt
 	function pathFor(taskId: string): string {
 		assertSafeTaskId(taskId)
 		return join(dir, `${taskId}.json`)
+	}
+
+	function withIdLock<T>(taskId: string, fn: () => Promise<T>): Promise<T> {
+		const previous = writeChains.get(taskId) ?? Promise.resolve()
+		const next = previous.catch(() => undefined).then(fn)
+		writeChains.set(taskId, next)
+		next.finally(() => {
+			if (writeChains.get(taskId) === next) writeChains.delete(taskId)
+		})
+		return next
 	}
 
 	async function readDirSafe(): Promise<string[]> {
@@ -105,11 +117,13 @@ export function createJsonFileTaskStore(config: JsonFileTaskStoreConfig): TaskSt
 
 	return {
 		async save(task: PersistedTask): Promise<void> {
-			await ensureDir()
 			const path = pathFor(task.id)
-			const tmp = `${path}.tmp`
-			await writeFile(tmp, JSON.stringify(task), 'utf8')
-			await rename(tmp, path)
+			return withIdLock(task.id, async () => {
+				await ensureDir()
+				const tmp = `${path}.tmp`
+				await writeFile(tmp, JSON.stringify(task), 'utf8')
+				await rename(tmp, path)
+			})
 		},
 
 		async load(taskId: string): Promise<PersistedTask | null> {
@@ -132,11 +146,14 @@ export function createJsonFileTaskStore(config: JsonFileTaskStoreConfig): TaskSt
 		},
 
 		async delete(taskId: string): Promise<void> {
-			try {
-				await unlink(pathFor(taskId))
-			} catch (err) {
-				if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-			}
+			const path = pathFor(taskId)
+			return withIdLock(taskId, async () => {
+				try {
+					await unlink(path)
+				} catch (err) {
+					if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+				}
+			})
 		},
 	}
 }

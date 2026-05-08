@@ -152,4 +152,78 @@ describe('createJsonFileTaskStore', () => {
 		const store = createJsonFileTaskStore({ dir })
 		await expect(store.delete('does_not_exist')).resolves.toBeUndefined()
 	})
+
+	// Regression for the concurrent-save race in 0.11.0: pre-fix, two saves with the
+	// same id used the same `<id>.json.tmp` file. The first rename consumed it,
+	// leaving the rest to fail with ENOENT. createAsyncAgent's fire-and-forget
+	// pending → running → completed cascade triggered this in production.
+	it('serializes concurrent saves for the same task id (no temp file race)', async () => {
+		const store = createJsonFileTaskStore({ dir })
+		const id = 'race_target'
+
+		const results = await Promise.allSettled([
+			store.save(makeTask({ id, status: 'pending' })),
+			store.save(makeTask({ id, status: 'running' })),
+			store.save(makeTask({ id, status: 'completed' })),
+		])
+
+		for (const r of results) {
+			expect(r.status).toBe('fulfilled')
+		}
+
+		const loaded = await store.load(id)
+		expect(loaded?.status).toBe('completed')
+	})
+
+	it('handles a high-concurrency burst of same-id saves without error', async () => {
+		const store = createJsonFileTaskStore({ dir })
+		const id = 'burst'
+
+		const results = await Promise.allSettled(
+			Array.from({ length: 25 }, (_, i) =>
+				store.save(makeTask({ id, status: 'running', metadata: { tick: i } })),
+			),
+		)
+		for (const r of results) {
+			expect(r.status).toBe('fulfilled')
+		}
+
+		const loaded = await store.load(id)
+		expect(loaded).not.toBeNull()
+		expect(typeof loaded?.metadata?.tick).toBe('number')
+	})
+
+	it('serializes save and delete operations for the same task id', async () => {
+		const store = createJsonFileTaskStore({ dir })
+		const id = 'mixed_target'
+
+		const results = await Promise.allSettled([
+			store.save(makeTask({ id, status: 'pending' })),
+			store.save(makeTask({ id, status: 'running' })),
+			store.delete(id),
+			store.save(makeTask({ id, status: 'completed' })),
+		])
+
+		for (const r of results) {
+			expect(r.status).toBe('fulfilled')
+		}
+
+		const loaded = await store.load(id)
+		expect(loaded?.status).toBe('completed')
+	})
+
+	it('does not block saves for different task ids', async () => {
+		const store = createJsonFileTaskStore({ dir })
+
+		// 10 distinct ids saved in parallel — must all succeed
+		const results = await Promise.allSettled(
+			Array.from({ length: 10 }, (_, i) => store.save(makeTask({ id: `parallel_${i}` }))),
+		)
+		for (const r of results) {
+			expect(r.status).toBe('fulfilled')
+		}
+
+		const all = await store.list()
+		expect(all).toHaveLength(10)
+	})
 })
