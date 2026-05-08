@@ -1,5 +1,7 @@
 # @elsium-ai/core
 
+## 0.11.0
+
 ## 0.2.1
 
 ### Patch Changes

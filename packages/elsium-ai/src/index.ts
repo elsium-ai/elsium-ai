@@ -233,6 +233,9 @@ export {
 	createInMemoryThreadStore,
 	// Async Agent
 	createAsyncAgent,
+	// Task Stores (AsyncAgent durability)
+	createInMemoryTaskStore,
+	createJsonFileTaskStore,
 	// Approval Gates
 	createApprovalGate,
 	shouldRequireApproval,
@@ -313,6 +316,12 @@ export type {
 	AgentTask,
 	TaskStatus,
 	TaskProgressEvent,
+	// Task Store types
+	TaskStore,
+	TaskStoreFilter,
+	PersistedTask,
+	PersistedTaskError,
+	JsonFileTaskStoreConfig,
 	// Approval types
 	ApprovalRequest,
 	ApprovalDecision,
@@ -501,6 +510,7 @@ export {
 	createWebhookSink,
 	createSplunkSink,
 	createDatadogSink,
+	createJsonlSink,
 	// Provenance
 	createProvenanceTracker,
 	// Experiment
@@ -564,6 +574,7 @@ export type {
 	WebhookSinkConfig,
 	SplunkSinkConfig,
 	DatadogSinkConfig,
+	JsonlSinkConfig,
 	// Provenance types
 	ProvenanceRecord,
 	ProvenanceTracker,

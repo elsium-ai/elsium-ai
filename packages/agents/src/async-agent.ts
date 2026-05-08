@@ -1,6 +1,9 @@
-import { ElsiumError, generateId } from '@elsium-ai/core'
+import { ElsiumError, createLogger, generateId } from '@elsium-ai/core'
 import type { Agent } from './agent'
+import type { PersistedTask, TaskStore } from './stores/task-store'
 import type { AgentResult, AgentRunOptions } from './types'
+
+const log = createLogger()
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -24,6 +27,12 @@ export interface AsyncAgentConfig {
 	onProgress?: (task: AgentTask, event: TaskProgressEvent) => void
 	onComplete?: (task: AgentTask) => void
 	onError?: (task: AgentTask, error: Error) => void
+	/**
+	 * Optional store for durable task records. When set, every task transition
+	 * is persisted (fire-and-forget). On process restart the caller can use
+	 * `recover()` to surface tasks that were running/pending before.
+	 */
+	taskStore?: TaskStore
 }
 
 export type TaskProgressEvent =
@@ -39,6 +48,14 @@ export interface AsyncAgent {
 	getTask(taskId: string): AgentTask | null
 	listTasks(filter?: { status?: TaskStatus }): AgentTask[]
 	cancelAll(): void
+	/**
+	 * Loads tasks left in `pending` or `running` state from a previous process
+	 * (requires `taskStore`), marks them as failed in the store with a
+	 * "process restart" reason, and returns them so the caller can decide
+	 * whether to resubmit or alert. Returns an empty array when no taskStore
+	 * is configured or no orphaned tasks exist.
+	 */
+	recover(): Promise<PersistedTask[]>
 }
 
 export interface AsyncAgentRunOptions extends AgentRunOptions {
@@ -73,6 +90,34 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 		}
 	}
 
+	function toPersistedTask(task: MutableTask): PersistedTask {
+		return {
+			id: task.id,
+			agentName: task.agentName,
+			input: task.input,
+			status: task.status,
+			result: task.result,
+			error: task.error ? { message: task.error.message, stack: task.error.stack } : null,
+			createdAt: task.createdAt,
+			startedAt: task.startedAt,
+			completedAt: task.completedAt,
+			metadata: task.metadata,
+		}
+	}
+
+	function persistTask(task: MutableTask): void {
+		if (!config.taskStore) return
+		const store = config.taskStore
+		const snapshot = toPersistedTask(task)
+		void store.save(snapshot).catch((err) => {
+			log.warn('async agent task persistence failed', {
+				taskId: task.id,
+				status: task.status,
+				error: err instanceof Error ? err.message : String(err),
+			})
+		})
+	}
+
 	function toPublicTask(task: MutableTask): AgentTask {
 		return {
 			id: task.id,
@@ -91,6 +136,7 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 					task.completedAt = Date.now()
 					task.abortController.abort()
 					emitProgress(task, { type: 'cancelled', taskId: task.id })
+					persistTask(task)
 					task.reject(
 						new ElsiumError({
 							code: 'VALIDATION_ERROR',
@@ -110,6 +156,7 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 		task.status = 'running'
 		task.startedAt = Date.now()
 		emitProgress(task, { type: 'started', taskId: task.id })
+		persistTask(task)
 
 		try {
 			const result = await config.agent.run(task.input, {
@@ -123,6 +170,7 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 			task.result = result
 			task.completedAt = Date.now()
 			emitProgress(task, { type: 'completed', taskId: task.id, result })
+			persistTask(task)
 
 			try {
 				config.onComplete?.(toPublicTask(task))
@@ -139,6 +187,7 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 			task.error = error
 			task.completedAt = Date.now()
 			emitProgress(task, { type: 'failed', taskId: task.id, error })
+			persistTask(task)
 
 			try {
 				config.onError?.(toPublicTask(task), error)
@@ -184,6 +233,7 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 			}
 
 			tasks.set(taskId, task)
+			persistTask(task)
 
 			executeTask(task)
 
@@ -208,6 +258,7 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 					task.completedAt = Date.now()
 					task.abortController.abort()
 					emitProgress(task, { type: 'cancelled', taskId: task.id })
+					persistTask(task)
 					task.reject(
 						new ElsiumError({
 							code: 'VALIDATION_ERROR',
@@ -217,6 +268,30 @@ export function createAsyncAgent(config: AsyncAgentConfig): AsyncAgent {
 					)
 				}
 			}
+		},
+
+		async recover(): Promise<PersistedTask[]> {
+			if (!config.taskStore) return []
+			const store = config.taskStore
+			const [pending, running] = await Promise.all([
+				store.list({ status: 'pending' }),
+				store.list({ status: 'running' }),
+			])
+			const orphans = [...pending, ...running]
+
+			const now = Date.now()
+			await Promise.all(
+				orphans.map((orphan) =>
+					store.save({
+						...orphan,
+						status: 'failed',
+						completedAt: now,
+						error: { message: 'Process restart: task did not complete' },
+					}),
+				),
+			)
+
+			return orphans
 		},
 	}
 }

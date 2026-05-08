@@ -15,3 +15,12 @@ export type {
 	VerifiedMessage,
 	MemoryIntegrityResult,
 } from './integrity'
+
+export { createInMemoryTaskStore, createJsonFileTaskStore } from './task-store'
+export type {
+	TaskStore,
+	TaskStoreFilter,
+	PersistedTask,
+	PersistedTaskError,
+	JsonFileTaskStoreConfig,
+} from './task-store'

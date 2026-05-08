@@ -71,6 +71,16 @@ export type {
 	TaskProgressEvent,
 } from './async-agent'
 
+// Task Stores (durability for AsyncAgent)
+export { createInMemoryTaskStore, createJsonFileTaskStore } from './stores/index'
+export type {
+	TaskStore,
+	TaskStoreFilter,
+	PersistedTask,
+	PersistedTaskError,
+	JsonFileTaskStoreConfig,
+} from './stores/index'
+
 // Approval Gates
 export { createApprovalGate, shouldRequireApproval } from './approval'
 export type {

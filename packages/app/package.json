@@ -1,6 +1,6 @@
 {
 	"name": "@elsium-ai/app",
-	"version": "0.10.0",
+	"version": "0.11.0",
 	"description": "App bootstrap, HTTP server, and API routes for ElsiumAI",
 	"license": "MIT",
 	"author": "Eric Utrera <ebutrera9103@gmail.com>",
@@ -34,7 +34,7 @@
 		"@elsium-ai/rag": "workspace:*",
 		"@elsium-ai/workflows": "workspace:*",
 		"@hono/node-server": "^1.19.14",
-		"hono": "^4.12.12",
+		"hono": "^4.12.18",
 		"zod": "^3.24.0"
 	},
 	"devDependencies": {

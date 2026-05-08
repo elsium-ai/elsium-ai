@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { defineAgent } from './agent'
 import type { TaskProgressEvent } from './async-agent'
 import { createAsyncAgent } from './async-agent'
+import { createInMemoryTaskStore } from './stores/task-store'
 
 function mockResponse(overrides: Partial<LLMResponse> = {}): LLMResponse {
 	return {
@@ -223,5 +224,166 @@ describe('createAsyncAgent', () => {
 		const task = asyncAgent.submit('Work')
 		const result = await task.wait()
 		expect(result.message.content).toBe('Done')
+	})
+
+	it('recover() returns empty when no taskStore is configured', async () => {
+		const agent = defineAgent({ name: 'worker', system: 'Work.' }, mockDeps([]))
+		const asyncAgent = createAsyncAgent({ agent })
+
+		expect(await asyncAgent.recover()).toEqual([])
+	})
+})
+
+describe('createAsyncAgent with taskStore', () => {
+	it('persists task transitions through completion', async () => {
+		const taskStore = createInMemoryTaskStore()
+		const deps = mockDeps([{ message: { role: 'assistant', content: 'Done' } }])
+
+		const agent = defineAgent({ name: 'worker', system: 'Work.' }, deps)
+		const asyncAgent = createAsyncAgent({ agent, taskStore })
+
+		const task = asyncAgent.submit('Work', { taskId: 'persist-1' })
+		await task.wait()
+		await new Promise((r) => setImmediate(r))
+
+		const persisted = await taskStore.load('persist-1')
+		expect(persisted).not.toBeNull()
+		expect(persisted?.status).toBe('completed')
+		expect(persisted?.input).toBe('Work')
+		expect(persisted?.completedAt).toBeGreaterThan(0)
+	})
+
+	it('persists failure with error message and stack', async () => {
+		const taskStore = createInMemoryTaskStore()
+		const deps = {
+			async complete(): Promise<LLMResponse> {
+				throw new Error('Provider down')
+			},
+		}
+
+		const agent = defineAgent({ name: 'failing', system: 'Fail.' }, deps)
+		const asyncAgent = createAsyncAgent({ agent, taskStore })
+
+		const task = asyncAgent.submit('Work', { taskId: 'fail-1' })
+		await expect(task.wait()).rejects.toThrow('Provider down')
+		await new Promise((r) => setImmediate(r))
+
+		const persisted = await taskStore.load('fail-1')
+		expect(persisted?.status).toBe('failed')
+		expect(persisted?.error?.message).toBe('Provider down')
+	})
+
+	it('persists cancellations', async () => {
+		const taskStore = createInMemoryTaskStore()
+		const deps = mockDeps([{ message: { role: 'assistant', content: 'Done' } }], 100)
+
+		const agent = defineAgent({ name: 'slow', system: 'Slow.' }, deps)
+		const asyncAgent = createAsyncAgent({ agent, taskStore })
+
+		const task = asyncAgent.submit('Work', { taskId: 'cancel-1' })
+		task.cancel()
+
+		await expect(task.wait()).rejects.toThrow('cancelled')
+		await new Promise((r) => setImmediate(r))
+
+		const persisted = await taskStore.load('cancel-1')
+		expect(persisted?.status).toBe('cancelled')
+	})
+
+	it('recover() marks pending/running tasks as failed and returns them', async () => {
+		const taskStore = createInMemoryTaskStore()
+
+		await taskStore.save({
+			id: 'orphan-pending',
+			agentName: 'worker',
+			input: 'in flight before crash',
+			status: 'pending',
+			result: null,
+			error: null,
+			createdAt: 1_700_000_000_000,
+			startedAt: null,
+			completedAt: null,
+			metadata: {},
+		})
+		await taskStore.save({
+			id: 'orphan-running',
+			agentName: 'worker',
+			input: 'running before crash',
+			status: 'running',
+			result: null,
+			error: null,
+			createdAt: 1_700_000_000_000,
+			startedAt: 1_700_000_000_500,
+			completedAt: null,
+			metadata: {},
+		})
+		await taskStore.save({
+			id: 'completed-task',
+			agentName: 'worker',
+			input: 'done before crash',
+			status: 'completed',
+			result: null,
+			error: null,
+			createdAt: 1_700_000_000_000,
+			startedAt: 1_700_000_000_500,
+			completedAt: 1_700_000_001_000,
+			metadata: {},
+		})
+
+		const agent = defineAgent({ name: 'worker', system: 'Work.' }, mockDeps([]))
+		const asyncAgent = createAsyncAgent({ agent, taskStore })
+
+		const orphans = await asyncAgent.recover()
+		expect(orphans.map((o) => o.id).sort()).toEqual(['orphan-pending', 'orphan-running'])
+
+		const recovered = await taskStore.load('orphan-pending')
+		expect(recovered?.status).toBe('failed')
+		expect(recovered?.error?.message).toMatch(/Process restart/)
+
+		const completed = await taskStore.load('completed-task')
+		expect(completed?.status).toBe('completed')
+	})
+
+	it('recover() is idempotent — second call finds nothing', async () => {
+		const taskStore = createInMemoryTaskStore()
+
+		await taskStore.save({
+			id: 'orphan',
+			agentName: 'worker',
+			input: 'orphan',
+			status: 'pending',
+			result: null,
+			error: null,
+			createdAt: 1,
+			startedAt: null,
+			completedAt: null,
+			metadata: {},
+		})
+
+		const agent = defineAgent({ name: 'worker', system: 'Work.' }, mockDeps([]))
+		const asyncAgent = createAsyncAgent({ agent, taskStore })
+
+		const first = await asyncAgent.recover()
+		expect(first).toHaveLength(1)
+
+		const second = await asyncAgent.recover()
+		expect(second).toEqual([])
+	})
+
+	it('does not crash submit when taskStore.save rejects', async () => {
+		const taskStore = createInMemoryTaskStore()
+		const failing = {
+			...taskStore,
+			save: vi.fn().mockRejectedValue(new Error('disk full')),
+		}
+
+		const deps = mockDeps([{ message: { role: 'assistant', content: 'Done' } }])
+		const agent = defineAgent({ name: 'worker', system: 'Work.' }, deps)
+		const asyncAgent = createAsyncAgent({ agent, taskStore: failing })
+
+		const task = asyncAgent.submit('Work')
+		const result = await task.wait()
+		expect(result.message.content).toBe('Done')
+		expect(failing.save).toHaveBeenCalled()
 	})
 })
