@@ -34,7 +34,7 @@
 		"@elsium-ai/rag": "workspace:*",
 		"@elsium-ai/workflows": "workspace:*",
 		"@hono/node-server": "^1.19.14",
-		"hono": "^4.12.12",
+		"hono": "^4.12.18",
 		"zod": "^3.24.0"
 	},
 	"devDependencies": {
