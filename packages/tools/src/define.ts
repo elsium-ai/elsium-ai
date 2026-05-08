@@ -1,6 +1,8 @@
 import type { ToolDefinition } from '@elsium-ai/core'
 import { ElsiumError, generateId, zodToJsonSchema } from '@elsium-ai/core'
 import type { z } from 'zod'
+import { createWorkerSandboxRunner } from './sandbox/runner'
+import type { SandboxConfig, SandboxRunner } from './sandbox/types'
 
 export interface ToolConfig<TInput = unknown, TOutput = unknown> {
 	name: string
@@ -8,8 +10,9 @@ export interface ToolConfig<TInput = unknown, TOutput = unknown> {
 	input?: z.ZodType<TInput>
 	parameters?: z.ZodType<TInput>
 	output?: z.ZodType<TOutput>
-	handler: (input: TInput, context: ToolContext) => Promise<TOutput>
+	handler?: (input: TInput, context: ToolContext) => Promise<TOutput>
 	timeoutMs?: number
+	sandbox?: SandboxConfig
 }
 
 export interface ToolContext {
@@ -25,9 +28,11 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
 	readonly outputSchema?: z.ZodType<TOutput>
 	readonly rawSchema?: Record<string, unknown>
 	readonly timeoutMs: number
+	readonly sandbox?: SandboxConfig
 
 	execute(input: unknown, context?: Partial<ToolContext>): Promise<ToolExecutionResult<TOutput>>
 	toDefinition(): ToolDefinition
+	dispose?(): Promise<void>
 }
 
 export interface ToolExecutionResult<T = unknown> {
@@ -36,6 +41,36 @@ export interface ToolExecutionResult<T = unknown> {
 	error?: string
 	toolCallId: string
 	durationMs: number
+}
+
+function formatZodErrors(error: z.ZodError): string {
+	return error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+}
+
+function buildExecutionFailure<T>(
+	toolCallId: string,
+	startTime: number,
+	error: string,
+): ToolExecutionResult<T> {
+	return {
+		success: false,
+		error,
+		toolCallId,
+		durationMs: Math.round(performance.now() - startTime),
+	}
+}
+
+function buildExecutionSuccess<T>(
+	toolCallId: string,
+	startTime: number,
+	data: T,
+): ToolExecutionResult<T> {
+	return {
+		success: true,
+		data,
+		toolCallId,
+		durationMs: Math.round(performance.now() - startTime),
+	}
 }
 
 export function defineTool<TInput, TOutput>(
@@ -47,14 +82,49 @@ export function defineTool<TInput, TOutput>(
 			`Tool "${config.name}" requires an input schema (use "input" or "parameters" key)`,
 		)
 	}
-	const { name, description, output, handler, timeoutMs = 30_000 } = config
+	if (!config.handler && !config.sandbox) {
+		throw ElsiumError.validation(
+			`Tool "${config.name}" requires either an inline "handler" or a "sandbox" config`,
+		)
+	}
+	if (config.sandbox && config.sandbox.mode !== 'worker') {
+		throw ElsiumError.validation(
+			`Tool "${config.name}" sandbox.mode must be "worker" (received "${(config.sandbox as { mode: string }).mode}")`,
+		)
+	}
 
-	return {
+	const { name, description, output, sandbox, timeoutMs = 30_000 } = config
+	const handler = config.handler
+
+	let sandboxRunner: SandboxRunner | null = null
+	function getSandboxRunner(): SandboxRunner {
+		if (!sandboxRunner) {
+			if (!sandbox) {
+				throw ElsiumError.validation(`Tool "${name}" has no sandbox config`)
+			}
+			sandboxRunner = createWorkerSandboxRunner(sandbox, timeoutMs)
+		}
+		return sandboxRunner
+	}
+
+	async function runHandler(parsedInput: TInput, context: ToolContext): Promise<TOutput> {
+		if (sandbox) {
+			const result = await getSandboxRunner().invoke(parsedInput, context.signal)
+			return result as TOutput
+		}
+		if (!handler) {
+			throw ElsiumError.validation(`Tool "${name}" has no handler`)
+		}
+		return handler(parsedInput, context)
+	}
+
+	const tool: Tool<TInput, TOutput> = {
 		name,
 		description,
 		inputSchema: input,
 		outputSchema: output,
 		timeoutMs,
+		sandbox,
 
 		async execute(
 			rawInput: unknown,
@@ -65,17 +135,15 @@ export function defineTool<TInput, TOutput>(
 
 			const parsed = input.safeParse(rawInput)
 			if (!parsed.success) {
-				return {
-					success: false,
-					error: `Invalid input: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+				return buildExecutionFailure(
 					toolCallId,
-					durationMs: Math.round(performance.now() - startTime),
-				}
+					startTime,
+					`Invalid input: ${formatZodErrors(parsed.error)}`,
+				)
 			}
 
 			const controller = new AbortController()
 			const timer = setTimeout(() => controller.abort(), timeoutMs)
-
 			const context: ToolContext = {
 				toolCallId,
 				traceId: partialCtx?.traceId,
@@ -84,9 +152,9 @@ export function defineTool<TInput, TOutput>(
 
 			try {
 				const result = await Promise.race([
-					handler(parsed.data, context),
+					runHandler(parsed.data, context),
 					new Promise<never>((_, reject) => {
-						controller.signal.addEventListener('abort', () => {
+						context.signal?.addEventListener('abort', () => {
 							reject(ElsiumError.timeout(name, timeoutMs))
 						})
 					}),
@@ -95,29 +163,18 @@ export function defineTool<TInput, TOutput>(
 				if (output) {
 					const validated = output.safeParse(result)
 					if (!validated.success) {
-						return {
-							success: false,
-							error: `Invalid output: ${validated.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+						return buildExecutionFailure(
 							toolCallId,
-							durationMs: Math.round(performance.now() - startTime),
-						}
+							startTime,
+							`Invalid output: ${formatZodErrors(validated.error)}`,
+						)
 					}
 				}
 
-				return {
-					success: true,
-					data: result,
-					toolCallId,
-					durationMs: Math.round(performance.now() - startTime),
-				}
+				return buildExecutionSuccess(toolCallId, startTime, result)
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
-				return {
-					success: false,
-					error: message,
-					toolCallId,
-					durationMs: Math.round(performance.now() - startTime),
-				}
+				return buildExecutionFailure(toolCallId, startTime, message)
 			} finally {
 				clearTimeout(timer)
 			}
@@ -130,5 +187,15 @@ export function defineTool<TInput, TOutput>(
 				inputSchema: zodToJsonSchema(input),
 			}
 		},
+
+		async dispose(): Promise<void> {
+			if (sandboxRunner) {
+				const r = sandboxRunner
+				sandboxRunner = null
+				await r.dispose()
+			}
+		},
 	}
+
+	return tool
 }

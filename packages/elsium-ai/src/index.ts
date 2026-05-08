@@ -386,6 +386,10 @@ export type {
 	RetrievalToolConfig,
 	RetrievalResult as ToolRetrievalResult,
 	RetrieveFn,
+	// Sandbox types
+	Capability,
+	SandboxConfig,
+	SandboxRunner,
 } from '@elsium-ai/tools'
 
 // ─── RAG ────────────────────────────────────────────────────────

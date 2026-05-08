@@ -2,6 +2,9 @@
 export { defineTool } from './define'
 export type { ToolConfig, ToolContext, Tool, ToolExecutionResult } from './define'
 
+// Sandbox (process isolation for tool handlers)
+export type { Capability, SandboxConfig, SandboxRunner } from './sandbox/index'
+
 // Toolkit
 export { createToolkit } from './toolkit'
 export type { Toolkit } from './toolkit'
