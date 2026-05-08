@@ -58,27 +58,27 @@ function computeManifestHash(tools: MCPToolManifestEntry[]): string {
 	return createHash('sha256').update(content).digest('hex')
 }
 
+function matchesServer(config: MCPClientConfig, s: AllowedServer): boolean {
+	if (s.name !== config.name) return false
+	if (s.transport !== config.transport) return false
+
+	if (config.transport === 'http' && s.urlPattern) {
+		if (!new RegExp(s.urlPattern).test(config.url)) return false
+	}
+
+	if (config.transport === 'stdio' && s.commandHash) {
+		const cmdHash = createHash('sha256')
+			.update(`${config.command}:${(config.args ?? []).join(':')}`)
+			.digest('hex')
+		if (cmdHash !== s.commandHash) return false
+	}
+
+	return true
+}
+
 function isServerAllowed(config: MCPClientConfig, trust: MCPTrustConfig): boolean {
 	if (!trust.allowedServers?.length) return true
-
-	return trust.allowedServers.some((s) => {
-		if (s.name !== config.name) return false
-		if (s.transport !== config.transport) return false
-
-		if (config.transport === 'http' && s.urlPattern) {
-			const pattern = new RegExp(s.urlPattern)
-			if (!pattern.test(config.url)) return false
-		}
-
-		if (config.transport === 'stdio' && s.commandHash) {
-			const cmdHash = createHash('sha256')
-				.update(`${config.command}:${(config.args ?? []).join(':')}`)
-				.digest('hex')
-			if (cmdHash !== s.commandHash) return false
-		}
-
-		return true
-	})
+	return trust.allowedServers.some((s) => matchesServer(config, s))
 }
 
 function isToolAllowed(toolName: string, serverName: string, trust: MCPTrustConfig): boolean {
