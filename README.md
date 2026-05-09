@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/tests-1494%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/bundle-77KB%20minified-blue" alt="Bundle Size">
+  <img src="https://img.shields.io/badge/bundle-349KB%20minified-blue" alt="Bundle Size">
 </p>
 
 ---
@@ -322,7 +322,7 @@ Measured with zero-latency mock provider to isolate framework cost. Full methodo
 | Metric | Value |
 |---|---|
 | Cold start | <3ms |
-| Bundle size (minified) | 77 KB |
+| Bundle size (minified) | 349 KB |
 | Memory per 10K requests | ~10 MB (full stack + tracing + audit, all in-memory, capped) |
 | Per-request heap growth | ~1 KB |
 | Circuit breaker throughput | >5M ops/sec |

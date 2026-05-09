@@ -22,7 +22,7 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "bun build ./src/index.ts --outdir ./dist --target node && bun x tsc -p tsconfig.build.json --emitDeclarationOnly"
+		"build": "bun build ./src/index.ts --outdir ./dist --target node --minify && bun x tsc -p tsconfig.build.json --emitDeclarationOnly"
 	},
 	"dependencies": {
 		"@elsium-ai/core": "workspace:*",
