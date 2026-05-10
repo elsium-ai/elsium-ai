@@ -1,9 +1,15 @@
 <p align="center">
-  <a href="https://github.com/elsium-ai/elsium-ai" target="blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
+  <a href="https://elsiumai.com" target="_blank"><img src="assets/logo.png" width="320" alt="ElsiumAI Logo" /></a>
   <br><br>
   <strong>Reliability. Governance. Reproducible AI.</strong>
   <br>
   The TypeScript framework for AI systems you can trust in production.
+  <br><br>
+  <a href="https://elsiumai.com"><strong>Website</strong></a>
+  ·
+  <a href="https://elsiumai.com/#demos"><strong>Live Demos</strong></a>
+  ·
+  <a href="https://github.com/elsium-ai/elsium-ai"><strong>GitHub</strong></a>
 </p>
 
 https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
