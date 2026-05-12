@@ -1,5 +1,35 @@
 # @elsium-ai/agents
 
+## 0.13.0
+
+### Minor Changes
+
+- Add multi-stage approval chain (G4): `createApprovalChain`, `createInMemoryApprovalStore`, with per-stage `enter` conditions, role / user / callback approvers, `timeoutMs` with `onTimeout` of `deny` / `escalate` / `allow`, and an optional `ApprovalNotifier`. Only the in-memory store ships; persistent adapters (SQLite, Postgres, Redis, …) are the user's call — copy-paste templates in `docs/guides/persistent-stores.md`.
+
+### Breaking Changes
+
+- `createAgentIdentity(config)` is now async, returning `Promise<AgentIdentity>`. The `sign` and `verify` methods on the returned identity, as well as `IdentityRegistry.verifySignedPayload`, are now async. Migration:
+
+  ```ts
+  // Before
+  const id = createAgentIdentity({ agentId, secret })
+  const signed = id.sign(payload)
+  const ok = id.verify(signed)
+
+  // After
+  const id = await createAgentIdentity({ agentId, secret })
+  const signed = await id.sign(payload)
+  const ok = await id.verify(signed)
+  ```
+
+  Reason: Web Crypto `subtle.*` is async on every cross-runtime target. Closes #41 for this module.
+
+- `computeMessageHash` and `verifyMessageChain` (exported via `@elsium-ai/agents/stores`) are now async (`Promise<string>` / `Promise<MemoryIntegrityResult>`). Direct callers must `await`. The `SecureMemoryStore.load` / `save` / `clear` / `verifyIntegrity` methods were already async — no callsite change there.
+
+### Patch Changes
+
+- Updated dependencies — `@elsium-ai/core`
+
 ## 0.12.1
 
 ### Patch Changes

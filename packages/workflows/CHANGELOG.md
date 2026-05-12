@@ -1,5 +1,22 @@
 # @elsium-ai/workflows
 
+## 0.13.0
+
+### Minor Changes
+
+- Add `IdempotentCheckpointStore` (R1): extends `CheckpointStore` with `getStepResult` / `recordStepResult` / `listStepHistory`, keyed by `(workflowId, stepName, idempotencyKey)`. Ships only the in-memory adapter (`createInMemoryIdempotentCheckpointStore`); persistent adapters are the user's call. `executeIdempotentStep` checks the store before invoking the step handler so side-effectful steps (POST to external APIs, DB writes, email sends) no longer re-run when a workflow resumes from a checkpoint after a crash. Failures are cached and replayed verbatim.
+- New `IdempotentStepConfig<TInput, TOutput>` extension with `idempotent: true` opt-in and optional `idempotencyKey: (input) => string` (defaults to a stable SHA-256 over the input JSON).
+
+### Breaking Changes
+
+- `defaultIdempotencyKey(input)` is now async (`Promise<string>`).
+- `resolveIdempotencyKey(step, input)` is now async (`Promise<string | null>`).
+- Migration: `await defaultIdempotencyKey(input)`; `await resolveIdempotencyKey(step, input)`. Reason: backed by Web Crypto SHA-256 to support edge runtimes. Closes #41 for this module. `executeIdempotentStep` was already async — no callsite change there.
+
+### Patch Changes
+
+- Updated dependencies — `@elsium-ai/core`
+
 ## 0.12.1
 
 ### Patch Changes

@@ -1,5 +1,17 @@
 # @elsium-ai/observe
 
+## 0.13.0
+
+### Minor Changes
+
+- Add `CostStore` port + `createLocalCostStore` reference adapter (O2b). Async-first contract for cost attribution across processes / instances. Eight attribution dimensions: model, agent, user, feature, tenant, workflow, workflowStep, traceId. Reserve / commit / release semantics for racing concurrent writers. Backend persistence is the user's call — `docs/guides/persistent-stores.md` provides copy-paste SQLite, Postgres, and Redis templates. No DB drivers shipped.
+- Add drift detection (O5): `detectDrift` with pluggable `SimilarityProvider` port. Reports `exactMatchRate`, mean / mean-absolute length delta, tool-call Jaccard divergence, semantic similarity when a provider is supplied, and a weighted composite drift score. Designed to run in production against sampled traffic, not only in CI.
+
+### Patch Changes
+
+- Audit trail (`createAuditTrail`) internal hash chain migrated to Web Crypto (closes #41 for this module). `auditTrail.log()` stays sync fire-and-forget; an internal `chainPromise` serializes the SHA-256 computation. `query`, `verifyIntegrity`, `flush`, and `dispose` now `await` the chain so observers see a consistent state. `count` includes inflight events. No public API break — existing call sites continue to work.
+- Updated dependencies — `@elsium-ai/core`
+
 ## 0.12.1
 
 ### Patch Changes

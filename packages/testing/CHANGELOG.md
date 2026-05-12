@@ -1,5 +1,25 @@
 # @elsium-ai/testing
 
+## 0.13.0
+
+### Minor Changes
+
+- Add audit-grade signed replay (R5): `createSignedReplayRecorder`, `createSignedReplayPlayer`, `verifyReplay` with an HMAC-SHA256 hash chain over recorded entries. Same chain pattern as `audit.ts`. Tamper detection (mutated request, reordered entries, wrong secret) returns the exact `invalidAtIndex`. Minimum 16-char secret enforced. Strict mode default.
+- Add streaming replay: `createStreamReplayRecorder` and `createStreamReplayPlayer` for `AsyncIterable<StreamEvent>` sequences. Tests dependent on token-level streaming behavior become deterministic.
+- Add per-case regression budgets (O3): `createBudgetedRegressionSuite` with `tolerance` + `maxDelta` per case. Refined outcomes — `unchanged` / `improved` / `regression` / `critical`. Tags for grouped reporting. The legacy `createRegressionSuite` with hardcoded 0.1 threshold continues to work.
+- Add trace replay with variable substitution (O4): `applyOverride` + `replayWithOverride` answer "what if this prompt ran on a different model / temperature / system?" against a recorded set of inputs. Side-by-side per-entry deltas (tokens, cost, latency, contentChanged) and aggregated totals.
+- Add hash-based replay matching to `createReplayPlayer` via `strategy: 'sequential' | 'hash'` option. Order-independent replay for tests where call ordering varies.
+
+### Breaking Changes
+
+- `verifyReplay(file, secret)` is now async (`Promise<ReplayVerification>`).
+- `createSignedReplayPlayer(file, options)` is now async (`Promise<SignedReplayPlayer>`).
+- Migration: `await verifyReplay(file, secret)`; `const player = await createSignedReplayPlayer(file, opts)`. Reason: Web Crypto `subtle.sign` is async. Closes #41 for this module.
+
+### Patch Changes
+
+- Updated dependencies — `@elsium-ai/core`, `@elsium-ai/agents`, `@elsium-ai/gateway`, `@elsium-ai/tools`
+
 ## 0.12.1
 
 ### Patch Changes

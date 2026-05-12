@@ -1,5 +1,20 @@
 # elsium-ai
 
+## 0.13.0
+
+### Minor Changes
+
+- Re-exports all new APIs from the 0.13.0 framework release: declarative policy engine (`createDeclarativePolicySet`, `declarativePolicyMiddleware`, `verifyBundle`, `evaluateCondition`), multi-stage approval chain (`createApprovalChain`, `createInMemoryApprovalStore`), `CostStore` port + `createLocalCostStore`, idempotent workflow checkpoints (`createInMemoryIdempotentCheckpointStore`, `executeIdempotentStep`, `defaultIdempotencyKey`, `resolveIdempotencyKey`), declarative routing (`createDeclarativeRouter`), audit-grade signed replay (`createSignedReplayRecorder`, `createSignedReplayPlayer`, `verifyReplay`, `createStreamReplayRecorder`, `createStreamReplayPlayer`), drift detection (`detectDrift`), PII classification and jurisdiction routing (`createPiiClassifier`, `createJurisdictionRouter`), fair queuing per agent (`createFairQueue`), per-case regression budgets (`createBudgetedRegressionSuite`), trace replay overrides (`applyOverride`, `replayWithOverride`), and the Web Crypto utility module (`sha256Hex`, `hmacSha256Hex`, `randomHexString`, `timingSafeEqualHex`, `timingSafeEqualString`).
+- Internal build: post-build `prune-dist` step removes unreachable `dist/<subpath>/` declaration directories and `index-<hash>.js` bundle chunks. Published tarball shrinks from ~1.3 MB to ~412 KB (-67%). Closes #35.
+
+### Breaking Changes
+
+- Several APIs become async due to the Web Crypto migration (closes #41). See per-package CHANGELOGs for full migration notes — affected APIs include `createAgentIdentity`, `identity.sign` / `verify`, `IdentityRegistry.verifySignedPayload`, `computeMessageHash`, `verifyMessageChain`, `verifyReplay`, `createSignedReplayPlayer`, `defaultIdempotencyKey`, `resolveIdempotencyKey`. The audit trail `log()` and `count` stay sync — no callsite changes required.
+
+### Patch Changes
+
+- Updated dependencies across the workspace.
+
 ## 0.12.1
 
 ### Patch Changes

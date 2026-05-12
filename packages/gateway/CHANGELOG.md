@@ -1,5 +1,17 @@
 # @elsium-ai/gateway
 
+## 0.13.0
+
+### Minor Changes
+
+- Add declarative `RoutingPolicy` (R3): `createDeclarativeRouter` over a `RoutingPolicy` data shape with SLO eligibility (`maxLatencyMs`, `maxCost`, `requireCapabilities`). Reuses `evaluateCondition` from `@elsium-ai/core` so the same eight-operator vocabulary drives both authorization and routing decisions. Composes with the existing provider mesh executor.
+- Add PII classification + jurisdiction routing (G5): `createPiiClassifier` with built-in patterns for email / phone / ssn / credit_card / passport / ip_address plus user-registrable custom classes; `createJurisdictionRouter` with class → providers intersection semantics and `'*'` fallback. Class-to-providers mapping is the user's regulatory call — the framework provides the engine, not the rules.
+- Add per-agent fair queuing (R6): `createFairQueue` token-bucket rate limiter with per-agent overrides, pluggable `identifyAgent`, configurable timeout behavior (`throw` / `proceed`). In-process only; distributed fairness across instances is explicitly out of scope.
+
+### Patch Changes
+
+- Updated dependencies — `@elsium-ai/core`
+
 ## 0.12.1
 
 ### Patch Changes
