@@ -36,8 +36,14 @@ export type {
 } from './regression'
 
 // Replay
-export { createReplayRecorder, createReplayPlayer } from './replay'
-export type { ReplayEntry, ReplayRecorder, ReplayPlayer } from './replay'
+export { createReplayRecorder, createReplayPlayer, hashRequest } from './replay'
+export type {
+	ReplayEntry,
+	ReplayMatchStrategy,
+	ReplayPlayer,
+	ReplayPlayerOptions,
+	ReplayRecorder,
+} from './replay'
 
 // Pinning
 export { createPinStore, pinOutput } from './pinning'

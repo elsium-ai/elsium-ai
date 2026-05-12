@@ -698,6 +698,7 @@ export {
 	createRegressionSuite,
 	createReplayRecorder,
 	createReplayPlayer,
+	hashRequest,
 	// Dataset & Comparison
 	loadDataset,
 	loadDatasetFromJSON,
@@ -751,6 +752,8 @@ export type {
 	ReplayEntry,
 	ReplayRecorder,
 	ReplayPlayer,
+	ReplayPlayerOptions,
+	ReplayMatchStrategy,
 	// Dataset & Comparison types
 	EvalDataset,
 	DatasetLoaderOptions,
