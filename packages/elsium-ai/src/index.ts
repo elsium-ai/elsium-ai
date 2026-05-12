@@ -565,6 +565,8 @@ export {
 	registerModelTier,
 	// Budget-aware Routing Policy
 	createBudgetAwareRoutingPolicy,
+	// Drift detection (O5)
+	detectDrift,
 	// Cost Store (O2b)
 	createLocalCostStore,
 	// Audit Trail
@@ -632,6 +634,13 @@ export type {
 	// Budget-aware Routing types
 	BudgetAwareRoutingConfig,
 	BudgetAction,
+	// Drift detection types (O5)
+	DriftDetectionConfig,
+	DriftReport,
+	DriftSample,
+	DriftWeights,
+	PerInputComparison,
+	SimilarityProvider,
 	// Cost Store types (O2b)
 	CostAttribution,
 	CostBucket,

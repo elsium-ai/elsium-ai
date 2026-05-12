@@ -21,6 +21,17 @@ export type {
 export { createBudgetAwareRoutingPolicy } from './budget-routing'
 export type { BudgetAwareRoutingConfig, BudgetAction } from './budget-routing'
 
+// Drift Detection (O5 — observability of model-version drift)
+export { detectDrift } from './drift'
+export type {
+	DriftDetectionConfig,
+	DriftReport,
+	DriftSample,
+	DriftWeights,
+	PerInputComparison,
+	SimilarityProvider,
+} from './drift'
+
 // Cost Store (O2b — port + in-memory reference adapter).
 // Production durability is the user's call: implement CostStore against your
 // chosen backend (SQLite, Postgres, Redis, …). No DB drivers in this package.
