@@ -50,13 +50,18 @@ export {
 	// Dedup
 	createDedup,
 	dedupMiddleware,
-	// Policy
+	// Policy (legacy closure-based)
 	createPolicySet,
 	policyMiddleware,
 	modelAccessPolicy,
 	tokenLimitPolicy,
 	costLimitPolicy,
 	contentPolicy,
+	// Policy (declarative — G3)
+	createBuiltinEvaluator,
+	createDeclarativePolicySet,
+	declarativePolicyMiddleware,
+	verifyBundle,
 	// Shutdown
 	createShutdownManager,
 } from '@elsium-ai/core'
@@ -116,13 +121,31 @@ export type {
 	// Dedup types
 	DedupConfig,
 	Dedup,
-	// Policy types
+	// Policy types (legacy)
 	PolicyDecision,
 	PolicyResult,
 	PolicyContext,
 	PolicyRule,
 	PolicyConfig,
 	PolicySet,
+	// Policy types (declarative — G3)
+	ActionSelector,
+	AuthorizationRequest,
+	ConditionExpression,
+	DeclarativePolicyMiddlewareConfig,
+	DeclarativePolicySet,
+	DeclarativePolicySetConfig,
+	EvaluationResult,
+	MatchPattern,
+	PolicyBundle,
+	PolicyDocument,
+	PolicyEvaluator,
+	PolicySpec,
+	ResourceKind,
+	ResourceSelector,
+	SubjectKind,
+	SubjectSelector,
+	VerificationIssue,
 	// Shutdown types
 	ShutdownConfig,
 	ShutdownManager,
@@ -150,6 +173,13 @@ export {
 	createGoogleProvider,
 	createOpenAICompatibleProvider,
 	createProviderMesh,
+	// Declarative Routing (R3)
+	createDeclarativeRouter,
+	// PII + jurisdiction routing (G5)
+	createPiiClassifier,
+	createJurisdictionRouter,
+	// Fair queue per-agent (R6)
+	createFairQueue,
 	securityMiddleware,
 	detectPromptInjection,
 	detectJailbreak,
@@ -183,6 +213,28 @@ export type {
 	RoutingStrategy,
 	ProviderMesh,
 	MeshAuditLogger,
+	// RoutingPolicy types (R3)
+	DeclarativeRouter,
+	RoutingContext,
+	RoutingPolicy,
+	RoutingResolution,
+	RoutingRule,
+	RoutingTarget,
+	ServiceLevelObjective,
+	// PII + jurisdiction types (G5)
+	JurisdictionPolicy,
+	JurisdictionResolution,
+	JurisdictionRouter,
+	JurisdictionRouterConfig,
+	JurisdictionRules,
+	PiiClass,
+	PiiClassifier,
+	PiiMatch,
+	// Fair queue types (R6)
+	BucketConfig,
+	BucketState,
+	FairQueue,
+	FairQueueConfig,
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,
@@ -236,9 +288,12 @@ export {
 	// Task Stores (AsyncAgent durability)
 	createInMemoryTaskStore,
 	createJsonFileTaskStore,
-	// Approval Gates
+	// Approval Gates (legacy single-callback)
 	createApprovalGate,
 	shouldRequireApproval,
+	// Approval Chain (G4)
+	createApprovalChain,
+	createInMemoryApprovalStore,
 	// Channels
 	createChannelGateway,
 	createWebhookChannel,
@@ -322,12 +377,24 @@ export type {
 	PersistedTask,
 	PersistedTaskError,
 	JsonFileTaskStoreConfig,
-	// Approval types
+	// Approval types (legacy)
 	ApprovalRequest,
 	ApprovalDecision,
 	ApprovalCallback,
 	ApprovalGateConfig,
 	ApprovalGate,
+	// Approval Chain types (G4)
+	ApproverSpec,
+	ApprovalChain,
+	ApprovalChainConfig,
+	ApprovalNotifier,
+	ApprovalStage,
+	ApprovalStageStatus,
+	ApprovalState,
+	ApprovalStore,
+	ApprovalStoreFilter,
+	ChainStatus,
+	StageState,
 	// Channel types
 	ChannelAdapter,
 	ChannelGateway,
@@ -474,6 +541,11 @@ export {
 	defineResumableWorkflow,
 	createInMemoryCheckpointStore,
 	step,
+	// Idempotent Checkpoints (R1)
+	createInMemoryIdempotentCheckpointStore,
+	defaultIdempotencyKey,
+	executeIdempotentStep,
+	resolveIdempotencyKey,
 } from '@elsium-ai/workflows'
 
 export type {
@@ -496,6 +568,11 @@ export type {
 	ResumableWorkflowRunOptions,
 	WorkflowCheckpoint,
 	CheckpointStore,
+	// Idempotent checkpoint types (R1)
+	ExecuteIdempotentStepArgs,
+	IdempotentCheckpointStore,
+	IdempotentStepConfig,
+	StepExecutionRecord,
 } from '@elsium-ai/workflows'
 
 // ─── Observe ────────────────────────────────────────────────────
@@ -507,6 +584,10 @@ export {
 	registerModelTier,
 	// Budget-aware Routing Policy
 	createBudgetAwareRoutingPolicy,
+	// Drift detection (O5)
+	detectDrift,
+	// Cost Store (O2b)
+	createLocalCostStore,
 	// Audit Trail
 	createAuditTrail,
 	auditMiddleware,
@@ -572,6 +653,22 @@ export type {
 	// Budget-aware Routing types
 	BudgetAwareRoutingConfig,
 	BudgetAction,
+	// Drift detection types (O5)
+	DriftDetectionConfig,
+	DriftReport,
+	DriftSample,
+	DriftWeights,
+	PerInputComparison,
+	SimilarityProvider,
+	// Cost Store types (O2b)
+	CostAttribution,
+	CostBucket,
+	CostDimensionKey,
+	CostRecord,
+	CostStore,
+	LocalCostStoreOptions,
+	ReservationToken,
+	TimeWindow,
 	// Audit types
 	AuditEventType,
 	AuditEvent,
@@ -724,6 +821,17 @@ export {
 	createReplayRecorder,
 	createReplayPlayer,
 	hashRequest,
+	// Budgeted regression (O3)
+	createBudgetedRegressionSuite,
+	// Trace replay override (O4)
+	applyOverride,
+	replayWithOverride,
+	// Audit-grade replay (R5)
+	createSignedReplayRecorder,
+	createSignedReplayPlayer,
+	createStreamReplayRecorder,
+	createStreamReplayPlayer,
+	verifyReplay,
 	// Dataset & Comparison
 	loadDataset,
 	loadDatasetFromJSON,
@@ -779,6 +887,28 @@ export type {
 	ReplayPlayer,
 	ReplayPlayerOptions,
 	ReplayMatchStrategy,
+	// Budgeted regression types (O3)
+	BudgetedCaseResult,
+	BudgetedRegressionBaseline,
+	BudgetedRegressionCase,
+	BudgetedRegressionReport,
+	BudgetedRegressionSuite,
+	CaseOutcome,
+	// Trace replay override types (O4)
+	OverrideEntryComparison,
+	OverrideReport,
+	TraceOverride,
+	// Audit-grade replay types (R5)
+	ReplayVerification,
+	SignedReplayEntry,
+	SignedReplayFile,
+	SignedReplayPlayer,
+	SignedReplayPlayerOptions,
+	SignedReplayRecorder,
+	SignedReplayRecorderConfig,
+	StreamReplayEntry,
+	StreamReplayPlayer,
+	StreamReplayRecorder,
 	// Dataset & Comparison types
 	EvalDataset,
 	DatasetLoaderOptions,
