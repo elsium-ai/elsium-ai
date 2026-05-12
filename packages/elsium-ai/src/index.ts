@@ -793,6 +793,12 @@ export {
 	createReplayRecorder,
 	createReplayPlayer,
 	hashRequest,
+	// Audit-grade replay (R5)
+	createSignedReplayRecorder,
+	createSignedReplayPlayer,
+	createStreamReplayRecorder,
+	createStreamReplayPlayer,
+	verifyReplay,
 	// Dataset & Comparison
 	loadDataset,
 	loadDatasetFromJSON,
@@ -848,6 +854,17 @@ export type {
 	ReplayPlayer,
 	ReplayPlayerOptions,
 	ReplayMatchStrategy,
+	// Audit-grade replay types (R5)
+	ReplayVerification,
+	SignedReplayEntry,
+	SignedReplayFile,
+	SignedReplayPlayer,
+	SignedReplayPlayerOptions,
+	SignedReplayRecorder,
+	SignedReplayRecorderConfig,
+	StreamReplayEntry,
+	StreamReplayPlayer,
+	StreamReplayRecorder,
 	// Dataset & Comparison types
 	EvalDataset,
 	DatasetLoaderOptions,

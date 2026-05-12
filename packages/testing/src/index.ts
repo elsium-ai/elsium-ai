@@ -45,6 +45,27 @@ export type {
 	ReplayRecorder,
 } from './replay'
 
+// Audit-grade signed replay + streaming replay (R5)
+export {
+	createSignedReplayRecorder,
+	createSignedReplayPlayer,
+	createStreamReplayRecorder,
+	createStreamReplayPlayer,
+	verifyReplay,
+} from './replay-audit'
+export type {
+	ReplayVerification,
+	SignedReplayEntry,
+	SignedReplayFile,
+	SignedReplayPlayer,
+	SignedReplayPlayerOptions,
+	SignedReplayRecorder,
+	SignedReplayRecorderConfig,
+	StreamReplayEntry,
+	StreamReplayPlayer,
+	StreamReplayRecorder,
+} from './replay-audit'
+
 // Pinning
 export { createPinStore, pinOutput } from './pinning'
 export type { Pin, PinStore, PinResult } from './pinning'
