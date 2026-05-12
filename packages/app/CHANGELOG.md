@@ -1,5 +1,12 @@
 # @elsium-ai/app
 
+## 0.13.0
+
+### Patch Changes
+
+- `authMiddleware` bearer-token comparison migrated from `node:crypto.timingSafeEqual` over `Buffer` to the sync `timingSafeEqualString` polyfill from `@elsium-ai/core`. Still constant-time. No breaking change. Now loads on Cloudflare Workers / Vercel Edge / Deno Deploy. Closes #41 for this module.
+- Updated dependencies — `@elsium-ai/core`
+
 ## 0.12.1
 
 ### Patch Changes

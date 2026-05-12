@@ -16,8 +16,9 @@ https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-1494%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/bundle-349KB%20minified-blue" alt="Bundle Size">
+  <img src="https://img.shields.io/badge/tests-2062%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/bundle-412KB%20minified-blue" alt="Bundle Size">
+  <img src="https://img.shields.io/badge/runtime-Node%20%C2%B7%20Bun%20%C2%B7%20Deno%20%C2%B7%20Workers%20%C2%B7%20Edge-blueviolet" alt="Cross-runtime">
 </p>
 
 ---
@@ -75,6 +76,23 @@ const result = await agent.run('What is TypeScript?')
 
 ---
 
+## Cross-Runtime Support
+
+Since **0.13.0**, every governance and reliability primitive in ElsiumAI loads on any modern JS runtime. The framework no longer depends on `node:crypto` for hash chains, agent identity, signed replay, idempotent checkpoints, or auth middleware — all use the Web Crypto API (`globalThis.crypto`) instead.
+
+| Runtime | Status | Notes |
+|---|---|---|
+| **Node.js ≥ 20** | ✅ fully supported | The reference runtime |
+| **Bun ≥ 1** | ✅ fully supported | Toolchain target |
+| **Deno** | ✅ supported | Web Crypto native |
+| **Cloudflare Workers** | ✅ supported | Web Crypto native; SQLite memory store and the CLI stay Node-only by design |
+| **Vercel Edge** | ✅ supported | Same caveats as Workers |
+| **Browser** | ✅ supported for non-server modules | Use the gateway behind your own proxy for API-key safety |
+
+The published `elsium-ai` umbrella tarball is **412 KB** (-67% vs 0.12.x — see #35) and contains zero `node:*` imports across the governance pillar. Edge deployments work out of the box.
+
+---
+
 ## Reliability
 
 Providers go down. Rate limits hit. Costs spiral. ElsiumAI treats failure as a first-class concern.
@@ -98,9 +116,11 @@ const mesh = createProviderMesh({
 
 | Feature | What it does |
 |---------|-------------|
-| **Circuit Breaker** | Detects failing providers, stops sending traffic, auto-recovers |
+| **Circuit Breaker** | Detects failing providers, stops sending traffic, auto-recovers. Scoped per `(provider, model)` so a flaky model never trips a healthy peer. |
 | **Bulkhead Isolation** | Bounds concurrency — one slow consumer can't starve the rest |
+| **Fair Queuing Per Agent** | Token-bucket rate limiter with per-agent buckets — one greedy agent can't drain a shared LLM quota |
 | **Request Dedup** | Identical in-flight calls coalesce into one API request |
+| **Idempotent Checkpoints** | Workflow steps with `idempotent: true` never re-run after a crash recovery. Failures are cached and replayed verbatim. |
 | **Graceful Shutdown** | Drains in-flight operations before process exit |
 | **Retry with Backoff** | Exponential backoff with jitter, respects `Retry-After` headers |
 | **Stream Failover** | Provider stream fails mid-request? Automatically switches to next provider |
@@ -139,13 +159,17 @@ const llm = gateway({
 
 | Feature | What it does |
 |---------|-------------|
-| **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern |
+| **Declarative Policy Engine** | Policies as data (`PolicyDocument` YAML/JSON), not closures — hot-reload, version-control independent of code, compliance-team-readable |
+| **Policy Engine (legacy closures)** | Original declarative rules — deny by model, cost, token count, or content pattern. Coexists with the data-driven form. |
 | **Runtime Policy Enforcement** | Enforce policies inside the agent loop — check permissions before every tool call |
 | **RBAC** | Role-based permissions with inheritance and wildcard matching |
-| **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations |
+| **Multi-Stage Approval Chain** | Sequential approval stages with role/user/callback approvers, per-stage timeouts, escalation, persistent state. Skipped stages, denied stages, timeouts — all auditable. |
+| **Approval Gates** | Single-callback gate for high-stakes tool calls (legacy; new chains preferred) |
 | **Agent Identity** | HMAC-SHA256 signed agent requests with replay protection and cross-agent verification |
 | **Memory Integrity** | SHA-256 hash-chained message stores — detect tampering in agent memory |
 | **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification, pluggable sinks (webhook, Splunk, Datadog) |
+| **Cost Attribution per Tenant** | Eight cost dimensions (model / agent / user / feature / tenant / workflow / workflowStep / traceId), reserve/commit/release for concurrent writers |
+| **Jurisdiction Routing** | PII classifier → JurisdictionRouter intersects allowed providers per data class. EU email never reaches a US-only model. |
 | **Compliance Reporting** | Generate reports against OWASP Agentic, EU AI Act, Colorado AI Act frameworks |
 | **MCP Trust Framework** | Server allowlists, tool filtering, output validation, manifest integrity for MCP |
 | **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model |
@@ -181,6 +205,11 @@ provenance.record({ prompt, model, config, input, output, traceId })
 | **Seed Propagation** | Forwards `seed` to providers that accept it (OpenAI, Google). Anthropic does not expose a seed parameter; calls without one rely on `temperature: 0` alone. |
 | **Output Pinning** | Locks expected outputs — model update changes your classifier? CI catches it |
 | **Determinism Assertions** | Runs N times and reports variance. Does not *enforce* determinism — it surfaces drift so you fail builds before users see it. |
+| **Drift Detection** | Compare yesterday's model snapshot against today's: exact-match rate, length delta, tool-call divergence, semantic similarity (with pluggable provider). Runs in production against sampled traffic, not only in CI. |
+| **Audit-Grade Signed Replay** | HMAC-SHA256 hash-chained recorder of every LLM call. `verifyReplay` returns the exact `invalidAtIndex` on tampering. Legal-citable evidence with the right secret management. |
+| **Streaming Replay** | Record and replay token-level `StreamEvent` sequences for deterministic UI / partial-result tests |
+| **Trace Replay With Overrides** | Side-by-side cost / latency / contentChanged for the same inputs run under a different model / temperature / system prompt |
+| **Per-Case Regression Budgets** | Each baseline case carries its own `tolerance` + `maxDelta`. Critical cases get tight budgets; open-ended cases get loose ones. CI fails on `critical` outcome. |
 | **Provenance Tracking** | SHA-256 hashes every prompt/config/input/output — full lineage per traceId |
 | **Request-Matched Fixtures** | Replay test fixtures by content hash, not sequence order |
 

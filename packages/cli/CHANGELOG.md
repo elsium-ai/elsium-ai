@@ -1,5 +1,12 @@
 # @elsium-ai/cli
 
+## 0.13.0
+
+### Patch Changes
+
+- Fixed-group version bump in lockstep with the 0.13.0 framework release. CLI is intentionally Node-only — no edge-runtime migration applies.
+- Updated dependencies — `@elsium-ai/core`, `@elsium-ai/observe`, `elsium-ai`
+
 ## 0.12.1
 
 ### Patch Changes

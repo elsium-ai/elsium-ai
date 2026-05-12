@@ -312,21 +312,32 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		sinkManager?.dispatch(finalEvent)
 	}
 
-	// Hash chain serializer: every log() chains its hash computation onto the
-	// previous one so the chain stays ordered. `log()` itself stays
-	// fire-and-forget (sync return); flush()/verifyIntegrity()/query() await
-	// this so observers see a consistent state.
+	const workQueue: PendingEntry[] = []
 	let chainPromise: Promise<void> = Promise.resolve()
-	let inflight = 0
+	let draining = false
+
+	function startDrain(): void {
+		if (draining) return
+		draining = true
+		chainPromise = chainPromise.then(async () => {
+			try {
+				while (workQueue.length > 0) {
+					const entry = workQueue.shift() as PendingEntry
+					try {
+						await buildAndAppend(entry)
+					} catch (err) {
+						config?.onError?.(err)
+					}
+				}
+			} finally {
+				draining = false
+			}
+		})
+	}
 
 	function enqueue(entry: PendingEntry): void {
-		inflight++
-		chainPromise = chainPromise
-			.then(() => buildAndAppend(entry))
-			.catch((err) => config?.onError?.(err))
-			.finally(() => {
-				inflight--
-			})
+		workQueue.push(entry)
+		startDrain()
 	}
 
 	function drainBuffer(): void {
@@ -420,7 +431,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 
 		get count(): number {
 			const result = storage.count()
-			return (typeof result === 'number' ? result : 0) + pendingBuffer.length + inflight
+			return (typeof result === 'number' ? result : 0) + pendingBuffer.length + workQueue.length
 		},
 
 		get pending(): number {
