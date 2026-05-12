@@ -22,7 +22,7 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "bun build ./src/index.ts --outdir ./dist --target node && bun x tsc -p tsconfig.build.json --emitDeclarationOnly",
+		"build": "bun -e \"Bun.write('dist/fork-entry.mjs', Bun.file('src/sandbox/fork-entry.mjs'))\" && bun build ./src/index.ts --outdir ./dist --target node && bun x tsc -p tsconfig.build.json --emitDeclarationOnly",
 		"dev": "bun --watch src/index.ts"
 	},
 	"dependencies": {
