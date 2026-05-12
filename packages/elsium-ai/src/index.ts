@@ -545,6 +545,8 @@ export {
 	registerModelTier,
 	// Budget-aware Routing Policy
 	createBudgetAwareRoutingPolicy,
+	// Cost Store (O2b)
+	createLocalCostStore,
 	// Audit Trail
 	createAuditTrail,
 	auditMiddleware,
@@ -610,6 +612,15 @@ export type {
 	// Budget-aware Routing types
 	BudgetAwareRoutingConfig,
 	BudgetAction,
+	// Cost Store types (O2b)
+	CostAttribution,
+	CostBucket,
+	CostDimensionKey,
+	CostRecord,
+	CostStore,
+	LocalCostStoreOptions,
+	ReservationToken,
+	TimeWindow,
 	// Audit types
 	AuditEventType,
 	AuditEvent,
