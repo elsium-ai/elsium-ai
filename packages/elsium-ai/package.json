@@ -22,7 +22,8 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "bun build ./src/index.ts --outdir ./dist --target node --minify && bun x tsc -p tsconfig.build.json --emitDeclarationOnly"
+		"build": "bun build ./src/index.ts --outdir ./dist --target node --minify && bun x tsc -p tsconfig.build.json --emitDeclarationOnly && bun run prune-dist",
+		"prune-dist": "node ./scripts/prune-dist.mjs"
 	},
 	"dependencies": {
 		"@elsium-ai/core": "workspace:*",
