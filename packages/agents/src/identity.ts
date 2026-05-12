@@ -1,10 +1,10 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { hmacSha256Hex, randomHexString, sha256Hex, timingSafeEqualHex } from '@elsium-ai/core'
 
 export interface AgentIdentity {
 	readonly agentId: string
 	readonly publicKey: string
-	sign(payload: Record<string, unknown>): SignedPayload
-	verify(signed: SignedPayload): VerificationResult
+	sign(payload: Record<string, unknown>): Promise<SignedPayload>
+	verify(signed: SignedPayload): Promise<VerificationResult>
 }
 
 export interface SignedPayload {
@@ -28,10 +28,15 @@ export interface AgentIdentityConfig {
 
 const DEFAULT_REPLAY_WINDOW_MS = 5 * 60 * 1000
 
-export function createAgentIdentity(config: AgentIdentityConfig): AgentIdentity {
-	const secret = config.secret ?? randomBytes(32).toString('hex')
+/**
+ * Build an agent identity capable of HMAC-signing payloads with replay
+ * protection. Async because computing the publicKey (a SHA-256 of the secret)
+ * uses Web Crypto, which is async on every cross-runtime target.
+ */
+export async function createAgentIdentity(config: AgentIdentityConfig): Promise<AgentIdentity> {
+	const secret = config.secret ?? randomHexString(32)
 	const replayWindowMs = config.replayWindowMs ?? DEFAULT_REPLAY_WINDOW_MS
-	const publicKey = createHash('sha256').update(secret).digest('hex')
+	const publicKey = await sha256Hex(secret)
 
 	const usedNonces = new Set<string>()
 	let lastCleanup = Date.now()
@@ -47,9 +52,9 @@ export function createAgentIdentity(config: AgentIdentityConfig): AgentIdentity 
 		payload: Record<string, unknown>,
 		timestamp: number,
 		nonce: string,
-	): string {
+	): Promise<string> {
 		const content = JSON.stringify({ payload, agentId: config.agentId, timestamp, nonce })
-		return createHmac('sha256', secret).update(content).digest('hex')
+		return hmacSha256Hex(secret, content)
 	}
 
 	return {
@@ -61,10 +66,10 @@ export function createAgentIdentity(config: AgentIdentityConfig): AgentIdentity 
 			return publicKey
 		},
 
-		sign(payload: Record<string, unknown>): SignedPayload {
+		async sign(payload: Record<string, unknown>): Promise<SignedPayload> {
 			const timestamp = Date.now()
-			const nonce = randomBytes(16).toString('hex')
-			const signature = computeSignature(payload, timestamp, nonce)
+			const nonce = randomHexString(16)
+			const signature = await computeSignature(payload, timestamp, nonce)
 
 			return {
 				payload,
@@ -75,7 +80,7 @@ export function createAgentIdentity(config: AgentIdentityConfig): AgentIdentity 
 			}
 		},
 
-		verify(signed: SignedPayload): VerificationResult {
+		async verify(signed: SignedPayload): Promise<VerificationResult> {
 			if (signed.agentId !== config.agentId) {
 				return { valid: false, reason: 'Agent ID mismatch' }
 			}
@@ -91,16 +96,9 @@ export function createAgentIdentity(config: AgentIdentityConfig): AgentIdentity 
 				return { valid: false, reason: 'Nonce already used (replay attack)' }
 			}
 
-			const expected = computeSignature(signed.payload, signed.timestamp, signed.nonce)
+			const expected = await computeSignature(signed.payload, signed.timestamp, signed.nonce)
 
-			const sigBuf = Buffer.from(signed.signature, 'hex')
-			const expectedBuf = Buffer.from(expected, 'hex')
-
-			if (sigBuf.length !== expectedBuf.length) {
-				return { valid: false, reason: 'Invalid signature' }
-			}
-
-			if (!timingSafeEqual(sigBuf, expectedBuf)) {
+			if (!timingSafeEqualHex(signed.signature, expected)) {
 				return { valid: false, reason: 'Invalid signature' }
 			}
 
@@ -113,7 +111,7 @@ export function createAgentIdentity(config: AgentIdentityConfig): AgentIdentity 
 export interface IdentityRegistry {
 	register(identity: AgentIdentity): void
 	get(agentId: string): AgentIdentity | undefined
-	verifySignedPayload(signed: SignedPayload): VerificationResult
+	verifySignedPayload(signed: SignedPayload): Promise<VerificationResult>
 	readonly agents: string[]
 }
 
@@ -129,7 +127,7 @@ export function createIdentityRegistry(): IdentityRegistry {
 			return identities.get(agentId)
 		},
 
-		verifySignedPayload(signed: SignedPayload): VerificationResult {
+		async verifySignedPayload(signed: SignedPayload): Promise<VerificationResult> {
 			const identity = identities.get(signed.agentId)
 			if (!identity) {
 				return { valid: false, reason: `Unknown agent: ${signed.agentId}` }

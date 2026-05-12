@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto'
-import type { Message } from '@elsium-ai/core'
+import { type Message, sha256Hex } from '@elsium-ai/core'
 import type { MemoryStore } from './memory-store'
 
 export interface IntegrityMetadata {
@@ -26,17 +25,24 @@ export interface SecureMemoryStore extends MemoryStore {
 
 const ZERO_HASH = '0'.repeat(64)
 
-export function computeMessageHash(message: Message, index: number, previousHash: string): string {
+export async function computeMessageHash(
+	message: Message,
+	index: number,
+	previousHash: string,
+): Promise<string> {
 	const content = JSON.stringify({
 		role: message.role,
 		content: message.content,
 		index,
 		previousHash,
 	})
-	return createHash('sha256').update(content).digest('hex')
+	return sha256Hex(content)
 }
 
-export function verifyMessageChain(messages: Message[], hashes: string[]): MemoryIntegrityResult {
+export async function verifyMessageChain(
+	messages: Message[],
+	hashes: string[],
+): Promise<MemoryIntegrityResult> {
 	if (messages.length === 0) {
 		return { valid: true, totalMessages: 0, chainComplete: true }
 	}
@@ -47,7 +53,7 @@ export function verifyMessageChain(messages: Message[], hashes: string[]): Memor
 
 	let previousHash = ZERO_HASH
 	for (let i = 0; i < messages.length; i++) {
-		const expected = computeMessageHash(messages[i], i, previousHash)
+		const expected = await computeMessageHash(messages[i], i, previousHash)
 		if (expected !== hashes[i]) {
 			return { valid: false, totalMessages: messages.length, brokenAt: i }
 		}
@@ -57,6 +63,17 @@ export function verifyMessageChain(messages: Message[], hashes: string[]): Memor
 	return { valid: true, totalMessages: messages.length, chainComplete: true }
 }
 
+async function buildHashChain(messages: Message[]): Promise<string[]> {
+	const hashes: string[] = []
+	let prev = ZERO_HASH
+	for (let i = 0; i < messages.length; i++) {
+		const hash = await computeMessageHash(messages[i], i, prev)
+		hashes.push(hash)
+		prev = hash
+	}
+	return hashes
+}
+
 export function createSecureMemoryStore(inner: MemoryStore): SecureMemoryStore {
 	const hashChains = new Map<string, string[]>()
 
@@ -64,27 +81,13 @@ export function createSecureMemoryStore(inner: MemoryStore): SecureMemoryStore {
 		async load(agentId: string): Promise<Message[]> {
 			const messages = await inner.load(agentId)
 			if (!hashChains.has(agentId) && messages.length > 0) {
-				const hashes: string[] = []
-				let prev = ZERO_HASH
-				for (let i = 0; i < messages.length; i++) {
-					const hash = computeMessageHash(messages[i], i, prev)
-					hashes.push(hash)
-					prev = hash
-				}
-				hashChains.set(agentId, hashes)
+				hashChains.set(agentId, await buildHashChain(messages))
 			}
 			return messages
 		},
 
 		async save(agentId: string, messages: Message[]): Promise<void> {
-			const hashes: string[] = []
-			let prev = ZERO_HASH
-			for (let i = 0; i < messages.length; i++) {
-				const hash = computeMessageHash(messages[i], i, prev)
-				hashes.push(hash)
-				prev = hash
-			}
-			hashChains.set(agentId, hashes)
+			hashChains.set(agentId, await buildHashChain(messages))
 			await inner.save(agentId, messages)
 		},
 

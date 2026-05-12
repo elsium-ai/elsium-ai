@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto'
-import type {
-	Middleware,
-	MiddlewareContext,
-	MiddlewareNext,
-	StreamMiddleware,
+import {
+	type Middleware,
+	type MiddlewareContext,
+	type MiddlewareNext,
+	type StreamMiddleware,
+	sha256Hex,
 } from '@elsium-ai/core'
 import type { AuditSink, SinkManager, SinkManagerConfig } from './audit-sink'
 import { createSinkManager } from './audit-sink'
@@ -89,7 +89,10 @@ export interface AuditTrail {
 	readonly pending: number
 }
 
-function computeEventHash(event: Omit<AuditEvent, 'hash'>, previousHash: string): string {
+async function computeEventHash(
+	event: Omit<AuditEvent, 'hash'>,
+	previousHash: string,
+): Promise<string> {
 	const content = JSON.stringify({
 		id: event.id,
 		sequenceId: event.sequenceId,
@@ -100,7 +103,7 @@ function computeEventHash(event: Omit<AuditEvent, 'hash'>, previousHash: string)
 		data: event.data,
 		previousHash,
 	})
-	return createHash('sha256').update(content).digest('hex')
+	return sha256Hex(content)
 }
 
 const ZERO_HASH = '0'.repeat(64)
@@ -186,7 +189,7 @@ class InMemoryAuditStorage implements AuditStorageAdapter {
 		return this.ring.length
 	}
 
-	verifyIntegrity(): AuditIntegrityResult {
+	async verifyIntegrity(): Promise<AuditIntegrityResult> {
 		const events = this.ring.toArray()
 		if (events.length === 0) {
 			return { valid: true, totalEvents: 0, chainComplete: true }
@@ -194,7 +197,7 @@ class InMemoryAuditStorage implements AuditStorageAdapter {
 
 		for (let i = 0; i < events.length; i++) {
 			const event = events[i]
-			const expectedHash = computeEventHash(event, event.previousHash)
+			const expectedHash = await computeEventHash(event, event.previousHash)
 			if (event.hash !== expectedHash) {
 				return { valid: false, totalEvents: events.length, brokenAt: i }
 			}
@@ -272,7 +275,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 	let flushTimer: ReturnType<typeof setInterval> | null = null
 	let flushPromise: Promise<void> = Promise.resolve()
 
-	function buildAndAppend(entry: PendingEntry): void {
+	async function buildAndAppend(entry: PendingEntry): Promise<void> {
 		sequenceId++
 		idCounter++
 
@@ -290,8 +293,8 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		}
 
 		const hash = useHashChain
-			? computeEventHash(event as Omit<AuditEvent, 'hash'>, event.previousHash)
-			: createHash('sha256').update(JSON.stringify(event)).digest('hex')
+			? await computeEventHash(event as Omit<AuditEvent, 'hash'>, event.previousHash)
+			: await sha256Hex(JSON.stringify(event))
 
 		const finalEvent: AuditEvent = { ...(event as Omit<AuditEvent, 'hash'>), hash }
 
@@ -309,10 +312,27 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		sinkManager?.dispatch(finalEvent)
 	}
 
+	// Hash chain serializer: every log() chains its hash computation onto the
+	// previous one so the chain stays ordered. `log()` itself stays
+	// fire-and-forget (sync return); flush()/verifyIntegrity()/query() await
+	// this so observers see a consistent state.
+	let chainPromise: Promise<void> = Promise.resolve()
+	let inflight = 0
+
+	function enqueue(entry: PendingEntry): void {
+		inflight++
+		chainPromise = chainPromise
+			.then(() => buildAndAppend(entry))
+			.catch((err) => config?.onError?.(err))
+			.finally(() => {
+				inflight--
+			})
+	}
+
 	function drainBuffer(): void {
 		let entry = pendingBuffer.shift()
 		while (entry) {
-			buildAndAppend(entry)
+			enqueue(entry)
 			entry = pendingBuffer.shift()
 		}
 	}
@@ -345,7 +365,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 			return
 		}
 
-		buildAndAppend(entry)
+		enqueue(entry)
 	}
 
 	return {
@@ -368,6 +388,7 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 		async flush(): Promise<void> {
 			await readyPromise
 			drainBuffer()
+			await chainPromise
 			await flushPromise
 			await sinkManager?.flush()
 		},
@@ -378,23 +399,28 @@ export function createAuditTrail(config?: AuditTrailConfig): AuditTrail {
 				flushTimer = null
 			}
 			drainBuffer()
+			await chainPromise
 			await flushPromise
 			await sinkManager?.shutdown()
 		},
 
 		async query(filter: AuditQueryFilter): Promise<AuditEvent[]> {
+			await readyPromise
 			if (isBatched) drainBuffer()
+			await chainPromise
 			return storage.query(filter)
 		},
 
 		async verifyIntegrity(): Promise<AuditIntegrityResult> {
+			await readyPromise
 			if (isBatched) drainBuffer()
+			await chainPromise
 			return storage.verifyIntegrity()
 		},
 
 		get count(): number {
 			const result = storage.count()
-			return (typeof result === 'number' ? result : 0) + pendingBuffer.length
+			return (typeof result === 'number' ? result : 0) + pendingBuffer.length + inflight
 		},
 
 		get pending(): number {

@@ -1,19 +1,16 @@
-import { randomBytes } from 'node:crypto'
-function cryptoHex(bytes: number): string {
-	return randomBytes(bytes).toString('hex')
-}
+import { randomHexString } from './web-crypto'
 
 export function generateId(prefix = 'els'): string {
 	const timestamp = Date.now().toString(36)
-	const random = cryptoHex(4)
+	const random = randomHexString(4)
 	return `${prefix}_${timestamp}_${random}`
 }
 
-// Counter scoped to each call site via cryptoHex for uniqueness.
+// Counter scoped to each call site via randomHexString for uniqueness.
 // No global counter needed — timestamp + random provides sufficient uniqueness.
 export function generateTraceId(): string {
 	const timestamp = Date.now().toString(36)
-	const random = cryptoHex(6)
+	const random = randomHexString(6)
 	return `trc_${timestamp}_${random}`
 }
 

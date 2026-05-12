@@ -1,5 +1,4 @@
-import { timingSafeEqual } from 'node:crypto'
-import { type Logger, createLogger, generateId } from '@elsium-ai/core'
+import { type Logger, createLogger, generateId, timingSafeEqualString } from '@elsium-ai/core'
 import type { Context, Next } from 'hono'
 import type { AuthConfig, CorsConfig, RateLimitConfig } from './types'
 
@@ -61,10 +60,7 @@ export function authMiddleware(config: AuthConfig) {
 
 		if (config.type === 'bearer') {
 			const token = authorization.replace(/^Bearer\s+/, '')
-			const expected = config.token
-			const tokenBuf = Buffer.from(token)
-			const expectedBuf = Buffer.from(expected)
-			if (tokenBuf.length !== expectedBuf.length || !timingSafeEqual(tokenBuf, expectedBuf)) {
+			if (!timingSafeEqualString(token, config.token)) {
 				return c.json({ error: 'Invalid token' }, 401)
 			}
 		}
