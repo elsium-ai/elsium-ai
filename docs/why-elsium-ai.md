@@ -169,7 +169,7 @@ ElsiumAI is designed to add negligible overhead to your LLM calls. Measured with
 | ElsiumAI overhead at P95 | <10μs |
 | Framework cost contribution | <0.01% of total request time |
 | Cold start | <3ms |
-| Bundle size (minified) | 77 KB |
+| Bundle size (minified) | 349 KB |
 
 Full methodology and reproduction steps in [`../benchmarks/`](../benchmarks/).
 
