@@ -104,4 +104,28 @@ export type {
 	OTelExportRequest,
 	TraceContext,
 	OTLPExporterConfig,
+	ToOTelSpanOptions,
 } from './otel'
+
+// OpenTelemetry GenAI Semantic Conventions (in Development per OTel spec).
+// Dual emission policy controlled by OTEL_SEMCONV_STABILITY_OPT_IN.
+export {
+	createEmissionPolicy,
+	createGenAIConventionRegistry,
+	getDefaultRegistry,
+	parseSemconvOptIn,
+} from './gen-ai-conventions'
+export type {
+	GenAIAttributes,
+	GenAIConventionRegistry,
+	GenAIMapper,
+	GenAIOperationName,
+	GenAIRequestAttributes,
+	GenAIResponseAttributes,
+	GenAISpecVersion,
+	GenAIToolAttributes,
+	EmissionPolicy,
+	EmissionPolicyConfig,
+	SemconvStabilityConfig,
+	SemconvStabilityFlag,
+} from './gen-ai-conventions'

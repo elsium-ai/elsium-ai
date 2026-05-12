@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createEmissionPolicy } from './gen-ai-conventions'
 import { parseTraceparent, toOTelExportRequest, toOTelSpan, toTraceparent } from './otel'
 import type { SpanData } from './span'
 
@@ -313,5 +314,127 @@ describe('parseTraceparent', () => {
 		const header = '  00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01  '
 		const ctx = parseTraceparent(header)
 		expect(ctx).not.toBeNull()
+	})
+})
+
+// ─── GenAI dual-emit integration ────────────────────────────────
+
+describe('toOTelSpan dual emission', () => {
+	function findAttr(otel: ReturnType<typeof toOTelSpan>, key: string) {
+		return otel.attributes.find((a) => a.key === key)
+	}
+	function attrKeys(otel: ReturnType<typeof toOTelSpan>) {
+		return otel.attributes.map((a) => a.key)
+	}
+
+	it('default (no opt-in) emits legacy elsium.* attributes, no gen_ai.*', () => {
+		const policy = createEmissionPolicy({ env: {} })
+		const otel = toOTelSpan(
+			makeSpanData({
+				kind: 'llm',
+				metadata: { provider: 'anthropic', model: 'claude-sonnet-4-6', inputTokens: 100 },
+			}),
+			{ emissionPolicy: policy },
+		)
+		expect(attrKeys(otel)).toContain('elsium.span.kind')
+		expect(attrKeys(otel)).toContain('elsium.provider')
+		expect(attrKeys(otel)).toContain('elsium.model')
+		expect(attrKeys(otel).some((k) => k.startsWith('gen_ai.'))).toBe(false)
+	})
+
+	it('with opt-in, emits gen_ai.* attributes for llm spans and stops emitting elsium.*', () => {
+		const policy = createEmissionPolicy({
+			env: { OTEL_SEMCONV_STABILITY_OPT_IN: 'gen_ai_latest_experimental' },
+		})
+		const otel = toOTelSpan(
+			makeSpanData({
+				kind: 'llm',
+				metadata: {
+					provider: 'anthropic',
+					model: 'claude-sonnet-4-6',
+					inputTokens: 100,
+					outputTokens: 50,
+				},
+			}),
+			{ emissionPolicy: policy },
+		)
+		expect(findAttr(otel, 'gen_ai.system')?.value.stringValue).toBe('anthropic')
+		expect(findAttr(otel, 'gen_ai.operation.name')?.value.stringValue).toBe('chat')
+		expect(findAttr(otel, 'gen_ai.request.model')?.value.stringValue).toBe('claude-sonnet-4-6')
+		expect(findAttr(otel, 'gen_ai.usage.input_tokens')?.value.intValue).toBe(100)
+		expect(findAttr(otel, 'gen_ai.usage.output_tokens')?.value.intValue).toBe(50)
+		expect(attrKeys(otel).some((k) => k.startsWith('elsium.'))).toBe(false)
+	})
+
+	it('emits gen_ai.* for tool spans under opt-in', () => {
+		const policy = createEmissionPolicy({ optIn: ['gen_ai_latest_experimental'] })
+		const otel = toOTelSpan(
+			makeSpanData({
+				kind: 'tool',
+				name: 'weather',
+				metadata: { toolCallId: 'call_1', toolType: 'function' },
+			}),
+			{ emissionPolicy: policy },
+		)
+		expect(findAttr(otel, 'gen_ai.tool.name')?.value.stringValue).toBe('weather')
+		expect(findAttr(otel, 'gen_ai.tool.call.id')?.value.stringValue).toBe('call_1')
+		expect(findAttr(otel, 'gen_ai.tool.type')?.value.stringValue).toBe('function')
+	})
+
+	it('falls back to legacy elsium.* for span kinds without a GenAI mapper (workflow)', () => {
+		const policy = createEmissionPolicy({ optIn: ['gen_ai_latest_experimental'] })
+		const otel = toOTelSpan(makeSpanData({ kind: 'workflow', metadata: { stage: 'enrichment' } }), {
+			emissionPolicy: policy,
+		})
+		expect(attrKeys(otel)).toContain('elsium.span.kind')
+		expect(attrKeys(otel)).toContain('elsium.stage')
+	})
+
+	it('falls back to legacy when GenAI mapper returns null (insufficient metadata)', () => {
+		const policy = createEmissionPolicy({ optIn: ['gen_ai_latest_experimental'] })
+		const otel = toOTelSpan(makeSpanData({ kind: 'llm', metadata: {} }), {
+			emissionPolicy: policy,
+		})
+		// llm mapper requires provider + model — returns null → fallback to legacy
+		expect(attrKeys(otel)).toContain('elsium.span.kind')
+		expect(attrKeys(otel).some((k) => k.startsWith('gen_ai.'))).toBe(false)
+	})
+
+	it('encodes finish_reasons as a proper string array, not a stringified JSON', () => {
+		const policy = createEmissionPolicy({ optIn: ['gen_ai_latest_experimental'] })
+		const otel = toOTelSpan(
+			makeSpanData({
+				kind: 'llm',
+				metadata: {
+					provider: 'openai',
+					model: 'gpt-5',
+					finishReasons: ['stop', 'length'],
+				},
+			}),
+			{ emissionPolicy: policy },
+		)
+		const attr = findAttr(otel, 'gen_ai.response.finish_reasons')
+		expect(attr?.value.arrayValue).toBeDefined()
+		const values = attr?.value.arrayValue?.values ?? []
+		expect(values.map((v) => v.stringValue)).toEqual(['stop', 'length'])
+	})
+})
+
+describe('toOTelExportRequest dual emission', () => {
+	it('respects the emissionPolicy passed through', () => {
+		const policy = createEmissionPolicy({ optIn: ['gen_ai_latest_experimental'] })
+		const request = toOTelExportRequest(
+			[
+				makeSpanData({
+					kind: 'llm',
+					metadata: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+				}),
+			],
+			{ emissionPolicy: policy },
+		)
+		const span = request.resourceSpans[0].scopeSpans[0].spans[0]
+		const keys = span.attributes.map((a) => a.key)
+		expect(keys).toContain('gen_ai.system')
+		expect(keys.some((k) => k.startsWith('elsium.'))).toBe(false)
 	})
 })

@@ -536,6 +536,11 @@ export {
 	injectTraceContext,
 	extractTraceContext,
 	createOTLPExporter,
+	// GenAI Semantic Conventions (experimental, dual-emit)
+	createEmissionPolicy,
+	createGenAIConventionRegistry,
+	getDefaultRegistry,
+	parseSemconvOptIn,
 } from '@elsium-ai/observe'
 
 export type {
@@ -612,6 +617,20 @@ export type {
 	OTelExportRequest,
 	TraceContext,
 	OTLPExporterConfig,
+	ToOTelSpanOptions,
+	// GenAI types
+	GenAIAttributes,
+	GenAIConventionRegistry,
+	GenAIMapper,
+	GenAIOperationName,
+	GenAIRequestAttributes,
+	GenAIResponseAttributes,
+	GenAISpecVersion,
+	GenAIToolAttributes,
+	EmissionPolicy,
+	EmissionPolicyConfig,
+	SemconvStabilityConfig,
+	SemconvStabilityFlag,
 } from '@elsium-ai/observe'
 
 // ─── App ────────────────────────────────────────────────────────
