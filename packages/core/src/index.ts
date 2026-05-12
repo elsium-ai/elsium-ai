@@ -68,7 +68,7 @@ export type { CircuitBreakerConfig, CircuitBreaker, CircuitState } from './circu
 export { createDedup, dedupMiddleware } from './dedup'
 export type { DedupConfig, Dedup } from './dedup'
 
-// Policy
+// Policy — legacy closure-based (kept during v0.x; declarative form preferred)
 export {
 	createPolicySet,
 	policyMiddleware,
@@ -85,6 +85,33 @@ export type {
 	PolicyConfig,
 	PolicySet,
 } from './policy'
+
+// Policy — declarative (G3, ADR-0002 Option B: built-in evaluator)
+export {
+	createBuiltinEvaluator,
+	createDeclarativePolicySet,
+	declarativePolicyMiddleware,
+	verifyBundle,
+} from './policy-document'
+export type {
+	ActionSelector,
+	AuthorizationRequest,
+	ConditionExpression,
+	DeclarativePolicyMiddlewareConfig,
+	DeclarativePolicySet,
+	DeclarativePolicySetConfig,
+	EvaluationResult,
+	MatchPattern,
+	PolicyBundle,
+	PolicyDocument,
+	PolicyEvaluator,
+	PolicySpec,
+	ResourceKind,
+	ResourceSelector,
+	SubjectKind,
+	SubjectSelector,
+	VerificationIssue,
+} from './policy-document'
 
 // Shutdown
 export { createShutdownManager } from './shutdown'

@@ -50,13 +50,18 @@ export {
 	// Dedup
 	createDedup,
 	dedupMiddleware,
-	// Policy
+	// Policy (legacy closure-based)
 	createPolicySet,
 	policyMiddleware,
 	modelAccessPolicy,
 	tokenLimitPolicy,
 	costLimitPolicy,
 	contentPolicy,
+	// Policy (declarative — G3)
+	createBuiltinEvaluator,
+	createDeclarativePolicySet,
+	declarativePolicyMiddleware,
+	verifyBundle,
 	// Shutdown
 	createShutdownManager,
 } from '@elsium-ai/core'
@@ -116,13 +121,31 @@ export type {
 	// Dedup types
 	DedupConfig,
 	Dedup,
-	// Policy types
+	// Policy types (legacy)
 	PolicyDecision,
 	PolicyResult,
 	PolicyContext,
 	PolicyRule,
 	PolicyConfig,
 	PolicySet,
+	// Policy types (declarative — G3)
+	ActionSelector,
+	AuthorizationRequest,
+	ConditionExpression,
+	DeclarativePolicyMiddlewareConfig,
+	DeclarativePolicySet,
+	DeclarativePolicySetConfig,
+	EvaluationResult,
+	MatchPattern,
+	PolicyBundle,
+	PolicyDocument,
+	PolicyEvaluator,
+	PolicySpec,
+	ResourceKind,
+	ResourceSelector,
+	SubjectKind,
+	SubjectSelector,
+	VerificationIssue,
 	// Shutdown types
 	ShutdownConfig,
 	ShutdownManager,
