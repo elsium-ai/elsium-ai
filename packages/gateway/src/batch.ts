@@ -110,22 +110,45 @@ export function createBatch(
 						const idx = nextIndex++
 						running++
 
-						processItem(idx).then(() => {
-							running--
-							completed++
-							config?.onProgress?.(completed, requests.length)
+						processItem(idx)
+							.then(() => {
+								running--
+								completed++
+								config?.onProgress?.(completed, requests.length)
 
-							if (completed === requests.length) {
-								resolve({
-									results,
-									totalSucceeded,
-									totalFailed,
-									totalDurationMs: Math.round(performance.now() - startTime),
-								})
-							} else {
-								scheduleNext()
-							}
-						})
+								if (completed === requests.length) {
+									resolve({
+										results,
+										totalSucceeded,
+										totalFailed,
+										totalDurationMs: Math.round(performance.now() - startTime),
+									})
+								} else {
+									scheduleNext()
+								}
+							})
+							.catch((err) => {
+								results[idx] = {
+									index: idx,
+									success: false,
+									error: err instanceof Error ? err.message : String(err),
+								}
+								totalFailed++
+								running--
+								completed++
+								config?.onProgress?.(completed, requests.length)
+
+								if (completed === requests.length) {
+									resolve({
+										results,
+										totalSucceeded,
+										totalFailed,
+										totalDurationMs: Math.round(performance.now() - startTime),
+									})
+								} else {
+									scheduleNext()
+								}
+							})
 					}
 				}
 
