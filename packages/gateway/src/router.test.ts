@@ -1048,3 +1048,113 @@ describe('Stream capability-aware strategy', () => {
 		expect(events[0]).toMatchObject({ type: 'text_delta', text: 'from anthropic' })
 	})
 })
+
+describe('Circuit breaker per (provider, model) isolation (R2)', () => {
+	it('opening the breaker on (provider, modelA) does not trip (provider, modelB)', async () => {
+		// modelA always fails; modelB always succeeds. Same provider for both.
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn().mockImplementation(async (req: { model?: string }) => {
+					if (req.model === 'model-a') throw new Error('model-a is dead')
+					return {
+						id: 'msg_ok',
+						message: { role: 'assistant' as const, content: `ok from ${req.model}` },
+						usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+						cost: { inputCost: 0, outputCost: 0, totalCost: 0, currency: 'USD' },
+						model: req.model ?? 'unknown',
+						provider,
+						stopReason: 'end_turn' as const,
+						latencyMs: 1,
+						traceId: 'trc_x',
+					}
+				}),
+				stream: vi.fn(),
+				generate: vi.fn(),
+			}
+		})
+
+		const audit = vi.fn()
+		const mesh = createProviderMesh({
+			providers: [{ name: 'anthropic', config: { apiKey: 'k' } }],
+			strategy: 'fallback',
+			circuitBreaker: { failureThreshold: 1 },
+			audit: { log: audit },
+		})
+
+		// First call on model-a fails → breaker for (anthropic, model-a) opens.
+		await expect(
+			mesh.complete({ messages: [{ role: 'user', content: 'hi' }], model: 'model-a' }),
+		).rejects.toThrow()
+
+		// Verify breaker state-change carries the model in the audit log.
+		expect(audit).toHaveBeenCalledWith(
+			'circuit_breaker_state_change',
+			expect.objectContaining({ provider: 'anthropic', model: 'model-a' }),
+		)
+
+		// Second call on model-b on the SAME provider must succeed —
+		// the breaker for (anthropic, model-b) is independent.
+		const okResp = await mesh.complete({
+			messages: [{ role: 'user', content: 'hi' }],
+			model: 'model-b',
+		})
+		expect(okResp.model).toBe('model-b')
+	})
+
+	it('opening on (provider, model) does not affect (otherProvider, sameModel)', async () => {
+		// 'anthropic' fails for any model, 'openai' succeeds for any.
+		vi.mocked(gatewayModule.gateway).mockImplementation((config) => {
+			const provider = config.provider as string
+			const willFail = provider === 'anthropic'
+			return {
+				provider: { name: provider, defaultModel: 'mock-model' },
+				lastCall: () => null,
+				callHistory: () => [],
+				complete: vi.fn().mockImplementation(async (req: { model?: string }) => {
+					if (willFail) throw new Error(`${provider} down`)
+					return {
+						id: 'msg_ok',
+						message: { role: 'assistant' as const, content: 'ok' },
+						usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+						cost: { inputCost: 0, outputCost: 0, totalCost: 0, currency: 'USD' },
+						model: req.model ?? 'unknown',
+						provider,
+						stopReason: 'end_turn' as const,
+						latencyMs: 1,
+						traceId: 'trc_x',
+					}
+				}),
+				stream: vi.fn(),
+				generate: vi.fn(),
+			}
+		})
+
+		const mesh = createProviderMesh({
+			providers: [
+				{ name: 'anthropic', config: { apiKey: 'k1' } },
+				{ name: 'openai', config: { apiKey: 'k2' } },
+			],
+			strategy: 'fallback',
+			circuitBreaker: { failureThreshold: 1 },
+		})
+
+		// Fallback chain succeeds via openai; (anthropic, shared-model) breaker trips.
+		const r1 = await mesh.complete({
+			messages: [{ role: 'user', content: 'hi' }],
+			model: 'shared-model',
+		})
+		expect(r1.provider).toBe('openai')
+
+		// Second call on the same shared-model: anthropic skipped (breaker open),
+		// openai still serves. Both calls should keep landing on openai.
+		const r2 = await mesh.complete({
+			messages: [{ role: 'user', content: 'hi' }],
+			model: 'shared-model',
+		})
+		expect(r2.provider).toBe('openai')
+	})
+})
