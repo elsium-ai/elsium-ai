@@ -9,6 +9,13 @@
  */
 
 import { createLogger } from '@elsium-ai/core'
+import {
+	type EmissionPolicy,
+	type GenAIConventionRegistry,
+	type SemconvStabilityFlag,
+	createEmissionPolicy,
+	getDefaultRegistry,
+} from './gen-ai-conventions'
 import type { SpanData, SpanKind } from './span'
 import type { TracerExporter } from './tracer'
 
@@ -88,29 +95,69 @@ function toNanoString(ms: number): string {
 	return String(Math.round(ms * 1_000_000))
 }
 
-function toOTelAttribute(key: string, value: unknown): OTelAttribute {
-	if (typeof value === 'string') {
-		return { key, value: { stringValue: value } }
-	}
+function toOTelAttributeValue(value: unknown): OTelAttributeValue {
+	if (typeof value === 'string') return { stringValue: value }
 	if (typeof value === 'number') {
-		return Number.isInteger(value)
-			? { key, value: { intValue: value } }
-			: { key, value: { doubleValue: value } }
+		return Number.isInteger(value) ? { intValue: value } : { doubleValue: value }
 	}
-	if (typeof value === 'boolean') {
-		return { key, value: { boolValue: value } }
+	if (typeof value === 'boolean') return { boolValue: value }
+	if (Array.isArray(value)) {
+		return { arrayValue: { values: value.map((v) => toOTelAttributeValue(v)) } }
 	}
-	return { key, value: { stringValue: JSON.stringify(value) } }
+	return { stringValue: JSON.stringify(value) }
+}
+
+function toOTelAttribute(key: string, value: unknown): OTelAttribute {
+	return { key, value: toOTelAttributeValue(value) }
+}
+
+export interface ToOTelSpanOptions {
+	emissionPolicy?: EmissionPolicy
+	registry?: GenAIConventionRegistry
+}
+
+function buildLegacyAttributes(span: SpanData): OTelAttribute[] {
+	const attributes: OTelAttribute[] = [toOTelAttribute('elsium.span.kind', span.kind)]
+	for (const [key, value] of Object.entries(span.metadata)) {
+		attributes.push(toOTelAttribute(`elsium.${key}`, value))
+	}
+	return attributes
+}
+
+function buildGenAIAttributes(
+	span: SpanData,
+	registry: GenAIConventionRegistry,
+): OTelAttribute[] | null {
+	const mapper = registry.getMapper(span.kind)
+	if (!mapper) return null
+	const genAI = mapper.map(span)
+	if (!genAI) return null
+	return Object.entries(genAI)
+		.filter(([, v]) => v !== undefined)
+		.map(([k, v]) => toOTelAttribute(k, v))
 }
 
 /**
  * Convert an ElsiumAI SpanData to OTel span format.
+ *
+ * Emission policy:
+ * - Default: emits legacy `elsium.*` attributes.
+ * - With `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` or an
+ *   explicit `EmissionPolicy` opting into GenAI: emits `gen_ai.*` attributes
+ *   for span kinds covered by a registered mapper (llm, tool, agent by
+ *   default). Spans without a GenAI mapping (workflow, custom) gracefully
+ *   fall back to legacy `elsium.*` so no data is lost.
  */
-export function toOTelSpan(span: SpanData): OTelSpan {
-	const attributes: OTelAttribute[] = [toOTelAttribute('elsium.span.kind', span.kind)]
+export function toOTelSpan(span: SpanData, options: ToOTelSpanOptions = {}): OTelSpan {
+	const policy = options.emissionPolicy ?? createEmissionPolicy()
+	const registry = options.registry ?? getDefaultRegistry()
 
-	for (const [key, value] of Object.entries(span.metadata)) {
-		attributes.push(toOTelAttribute(`elsium.${key}`, value))
+	let attributes: OTelAttribute[]
+	if (policy.shouldEmitGenAI()) {
+		const genAIAttrs = buildGenAIAttributes(span, registry)
+		attributes = genAIAttrs ?? buildLegacyAttributes(span)
+	} else {
+		attributes = buildLegacyAttributes(span)
 	}
 
 	const events: OTelEvent[] = span.events.map((e) => ({
@@ -159,9 +206,15 @@ export function toOTelExportRequest(
 	options: {
 		serviceName?: string
 		serviceVersion?: string
+		emissionPolicy?: EmissionPolicy
+		registry?: GenAIConventionRegistry
 	} = {},
 ): OTelExportRequest {
 	const { serviceName = 'elsium-ai', serviceVersion = '0.1.0' } = options
+	const spanOptions: ToOTelSpanOptions = {
+		emissionPolicy: options.emissionPolicy,
+		registry: options.registry,
+	}
 
 	return {
 		resourceSpans: [
@@ -180,7 +233,7 @@ export function toOTelExportRequest(
 							name: '@elsium-ai/observe',
 							version: serviceVersion,
 						},
-						spans: spans.map(toOTelSpan),
+						spans: spans.map((s) => toOTelSpan(s, spanOptions)),
 					},
 				],
 			},
@@ -267,6 +320,17 @@ export interface OTLPExporterConfig {
 	batchSize?: number
 	/** Flush interval in ms */
 	flushIntervalMs?: number
+	/**
+	 * Semconv stability config. By default reads OTEL_SEMCONV_STABILITY_OPT_IN
+	 * from the environment. Pass `optIn: ['gen_ai_latest_experimental']` to
+	 * force GenAI emission regardless of env.
+	 */
+	semconv?: { optIn?: readonly SemconvStabilityFlag[] }
+	/**
+	 * Override the GenAI convention registry. Use to ship custom mappers or
+	 * pin a different spec version. Defaults to `getDefaultRegistry()`.
+	 */
+	conventionRegistry?: GenAIConventionRegistry
 }
 
 /**
@@ -281,7 +345,11 @@ export function createOTLPExporter(config: OTLPExporterConfig): TracerExporter {
 		serviceVersion,
 		batchSize = 100,
 		flushIntervalMs = 5000,
+		semconv,
+		conventionRegistry,
 	} = config
+
+	const emissionPolicy = createEmissionPolicy({ optIn: semconv?.optIn })
 
 	const buffer: SpanData[] = []
 	let flushTimer: ReturnType<typeof setInterval> | null = null
@@ -289,7 +357,12 @@ export function createOTLPExporter(config: OTLPExporterConfig): TracerExporter {
 	async function sendBatch(spans: SpanData[]): Promise<void> {
 		if (spans.length === 0) return
 
-		const payload = toOTelExportRequest(spans, { serviceName, serviceVersion })
+		const payload = toOTelExportRequest(spans, {
+			serviceName,
+			serviceVersion,
+			emissionPolicy,
+			registry: conventionRegistry,
+		})
 
 		try {
 			const response = await fetch(endpoint, {

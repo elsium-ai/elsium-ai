@@ -431,3 +431,94 @@ Formats a compliance report as human-readable Markdown.
 const markdown = formatComplianceReport(report)
 // Outputs structured markdown with summary table, integrity status, and per-check details
 ```
+
+---
+
+## OpenTelemetry GenAI Semantic Conventions (experimental)
+
+> ⚠️ **Spec status:** The OpenTelemetry GenAI Semantic Conventions are in **Development**, not stable. ElsiumAI tracks spec versions and ships built-in mappers for `v1.36`. Emission of `gen_ai.*` attributes is **opt-in** via `OTEL_SEMCONV_STABILITY_OPT_IN`, matching the spec's transition plan.
+
+See the full guide at [`docs/guides/otel-genai.md`](../guides/otel-genai.md).
+
+### Emission policy
+
+| `OTEL_SEMCONV_STABILITY_OPT_IN` contains | Legacy `elsium.*` | Experimental `gen_ai.*` |
+|---|---|---|
+| (empty / unset) | ✅ emitted | ❌ not emitted |
+| `gen_ai_latest_experimental` | ❌ not emitted | ✅ emitted (with legacy fallback for span kinds without a GenAI mapper) |
+
+### createEmissionPolicy
+
+```ts
+createEmissionPolicy(config?: EmissionPolicyConfig): EmissionPolicy
+```
+
+Resolves the emission policy from `OTEL_SEMCONV_STABILITY_OPT_IN` or from an explicit opt-in array.
+
+```ts
+import { createEmissionPolicy } from 'elsium-ai/observe'
+
+// From env (default)
+const fromEnv = createEmissionPolicy()
+
+// Explicit opt-in (overrides env)
+const explicit = createEmissionPolicy({ optIn: ['gen_ai_latest_experimental'] })
+
+explicit.shouldEmitGenAI() // true
+explicit.shouldEmitLegacy() // false
+```
+
+### parseSemconvOptIn
+
+```ts
+parseSemconvOptIn(envValue: string | undefined): ReadonlySet<SemconvStabilityFlag>
+```
+
+Parses the CSV value of `OTEL_SEMCONV_STABILITY_OPT_IN` into a flag set. Empty/missing input returns an empty set.
+
+### Registry
+
+| Export | Description |
+|---|---|
+| `createGenAIConventionRegistry(defaultVersion?)` | Create an empty registry with a chosen default spec version |
+| `getDefaultRegistry()` | Singleton with built-in mappers for `llm`, `tool`, `agent` spans on spec `v1.36` |
+
+```ts
+import { createGenAIConventionRegistry, type GenAIMapper } from 'elsium-ai/observe'
+
+const reg = createGenAIConventionRegistry('v1.37')
+const customMapper: GenAIMapper<'llm'> = {
+  kind: 'llm',
+  specVersion: 'v1.37',
+  map(span) {
+    // your mapping logic
+    return null
+  },
+}
+reg.register(customMapper)
+```
+
+### OTLP exporter with GenAI emission
+
+```ts
+import { createOTLPExporter } from 'elsium-ai/observe'
+
+const exporter = createOTLPExporter({
+  endpoint: 'http://localhost:4318/v1/traces',
+  semconv: { optIn: ['gen_ai_latest_experimental'] }, // force GenAI emission regardless of env
+})
+```
+
+If `semconv.optIn` is omitted, the exporter reads `OTEL_SEMCONV_STABILITY_OPT_IN` from `process.env` at construction time.
+
+### Metadata keys consumed by built-in mappers
+
+Built-in `v1.36` mappers read these keys from `span.metadata`:
+
+| Span kind | Required | Optional |
+|---|---|---|
+| `llm` | `provider` (string), `model` or `requestModel` (string) | `operationName`, `maxTokens`, `temperature`, `topP`, `topK`, `responseModel`, `responseId`, `finishReasons` (string[]) or `finishReason` (string), `inputTokens`, `outputTokens` |
+| `tool` | `toolName` (string) or falls back to `span.name` | `toolCallId`, `toolType` (`function` / `retrieval` / `code_interpreter`) |
+| `agent` | `agentName` (string) or falls back to `span.name` | `provider`, `model`, `inputTokens`, `outputTokens` |
+
+Unknown metadata is preserved in the legacy fallback when a mapper cannot produce GenAI attributes (e.g. missing `provider`).
