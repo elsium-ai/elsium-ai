@@ -186,6 +186,17 @@ export interface MiddlewareContext {
 	traceId: string
 	startTime: number
 	metadata: Record<string, unknown>
+	/**
+	 * Tenant context, first-class on the middleware chain. Cost engine,
+	 * policy enforcers, and audit sinks read this directly (not via metadata)
+	 * so tenant scoping is structural and type-checked.
+	 */
+	tenant?: TenantContext
+	/**
+	 * Workflow identifier when the request originated from a workflow run.
+	 * Used by the cost engine for per-workflow attribution.
+	 */
+	workflow?: { id: string; name?: string; stepName?: string }
 }
 
 export type MiddlewareNext = (ctx: MiddlewareContext) => Promise<LLMResponse>

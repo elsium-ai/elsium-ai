@@ -70,6 +70,40 @@ const span = tracer.startSpan('process-request')
 
 ## Cost
 
+### Cost attribution dimensions
+
+The cost engine tracks spend across six pluggable dimensions:
+
+| Dimension | Source | Read from |
+|---|---|---|
+| `byModel` | the LLM response | `response.model` (automatic) |
+| `byAgent` | metadata | `ctx.metadata.agentName` |
+| `byUser` | metadata | `ctx.metadata.userId` |
+| `byFeature` | metadata | `ctx.metadata.feature` |
+| `byTenant` | **first-class** on `MiddlewareContext` | `ctx.tenant.tenantId` |
+| `byWorkflow` | **first-class** on `MiddlewareContext` | `ctx.workflow.id` |
+
+Tenant and workflow are not read from `ctx.metadata` — they are typed fields on `MiddlewareContext` so propagation is structural and type-checked. Set them before `next(ctx)`:
+
+```ts
+const middleware: Middleware = async (ctx, next) => {
+  ctx.tenant = { tenantId: 'acme', tier: 'enterprise' }
+  ctx.workflow = { id: 'wf_invoice_2026Q1', name: 'invoice-processing' }
+  return next(ctx)
+}
+```
+
+Per-dimension budget caps follow the same naming on `CostEngineConfig`:
+
+```ts
+const engine = createCostEngine({
+  perTenant: 100,    // throws BudgetExceeded if any tenant exceeds $100
+  perWorkflow: 25,   // throws BudgetExceeded if any workflow exceeds $25
+  perAgent: 10,
+  perUser: 5,
+})
+```
+
 ### createCostEngine
 
 ```ts

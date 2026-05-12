@@ -7,6 +7,8 @@ export interface BudgetConfig {
 	perUser?: number
 	perFeature?: number
 	perAgent?: number
+	perTenant?: number
+	perWorkflow?: number
 }
 
 export interface LoopDetectionConfig {
@@ -41,6 +43,8 @@ export interface CostIntelligenceReport {
 	byAgent: Record<string, CostDimension>
 	byUser: Record<string, CostDimension>
 	byFeature: Record<string, CostDimension>
+	byTenant: Record<string, CostDimension>
+	byWorkflow: Record<string, CostDimension>
 	recommendations: string[]
 	alerts: CostAlert[]
 }
@@ -58,19 +62,26 @@ export interface CostEngineConfig {
 	perUser?: number
 	perFeature?: number
 	perAgent?: number
+	perTenant?: number
+	perWorkflow?: number
 	loopDetection?: LoopDetectionConfig
 	onAlert?: (alert: CostAlert) => void
 	alertThresholds?: number[]
+}
+
+export interface CostAttributionDimensions {
+	agent?: string
+	user?: string
+	feature?: string
+	tenant?: string
+	workflow?: string
 }
 
 export interface CostEngine {
 	middleware(): Middleware
 	getReport(): CostIntelligenceReport
 	suggestModel(currentModel: string, inputTokens: number): ModelSuggestion | null
-	trackCall(
-		response: LLMResponse,
-		dimensions?: { agent?: string; user?: string; feature?: string },
-	): void
+	trackCall(response: LLMResponse, dimensions?: CostAttributionDimensions): void
 	reset(): void
 }
 
@@ -134,6 +145,8 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 	const byAgent: Record<string, CostDimension> = {}
 	const byUser: Record<string, CostDimension> = {}
 	const byFeature: Record<string, CostDimension> = {}
+	const byTenant: Record<string, CostDimension> = {}
+	const byWorkflow: Record<string, CostDimension> = {}
 
 	let totalSpend = 0
 	let totalTokens = 0
@@ -212,7 +225,7 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 		}
 	}
 
-	function checkBudgets(dimensions: { agent?: string; user?: string; feature?: string }) {
+	function checkBudgets(dimensions: CostAttributionDimensions) {
 		if (config.totalBudget && totalSpend > config.totalBudget) {
 			throw ElsiumError.budgetExceeded(totalSpend, config.totalBudget)
 		}
@@ -221,6 +234,8 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 		checkDimensionBudget(config.perAgent, dimensions.agent, byAgent)
 		checkDimensionBudget(config.perUser, dimensions.user, byUser)
 		checkDimensionBudget(config.perFeature, dimensions.feature, byFeature)
+		checkDimensionBudget(config.perTenant, dimensions.tenant, byTenant)
+		checkDimensionBudget(config.perWorkflow, dimensions.workflow, byWorkflow)
 		checkAlertThresholds()
 	}
 
@@ -275,10 +290,7 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 		updateDimension(store[key], cost, tokens)
 	}
 
-	function trackCall(
-		response: LLMResponse,
-		dimensions: { agent?: string; user?: string; feature?: string } = {},
-	) {
+	function trackCall(response: LLMResponse, dimensions: CostAttributionDimensions = {}) {
 		const cost = response.cost.totalCost
 		const tokens = response.usage.totalTokens
 
@@ -290,6 +302,8 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 		trackDimension(byAgent, dimensions.agent, cost, tokens)
 		trackDimension(byUser, dimensions.user, cost, tokens)
 		trackDimension(byFeature, dimensions.feature, cost, tokens)
+		trackDimension(byTenant, dimensions.tenant, cost, tokens)
+		trackDimension(byWorkflow, dimensions.workflow, cost, tokens)
 
 		recentCalls.push({ timestamp: Date.now(), cost, model: response.model, tokens })
 
@@ -303,6 +317,8 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 				const agent = ctx.metadata.agentName as string | undefined
 				const user = ctx.metadata.userId as string | undefined
 				const feature = ctx.metadata.feature as string | undefined
+				const tenant = ctx.tenant?.tenantId
+				const workflow = ctx.workflow?.id
 
 				// Pre-call budget estimation with pending reservation
 				let reserved = 0
@@ -325,7 +341,7 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 				try {
 					const response = await next(ctx)
 					pendingSpend -= reserved
-					trackCall(response, { agent, user, feature })
+					trackCall(response, { agent, user, feature, tenant, workflow })
 					return response
 				} catch (error) {
 					pendingSpend -= reserved
@@ -378,6 +394,8 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 				byAgent: { ...byAgent },
 				byUser: { ...byUser },
 				byFeature: { ...byFeature },
+				byTenant: { ...byTenant },
+				byWorkflow: { ...byWorkflow },
 				recommendations,
 				alerts: [...alerts],
 			}
@@ -422,6 +440,8 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 			for (const key of Object.keys(byAgent)) delete byAgent[key]
 			for (const key of Object.keys(byUser)) delete byUser[key]
 			for (const key of Object.keys(byFeature)) delete byFeature[key]
+			for (const key of Object.keys(byTenant)) delete byTenant[key]
+			for (const key of Object.keys(byWorkflow)) delete byWorkflow[key]
 			totalSpend = 0
 			totalTokens = 0
 			pendingSpend = 0
