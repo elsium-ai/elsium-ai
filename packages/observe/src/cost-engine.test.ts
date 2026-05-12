@@ -163,4 +163,78 @@ describe('createCostEngine', () => {
 		expect(report.totalCalls).toBe(1)
 		expect(report.byAgent['test-agent']).toBeDefined()
 	})
+
+	// ─── O2a: tenant + workflow dimensions ──────────────────────
+
+	it('tracks by tenant and workflow dimensions', () => {
+		const engine = createCostEngine()
+		engine.trackCall(mockResponse(), { tenant: 'acme', workflow: 'wf_invoice_2026Q1' })
+		engine.trackCall(mockResponse(), { tenant: 'acme', workflow: 'wf_invoice_2026Q2' })
+		engine.trackCall(mockResponse(), { tenant: 'globex', workflow: 'wf_invoice_2026Q1' })
+
+		const report = engine.getReport()
+		expect(report.byTenant.acme.callCount).toBe(2)
+		expect(report.byTenant.globex.callCount).toBe(1)
+		expect(report.byWorkflow.wf_invoice_2026Q1.callCount).toBe(2)
+		expect(report.byWorkflow.wf_invoice_2026Q2.callCount).toBe(1)
+	})
+
+	it('enforces per-tenant budget', () => {
+		const engine = createCostEngine({ perTenant: 0.001 })
+		expect(() => {
+			engine.trackCall(
+				mockResponse({
+					cost: { inputCost: 0.5, outputCost: 0.6, totalCost: 1.1, currency: 'USD' },
+				}),
+				{ tenant: 'acme' },
+			)
+		}).toThrow()
+	})
+
+	it('enforces per-workflow budget', () => {
+		const engine = createCostEngine({ perWorkflow: 0.001 })
+		expect(() => {
+			engine.trackCall(
+				mockResponse({
+					cost: { inputCost: 0.5, outputCost: 0.6, totalCost: 1.1, currency: 'USD' },
+				}),
+				{ workflow: 'wf_expensive' },
+			)
+		}).toThrow()
+	})
+
+	it('middleware reads tenant and workflow directly from ctx (not metadata)', async () => {
+		const engine = createCostEngine()
+		const mw = engine.middleware()
+
+		const ctx = {
+			request: { messages: [{ role: 'user' as const, content: 'Hi' }] },
+			provider: 'anthropic',
+			model: 'claude-sonnet-4-6',
+			traceId: 'trc_1',
+			startTime: performance.now(),
+			metadata: {},
+			tenant: { tenantId: 'acme' },
+			workflow: { id: 'wf_42', name: 'invoice-pipeline' },
+		}
+
+		await mw(ctx, async () => mockResponse())
+
+		const report = engine.getReport()
+		expect(report.byTenant.acme).toBeDefined()
+		expect(report.byTenant.acme.callCount).toBe(1)
+		expect(report.byWorkflow.wf_42).toBeDefined()
+		expect(report.byWorkflow.wf_42.callCount).toBe(1)
+	})
+
+	it('reset clears tenant and workflow dimensions', () => {
+		const engine = createCostEngine()
+		engine.trackCall(mockResponse(), { tenant: 'acme', workflow: 'wf_1' })
+
+		engine.reset()
+
+		const report = engine.getReport()
+		expect(Object.keys(report.byTenant)).toHaveLength(0)
+		expect(Object.keys(report.byWorkflow)).toHaveLength(0)
+	})
 })

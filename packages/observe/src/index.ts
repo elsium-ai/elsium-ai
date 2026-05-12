@@ -11,6 +11,7 @@ export type {
 	LoopDetectionConfig,
 	CostAlert,
 	CostDimension,
+	CostAttributionDimensions,
 	CostIntelligenceReport,
 	ModelSuggestion,
 	ModelTierEntry,
