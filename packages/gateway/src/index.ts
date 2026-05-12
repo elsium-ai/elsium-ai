@@ -97,6 +97,10 @@ export type {
 	ServiceLevelObjective,
 } from './routing-policy'
 
+// Fair queue per-agent (R6 — token-bucket rate limiter, in-process only)
+export { createFairQueue } from './fair-queue'
+export type { BucketConfig, BucketState, FairQueue, FairQueueConfig } from './fair-queue'
+
 // PII classification + jurisdiction routing (G5)
 export { createPiiClassifier, createJurisdictionRouter } from './pii-routing'
 export type {

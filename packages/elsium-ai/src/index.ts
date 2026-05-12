@@ -178,6 +178,8 @@ export {
 	// PII + jurisdiction routing (G5)
 	createPiiClassifier,
 	createJurisdictionRouter,
+	// Fair queue per-agent (R6)
+	createFairQueue,
 	securityMiddleware,
 	detectPromptInjection,
 	detectJailbreak,
@@ -228,6 +230,11 @@ export type {
 	PiiClass,
 	PiiClassifier,
 	PiiMatch,
+	// Fair queue types (R6)
+	BucketConfig,
+	BucketState,
+	FairQueue,
+	FairQueueConfig,
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,
