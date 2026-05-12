@@ -161,6 +161,30 @@ describe('createBatch', () => {
 		expect(result.totalSucceeded + result.totalFailed).toBe(5)
 	})
 
+	it('handles unexpected throw in processItem without hanging', async () => {
+		let callCount = 0
+		const gw = createMockGateway(async () => {
+			callCount++
+			if (callCount === 2) {
+				throw new TypeError('Unexpected type error in request #2')
+			}
+			return createMockResponse(callCount)
+		})
+
+		const batch = createBatch(gw)
+		const requests = createRequests(3)
+
+		const result = await batch.execute(requests)
+
+		expect(result.results).toHaveLength(3)
+		expect(result.totalSucceeded).toBe(2)
+		expect(result.totalFailed).toBe(1)
+		expect(result.results[0].success).toBe(true)
+		expect(result.results[1].success).toBe(false)
+		expect(result.results[1].error).toBe('Unexpected type error in request #2')
+		expect(result.results[2].success).toBe(true)
+	})
+
 	it('preserves result index ordering', async () => {
 		const gw = createMockGateway(async () => {
 			// Add random delay to simulate varying response times
