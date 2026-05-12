@@ -35,6 +35,17 @@ export type {
 	RegressionSuite,
 } from './regression'
 
+// Budgeted regression suite (O3 — per-case tolerance + maxDelta)
+export { createBudgetedRegressionSuite } from './regression-budgets'
+export type {
+	BudgetedCaseResult,
+	BudgetedRegressionBaseline,
+	BudgetedRegressionCase,
+	BudgetedRegressionReport,
+	BudgetedRegressionSuite,
+	CaseOutcome,
+} from './regression-budgets'
+
 // Replay
 export { createReplayRecorder, createReplayPlayer, hashRequest } from './replay'
 export type {
@@ -44,6 +55,14 @@ export type {
 	ReplayPlayerOptions,
 	ReplayRecorder,
 } from './replay'
+
+// Trace replay with variable substitution (O4)
+export { applyOverride, replayWithOverride } from './trace-replay-override'
+export type {
+	OverrideEntryComparison,
+	OverrideReport,
+	TraceOverride,
+} from './trace-replay-override'
 
 // Audit-grade signed replay + streaming replay (R5)
 export {

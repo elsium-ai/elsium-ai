@@ -821,6 +821,11 @@ export {
 	createReplayRecorder,
 	createReplayPlayer,
 	hashRequest,
+	// Budgeted regression (O3)
+	createBudgetedRegressionSuite,
+	// Trace replay override (O4)
+	applyOverride,
+	replayWithOverride,
 	// Audit-grade replay (R5)
 	createSignedReplayRecorder,
 	createSignedReplayPlayer,
@@ -882,6 +887,17 @@ export type {
 	ReplayPlayer,
 	ReplayPlayerOptions,
 	ReplayMatchStrategy,
+	// Budgeted regression types (O3)
+	BudgetedCaseResult,
+	BudgetedRegressionBaseline,
+	BudgetedRegressionCase,
+	BudgetedRegressionReport,
+	BudgetedRegressionSuite,
+	CaseOutcome,
+	// Trace replay override types (O4)
+	OverrideEntryComparison,
+	OverrideReport,
+	TraceOverride,
 	// Audit-grade replay types (R5)
 	ReplayVerification,
 	SignedReplayEntry,
