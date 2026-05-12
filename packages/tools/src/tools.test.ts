@@ -218,7 +218,7 @@ describe('defineTool with sandbox config', () => {
 				input: z.object({}),
 				sandbox: { mode: 'isolated-vm', handler: ECHO_HANDLER } as never,
 			}),
-		).toThrow(/sandbox.mode must be "worker"/)
+		).toThrow(/Unknown sandbox mode/)
 	})
 
 	it('runs the handler in a sandboxed worker and returns the result', async () => {

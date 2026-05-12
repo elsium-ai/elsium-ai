@@ -1,6 +1,7 @@
 import { threadId } from 'node:worker_threads'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createWorkerSandboxRunner } from './runner'
+import { createSandboxRunner, createWorkerSandboxRunner } from './runner'
+import type { SandboxConfig } from './types'
 
 const HANDLERS = new URL('./__test_handlers__/', import.meta.url)
 const handler = (name: string) => new URL(`./${name}`, HANDLERS)
@@ -18,6 +19,8 @@ function track<T extends { dispose(): Promise<void> }>(runner: T): T {
 	runners.push(runner)
 	return runner
 }
+
+const modes = ['worker', 'process'] as const
 
 describe('createWorkerSandboxRunner — functional', () => {
 	it('invokes a handler module and returns its result', async () => {
@@ -81,15 +84,10 @@ describe('createWorkerSandboxRunner — functional', () => {
 		const crashRunner = track(
 			createWorkerSandboxRunner({ mode: 'worker', handler: handler('crash.mjs') }, 5_000),
 		)
-		// First runner: works fine
 		const first = (await echoRunner.invoke({ a: 1 })) as { received: { a: number } }
 		expect(first.received.a).toBe(1)
-		// Crash runner: worker dies with exit code 7; pending invocation rejects
 		await expect(crashRunner.invoke({})).rejects.toThrow(/code 7/)
-		// Same crash runner: a fresh worker is spawned for the next call (handler crashes again,
-		// proving the runner can recover from a dead worker by spawning a new one)
 		await expect(crashRunner.invoke({})).rejects.toThrow(/code 7/)
-		// Echo runner: still works after the unrelated crash in the other runner
 		const second = (await echoRunner.invoke({ a: 2 })) as { received: { a: number } }
 		expect(second.received.a).toBe(2)
 	})
@@ -133,8 +131,8 @@ describe('createWorkerSandboxRunner — isolation guarantees', () => {
 			threadId: number
 			isMainThread: boolean
 		}
-		expect(result.pid).toBe(process.pid) // same OS process
-		expect(result.threadId).not.toBe(threadId) // different thread
+		expect(result.pid).toBe(process.pid)
+		expect(result.threadId).not.toBe(threadId)
 		expect(result.isMainThread).toBe(false)
 	})
 
@@ -163,9 +161,115 @@ describe('createWorkerSandboxRunner — isolation guarantees', () => {
 		const runner = track(
 			createWorkerSandboxRunner({ mode: 'worker', handler: handler('crash.mjs') }, 5_000),
 		)
-		// process.exit(7) inside the worker terminates the worker thread with that code.
-		// The pending invocation is rejected; the host process must NOT exit.
 		await expect(runner.invoke({})).rejects.toThrow(/code 7/)
-		expect(typeof process.pid).toBe('number') // we are still alive
+		expect(typeof process.pid).toBe('number')
 	})
+})
+
+describe.each(modes)('createSandboxRunner — %s mode', (mode) => {
+	const cfg = (m: 'worker' | 'process'): SandboxConfig => ({
+		mode: m,
+		handler: handler('echo.mjs'),
+	})
+
+	it('invokes a handler module and returns its result', async () => {
+		const runner = track(createSandboxRunner(cfg(mode), 5_000))
+		const result = (await runner.invoke({ hello: 'world' })) as { received: { hello: string } }
+		expect(result.received).toEqual({ hello: 'world' })
+	})
+
+	it('serializes concurrent invocations through the same runner', async () => {
+		const runner = track(createSandboxRunner(cfg(mode), 5_000))
+		const results = (await Promise.all(
+			Array.from({ length: 5 }, (_, i) => runner.invoke({ index: i })),
+		)) as Array<{ received: { index: number } }>
+		expect(results.map((r) => r.received.index)).toEqual([0, 1, 2, 3, 4])
+	})
+
+	it('propagates handler errors with name and message', async () => {
+		const runner = track(createSandboxRunner({ mode, handler: handler('throws.mjs') }, 5_000))
+		await expect(runner.invoke({ q: 'x' })).rejects.toMatchObject({
+			name: 'TypeError',
+			message: expect.stringContaining('fixture error'),
+		})
+	})
+
+	it('rejects when the handler module has no default export', async () => {
+		const runner = track(createSandboxRunner({ mode, handler: handler('no-export.mjs') }, 5_000))
+		await expect(runner.invoke({})).rejects.toThrow(/must export a default function/)
+	})
+
+	it('rejects when the handler module does not exist', async () => {
+		const runner = track(
+			createSandboxRunner({ mode, handler: handler('does-not-exist.mjs') }, 5_000),
+		)
+		await expect(runner.invoke({})).rejects.toBeInstanceOf(Error)
+	})
+
+	it('terminates on timeout and throws TIMEOUT', async () => {
+		const runner = track(
+			createSandboxRunner({ mode, handler: handler('slow.mjs'), timeoutMs: 200 }, 5_000),
+		)
+		await expect(runner.invoke({ ms: 30_000 })).rejects.toMatchObject({
+			code: 'TIMEOUT',
+		})
+	})
+
+	it('aborts an in-flight invocation when the external signal aborts', async () => {
+		const runner = track(createSandboxRunner({ mode, handler: handler('slow.mjs') }, 30_000))
+		const controller = new AbortController()
+		setTimeout(() => controller.abort(), 50)
+		await expect(runner.invoke({ ms: 30_000 }, controller.signal)).rejects.toThrow(/aborted/)
+	})
+
+	it('survives a handler that calls process.exit() — main process keeps running', async () => {
+		const runner = track(createSandboxRunner({ mode, handler: handler('crash.mjs') }, 5_000))
+		await expect(runner.invoke({})).rejects.toThrow(/code 7/)
+		expect(typeof process.pid).toBe('number')
+	})
+
+	it('refuses invocations after dispose', async () => {
+		const runner = createSandboxRunner(cfg(mode), 5_000)
+		await runner.invoke({ before: true })
+		await runner.dispose()
+		await expect(runner.invoke({ after: true })).rejects.toThrow(/disposed/)
+	})
+
+	it('dispose is idempotent', async () => {
+		const runner = createSandboxRunner(cfg(mode), 5_000)
+		await runner.dispose()
+		await expect(runner.dispose()).resolves.toBeUndefined()
+	})
+
+	if (mode === 'worker') {
+		it('runs the handler in a different thread', async () => {
+			const runner = track(createSandboxRunner({ mode, handler: handler('identity.mjs') }, 5_000))
+			const result = (await runner.invoke({})) as {
+				pid: number
+				threadId: number
+				isMainThread: boolean
+			}
+			expect(result.pid).toBe(process.pid)
+			expect(result.threadId).not.toBe(threadId)
+			expect(result.isMainThread).toBe(false)
+		})
+
+		it('does NOT expose host globalThis values to the sandbox', async () => {
+			const globalRef = globalThis as unknown as { __elsium_test_secret?: string }
+			globalRef.__elsium_test_secret = 'host-only-secret'
+			try {
+				const runner = track(
+					createSandboxRunner({ mode, handler: handler('closure-attempt.mjs') }, 5_000),
+				)
+				const result = (await runner.invoke({})) as {
+					hostSecretVisible: boolean
+					hostSecretValue: unknown
+				}
+				expect(result.hostSecretVisible).toBe(false)
+				expect(result.hostSecretValue).toBeNull()
+			} finally {
+				globalRef.__elsium_test_secret = undefined
+			}
+		})
+	}
 })
