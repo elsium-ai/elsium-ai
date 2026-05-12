@@ -512,6 +512,11 @@ export {
 	defineResumableWorkflow,
 	createInMemoryCheckpointStore,
 	step,
+	// Idempotent Checkpoints (R1)
+	createInMemoryIdempotentCheckpointStore,
+	defaultIdempotencyKey,
+	executeIdempotentStep,
+	resolveIdempotencyKey,
 } from '@elsium-ai/workflows'
 
 export type {
@@ -534,6 +539,11 @@ export type {
 	ResumableWorkflowRunOptions,
 	WorkflowCheckpoint,
 	CheckpointStore,
+	// Idempotent checkpoint types (R1)
+	ExecuteIdempotentStepArgs,
+	IdempotentCheckpointStore,
+	IdempotentStepConfig,
+	StepExecutionRecord,
 } from '@elsium-ai/workflows'
 
 // ─── Observe ────────────────────────────────────────────────────
