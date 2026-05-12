@@ -1,5 +1,24 @@
 # @elsium-ai/tools
 
+## 0.14.0
+
+### Minor Changes
+
+- b245bf2: Add mode:'process' sandbox runner with child_process.fork for OS-level process isolation
+
+  New `createProcessSandboxRunner` and `mode: 'process'` support in `createSandboxRunner`:
+
+  - Spawns an isolated Node.js child process via `child_process.fork()`
+  - IPC-based communication with the sandbox handler
+  - Timeout, abort, and dispose semantics matching existing worker runner
+  - Handles `process.exit()` in sandbox without affecting the host
+  - `unref()` behavior prevents orphan processes
+  - `fork-entry.mjs` is bundled into the published package for production use
+
+### Patch Changes
+
+- @elsium-ai/core@0.14.0
+
 ## 0.13.0
 
 ### Patch Changes
