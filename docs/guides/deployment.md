@@ -41,14 +41,14 @@ Use a multi-stage build to keep the production image small:
 
 ```dockerfile
 # Stage 1 — install and build
-FROM node:20-alpine AS builder
+FROM oven/bun:1-alpine AS builder
 WORKDIR /app
 
-COPY package.json bun.lockb ./
-RUN npm install --production=false
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN bun run build
 
 # Stage 2 — production image
 FROM node:20-alpine AS runner
@@ -86,35 +86,37 @@ docker run -p 3000:3000 \
 Configure `createApp` with authentication, CORS, rate limiting, and observability:
 
 ```ts
-import { createApp } from '@elsium-ai/app'
-import { createGateway } from 'elsium-ai/gateway'
-import { costTrackingMiddleware, xrayMiddleware } from 'elsium-ai/observe'
-
-const gateway = createGateway({
-  providers: {
-    anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
-    openai: { apiKey: process.env.OPENAI_API_KEY! },
-  },
-  middleware: [costTrackingMiddleware(), xrayMiddleware()],
-})
+import { createApp } from "@elsium-ai/app";
 
 const app = createApp({
-  gateway,
-  auth: {
-    type: 'bearer',
-    tokens: [process.env.API_TOKEN!],
+  gateway: {
+    providers: {
+      anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
+      openai: { apiKey: process.env.OPENAI_API_KEY! },
+    },
+    strategy: "fallback",
   },
-  cors: {
-    origin: ['https://your-app.com'],
-    methods: ['GET', 'POST'],
+  observe: {
+    costTracking: true,
+    tracing: true,
   },
-  rateLimit: {
-    windowMs: 60_000,
-    maxRequests: 100,
+  server: {
+    cors: {
+      origin: ["https://your-app.com"],
+      methods: ["GET", "POST"],
+    },
+    auth: {
+      type: "bearer",
+      token: process.env.API_TOKEN!,
+    },
+    rateLimit: {
+      windowMs: 60_000,
+      maxRequests: 100,
+    },
   },
-})
+});
 
-app.listen(Number(process.env.PORT) || 3000)
+app.listen(Number(process.env.PORT) || 3000);
 ```
 
 ---
@@ -156,18 +158,45 @@ ElsiumAI is designed to be **stateless** at the application layer:
 
 - **Horizontal scaling** — run multiple instances behind a load balancer. No sticky sessions required.
 - **External vector stores** — for RAG, use a managed vector database (Pinecone, Weaviate, pgvector) rather than in-memory stores.
-- **Agent memory** — use an external store (Redis, database) for conversation history if scaling beyond a single instance.
+- **Agent memory** — use shared storage or a custom external store adapter for conversation history if scaling beyond a single instance. The built-in SQLite store is best for single-instance persistence.
 - **Connection pooling** — the gateway manages provider connections internally. Each instance maintains its own pool.
 
 ```ts
-// Example: external memory store for multi-instance deployments
-const agent = createAgent({
-  gateway,
-  memory: createMemory({
-    store: redisStore({ url: process.env.REDIS_URL }),
-    maxMessages: 50,
-  }),
-})
+// Example: persistent memory for a single instance
+import {
+  createSqliteMemoryStore,
+  defineAgent,
+  type AgentDependencies,
+} from "@elsium-ai/agents";
+import { gateway } from "@elsium-ai/gateway";
+
+const llm = gateway({
+  provider: "anthropic",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+});
+
+const deps: AgentDependencies = {
+  complete: (request) => llm.complete(request),
+  stream: (request) => llm.stream(request),
+};
+
+const memoryStore = createSqliteMemoryStore({
+  path: process.env.MEMORY_DB_PATH ?? "./data/memory.db",
+});
+
+const agent = defineAgent(
+  {
+    name: "support",
+    system: "You help users with production support questions.",
+    memory: {
+      strategy: "sliding-window",
+      store: memoryStore,
+      agentId: "support",
+      maxMessages: 50,
+    },
+  },
+  deps,
+);
 ```
 
 ---
@@ -177,21 +206,26 @@ const agent = createAgent({
 Use `createShutdownManager` to ensure in-flight requests complete before the process exits:
 
 ```ts
-import { createShutdownManager } from 'elsium-ai/core'
+import { createShutdownManager } from "@elsium-ai/core";
 
 const shutdown = createShutdownManager({
-  timeoutMs: 15_000,
-  onShutdown: async () => {
-    await gateway.close()
-    await db.disconnect()
-  },
-})
+  drainTimeoutMs: 15_000,
+  onDrainStart: () => console.log("Draining in-flight requests"),
+  onDrainComplete: () => console.log("All in-flight requests completed"),
+  onForceShutdown: () =>
+    console.warn("Shutdown timed out before all requests completed"),
+});
 
-// Registers SIGTERM and SIGINT handlers automatically
-shutdown.register()
+async function handleRequest() {
+  return "ok";
+}
+
+const response = await shutdown.trackOperation(handleRequest);
+await shutdown.shutdown();
+shutdown.dispose();
 ```
 
-In Docker or Kubernetes, make sure the `STOPSIGNAL` is `SIGTERM` (the default) and the termination grace period is longer than `timeoutMs`.
+In Docker or Kubernetes, make sure the `STOPSIGNAL` is `SIGTERM` (the default) and the termination grace period is longer than `drainTimeoutMs`.
 
 ---
 
@@ -200,24 +234,29 @@ In Docker or Kubernetes, make sure the `STOPSIGNAL` is `SIGTERM` (the default) a
 In production, use structured JSON logging for machine-parseable output:
 
 ```ts
-import { createLogger, configureLogging } from 'elsium-ai/core'
+import { createLogger, type LogLevel } from "@elsium-ai/core";
 
-configureLogging({
-  level: process.env.ELSIUM_LOG_LEVEL ?? 'info',
-  format: 'json',
-})
+const level = (process.env.ELSIUM_LOG_LEVEL ?? "info") as LogLevel;
 
-const log = createLogger()
+const log = createLogger({ level, pretty: false });
 
-// Output: {"level":"info","msg":"Server started","port":3000,"ts":"2026-03-04T..."}
-log.info('Server started', { port: 3000 })
+// Output: {"level":"info","message":"Server started","timestamp":"2026-03-04T...","data":{"port":3000}}
+log.info("Server started", { port: 3000 });
 ```
 
 Pipe JSON logs to your log aggregator (CloudWatch, Loki, Datadog Logs). Use child loggers to attach request-scoped context like trace IDs:
 
 ```ts
-const reqLog = log.child({ traceId: req.headers['x-trace-id'] })
-reqLog.info('Processing request', { path: req.url })
+import { createLogger } from "@elsium-ai/core";
+
+const log = createLogger();
+const req = {
+  headers: { "x-trace-id": "trace-123" },
+  url: "/chat",
+};
+
+const reqLog = log.child({ traceId: req.headers["x-trace-id"] });
+reqLog.info("Processing request", { path: req.url });
 ```
 
 Set `level: 'warn'` in production to reduce noise, or `level: 'debug'` temporarily when investigating issues.
