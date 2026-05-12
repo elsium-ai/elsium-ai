@@ -10,7 +10,7 @@ async function loadHandler() {
 			const fn = (mod && (mod.default || mod.handler)) || null
 			if (typeof fn !== 'function') {
 				throw new Error(
-					'Sandbox handler module must export a default function or a named "handler" function: ' + handlerPath,
+					`Sandbox handler module must export a default function or a named "handler" function: ${handlerPath}`,
 				)
 			}
 			return fn
@@ -39,9 +39,9 @@ process.on('message', async (msg) => {
 			invocationId: msg.invocationId,
 			success: false,
 			error: {
-				name: (err && err.name) || 'Error',
-				message: (err && err.message) || String(err),
-				stack: err && err.stack,
+				name: err?.name || 'Error',
+				message: err?.message || String(err),
+				stack: err?.stack,
 			},
 		})
 	}
