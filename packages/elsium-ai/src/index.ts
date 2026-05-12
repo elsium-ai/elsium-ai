@@ -259,9 +259,12 @@ export {
 	// Task Stores (AsyncAgent durability)
 	createInMemoryTaskStore,
 	createJsonFileTaskStore,
-	// Approval Gates
+	// Approval Gates (legacy single-callback)
 	createApprovalGate,
 	shouldRequireApproval,
+	// Approval Chain (G4)
+	createApprovalChain,
+	createInMemoryApprovalStore,
 	// Channels
 	createChannelGateway,
 	createWebhookChannel,
@@ -345,12 +348,24 @@ export type {
 	PersistedTask,
 	PersistedTaskError,
 	JsonFileTaskStoreConfig,
-	// Approval types
+	// Approval types (legacy)
 	ApprovalRequest,
 	ApprovalDecision,
 	ApprovalCallback,
 	ApprovalGateConfig,
 	ApprovalGate,
+	// Approval Chain types (G4)
+	ApproverSpec,
+	ApprovalChain,
+	ApprovalChainConfig,
+	ApprovalNotifier,
+	ApprovalStage,
+	ApprovalStageStatus,
+	ApprovalState,
+	ApprovalStore,
+	ApprovalStoreFilter,
+	ChainStatus,
+	StageState,
 	// Channel types
 	ChannelAdapter,
 	ChannelGateway,

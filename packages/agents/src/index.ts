@@ -81,7 +81,7 @@ export type {
 	JsonFileTaskStoreConfig,
 } from './stores/index'
 
-// Approval Gates
+// Approval Gates (legacy single-callback)
 export { createApprovalGate, shouldRequireApproval } from './approval'
 export type {
 	ApprovalRequest,
@@ -90,6 +90,22 @@ export type {
 	ApprovalGateConfig,
 	ApprovalGate,
 } from './approval'
+
+// Approval Chain (G4 — multi-stage)
+export { createApprovalChain, createInMemoryApprovalStore } from './approval-chain'
+export type {
+	ApproverSpec,
+	ApprovalChain,
+	ApprovalChainConfig,
+	ApprovalNotifier,
+	ApprovalStage,
+	ApprovalStageStatus,
+	ApprovalState,
+	ApprovalStore,
+	ApprovalStoreFilter,
+	ChainStatus,
+	StageState,
+} from './approval-chain'
 
 // Channels
 export { createChannelGateway, createWebhookChannel } from './channels'
