@@ -175,6 +175,9 @@ export {
 	createProviderMesh,
 	// Declarative Routing (R3)
 	createDeclarativeRouter,
+	// PII + jurisdiction routing (G5)
+	createPiiClassifier,
+	createJurisdictionRouter,
 	securityMiddleware,
 	detectPromptInjection,
 	detectJailbreak,
@@ -216,6 +219,15 @@ export type {
 	RoutingRule,
 	RoutingTarget,
 	ServiceLevelObjective,
+	// PII + jurisdiction types (G5)
+	JurisdictionPolicy,
+	JurisdictionResolution,
+	JurisdictionRouter,
+	JurisdictionRouterConfig,
+	JurisdictionRules,
+	PiiClass,
+	PiiClassifier,
+	PiiMatch,
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,

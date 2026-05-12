@@ -96,3 +96,16 @@ export type {
 	RoutingTarget,
 	ServiceLevelObjective,
 } from './routing-policy'
+
+// PII classification + jurisdiction routing (G5)
+export { createPiiClassifier, createJurisdictionRouter } from './pii-routing'
+export type {
+	JurisdictionPolicy,
+	JurisdictionResolution,
+	JurisdictionRouter,
+	JurisdictionRouterConfig,
+	JurisdictionRules,
+	PiiClass,
+	PiiClassifier,
+	PiiMatch,
+} from './pii-routing'
