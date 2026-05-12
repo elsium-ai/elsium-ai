@@ -88,20 +88,31 @@ function ctxToConditionRecord(
 	return base
 }
 
+function latencyExceeds(slo: ServiceLevelObjective, ctx: RoutingContext): boolean {
+	return (
+		slo.maxLatencyMs !== undefined &&
+		ctx.estimatedLatencyMs !== undefined &&
+		ctx.estimatedLatencyMs > slo.maxLatencyMs
+	)
+}
+
+function costExceeds(slo: ServiceLevelObjective, ctx: RoutingContext): boolean {
+	return (
+		slo.maxCost !== undefined && ctx.estimatedCost !== undefined && ctx.estimatedCost > slo.maxCost
+	)
+}
+
+function capabilitiesSatisfied(slo: ServiceLevelObjective, ctx: RoutingContext): boolean {
+	if (!slo.requireCapabilities || slo.requireCapabilities.length === 0) return true
+	if (!ctx.capabilities) return false
+	return slo.requireCapabilities.every((required) => ctx.capabilities?.includes(required))
+}
+
 function sloEligible(slo: ServiceLevelObjective | undefined, ctx: RoutingContext): boolean {
 	if (!slo) return true
-	if (slo.maxLatencyMs !== undefined && ctx.estimatedLatencyMs !== undefined) {
-		if (ctx.estimatedLatencyMs > slo.maxLatencyMs) return false
-	}
-	if (slo.maxCost !== undefined && ctx.estimatedCost !== undefined) {
-		if (ctx.estimatedCost > slo.maxCost) return false
-	}
-	if (slo.requireCapabilities && slo.requireCapabilities.length > 0) {
-		if (!ctx.capabilities) return false
-		for (const required of slo.requireCapabilities) {
-			if (!ctx.capabilities.includes(required)) return false
-		}
-	}
+	if (latencyExceeds(slo, ctx)) return false
+	if (costExceeds(slo, ctx)) return false
+	if (!capabilitiesSatisfied(slo, ctx)) return false
 	return true
 }
 

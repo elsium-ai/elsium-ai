@@ -138,6 +138,59 @@ export interface ExecuteIdempotentStepArgs<TInput, TOutput> {
 	readonly store: IdempotentCheckpointStore
 }
 
+function cachedResultToStepResult<TOutput>(
+	cached: StepExecutionRecord,
+	stepName: string,
+): StepResult<TOutput> {
+	if (cached.status === 'failed') {
+		return {
+			name: stepName,
+			status: 'failed',
+			error: cached.error ?? 'Cached failure with no error message',
+			durationMs: 0,
+			retryCount: 0,
+		}
+	}
+	if (cached.status === 'skipped') {
+		return {
+			name: stepName,
+			status: 'skipped',
+			durationMs: 0,
+			retryCount: 0,
+		}
+	}
+	return {
+		name: stepName,
+		status: 'completed',
+		data: cached.result as TOutput,
+		durationMs: 0,
+		retryCount: 0,
+	}
+}
+
+function buildExecutionRecord(
+	workflowId: string,
+	stepName: string,
+	idempotencyKey: string,
+	result: StepResult<unknown>,
+	durationMs: number,
+): StepExecutionRecord {
+	let status: StepExecutionRecord['status'] = 'failed'
+	if (result.status === 'completed') status = 'completed'
+	else if (result.status === 'skipped') status = 'skipped'
+
+	return {
+		workflowId,
+		stepName,
+		idempotencyKey,
+		status,
+		result: result.status === 'completed' ? result.data : undefined,
+		error: result.status === 'failed' ? (result.error ?? 'unknown error') : undefined,
+		executedAt: Date.now(),
+		durationMs,
+	}
+}
+
 export async function executeIdempotentStep<TInput, TOutput>(
 	args: ExecuteIdempotentStepArgs<TInput, TOutput>,
 ): Promise<StepResult<TOutput>> {
@@ -145,63 +198,27 @@ export async function executeIdempotentStep<TInput, TOutput>(
 
 	const idempotencyKey = await resolveIdempotencyKey(step, input as TInput)
 	if (idempotencyKey === null) {
-		// Not idempotent — fall back to normal step execution.
 		return executeStep(step, input, context)
 	}
 
 	const cached = await store.getStepResult(workflowId, step.name, idempotencyKey)
 	if (cached) {
-		if (cached.status === 'failed') {
-			// Replay the failure verbatim so the workflow halts the same way.
-			return {
-				name: step.name,
-				status: 'failed',
-				error: cached.error ?? 'Cached failure with no error message',
-				durationMs: 0,
-				retryCount: 0,
-			}
-		}
-		if (cached.status === 'skipped') {
-			return {
-				name: step.name,
-				status: 'skipped',
-				durationMs: 0,
-				retryCount: 0,
-			}
-		}
-		return {
-			name: step.name,
-			status: 'completed',
-			data: cached.result as TOutput,
-			durationMs: 0,
-			retryCount: 0,
-		}
+		return cachedResultToStepResult<TOutput>(cached, step.name)
 	}
 
 	const start = performance.now()
 	const result = await executeStep(step, input, context)
-
-	const record: StepExecutionRecord = {
+	const record = buildExecutionRecord(
 		workflowId,
-		stepName: step.name,
+		step.name,
 		idempotencyKey,
-		status:
-			result.status === 'completed'
-				? 'completed'
-				: result.status === 'skipped'
-					? 'skipped'
-					: 'failed',
-		result: result.status === 'completed' ? result.data : undefined,
-		error: result.status === 'failed' ? (result.error ?? 'unknown error') : undefined,
-		executedAt: Date.now(),
-		durationMs: Math.round(performance.now() - start),
-	}
+		result,
+		Math.round(performance.now() - start),
+	)
 
 	try {
 		await store.recordStepResult(record)
 	} catch (err) {
-		// Surface store failures as workflow validation errors — better than
-		// silently re-running a side-effectful step.
 		throw ElsiumError.validation(
 			`Failed to record idempotent step result for "${step.name}": ${err instanceof Error ? err.message : String(err)}`,
 		)
