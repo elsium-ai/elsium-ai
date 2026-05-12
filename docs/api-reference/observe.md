@@ -125,6 +125,41 @@ const remaining = costEngine.remaining()
 const suggestion = costEngine.suggestModel({ budget: 1.0, minQuality: 'high' })
 ```
 
+### createBudgetAwareRoutingPolicy
+
+```ts
+createBudgetAwareRoutingPolicy(config: BudgetAwareRoutingConfig): Middleware
+```
+
+Prescriptive budget enforcement. Wraps the cost engine, monitors spend ratio against `totalBudget`, and **acts** automatically:
+
+- **Pass-through** below `downgradeThreshold` (default `0.7`).
+- **Downgrade**: at `[downgradeThreshold, rejectThreshold)`, calls `costEngine.suggestModel(ctx.model, estimatedInputTokens)` and rewrites `ctx.model` + `ctx.request.model` to the cheaper alternative. If no cheaper model exists, passes through.
+- **Reject** at or above `rejectThreshold` (default `0.95`) — throws `ElsiumError.budgetExceeded`.
+
+```ts
+import { createCostEngine, createBudgetAwareRoutingPolicy, gateway } from 'elsium-ai'
+
+const engine = createCostEngine({ totalBudget: 100 })
+
+const gw = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [
+    createBudgetAwareRoutingPolicy({
+      costEngine: engine,
+      totalBudget: 100,
+      downgradeThreshold: 0.7,
+      rejectThreshold: 0.95,
+      onAction: (a) => console.log('[budget]', a),
+    }),
+    engine.middleware(), // order matters: routing policy goes first
+  ],
+})
+```
+
+**Order matters.** Install the routing policy **before** the cost engine middleware so the policy reads current spend and reroutes the call before the new spend is committed.
+
 ### registerModelTier
 
 ```ts

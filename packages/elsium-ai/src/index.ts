@@ -505,6 +505,8 @@ export {
 	createMetrics,
 	createCostEngine,
 	registerModelTier,
+	// Budget-aware Routing Policy
+	createBudgetAwareRoutingPolicy,
 	// Audit Trail
 	createAuditTrail,
 	auditMiddleware,
@@ -567,6 +569,9 @@ export type {
 	CostIntelligenceReport,
 	ModelSuggestion,
 	ModelTierEntry,
+	// Budget-aware Routing types
+	BudgetAwareRoutingConfig,
+	BudgetAction,
 	// Audit types
 	AuditEventType,
 	AuditEvent,

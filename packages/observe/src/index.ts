@@ -17,6 +17,10 @@ export type {
 	ModelTierEntry,
 } from './cost-engine'
 
+// Budget-aware Routing Policy (prescriptive — auto-downgrade + reject)
+export { createBudgetAwareRoutingPolicy } from './budget-routing'
+export type { BudgetAwareRoutingConfig, BudgetAction } from './budget-routing'
+
 // Tracer
 export { observe } from './tracer'
 export type { Tracer, TracerConfig, TracerOutput, TracerExporter, CostReport } from './tracer'
