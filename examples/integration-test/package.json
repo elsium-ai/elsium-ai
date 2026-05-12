@@ -18,7 +18,7 @@
     "@elsium-ai/testing": "workspace:*",
     "@elsium-ai/app": "workspace:*",
     "@elsium-ai/mcp": "workspace:*",
-    "zod": "^4.3.6"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "dotenv": "^16.4.0",
