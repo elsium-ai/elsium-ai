@@ -132,6 +132,38 @@ function intersect(a: readonly string[], b: readonly string[]): string[] {
 	return a.filter((x) => b.includes(x))
 }
 
+function resolveJurisdictionRules(
+	policy: JurisdictionPolicy,
+	requested: string | undefined,
+): { rules: JurisdictionRules | undefined; jurisdictionUsed: string } {
+	if (requested && requested in policy.byJurisdiction) {
+		return { rules: policy.byJurisdiction[requested], jurisdictionUsed: requested }
+	}
+	return { rules: policy.default, jurisdictionUsed: 'default' }
+}
+
+type AllowedSetResult =
+	| { readonly ok: true; readonly allowed: readonly string[] }
+	| { readonly ok: false; readonly blockingClass: PiiClass }
+
+function computeAllowedSet(
+	detectedClasses: readonly PiiClass[],
+	rules: JurisdictionRules,
+	candidates: readonly string[],
+): AllowedSetResult {
+	if (detectedClasses.length === 0) {
+		return { ok: true, allowed: rules.classProviders['*'] ?? candidates }
+	}
+	let working: readonly string[] = candidates
+	for (const c of detectedClasses) {
+		const ruleAllowed = rules.classProviders[c] ?? rules.classProviders['*']
+		if (!ruleAllowed) return { ok: false, blockingClass: c }
+		working = intersect(working, ruleAllowed)
+		if (working.length === 0) break
+	}
+	return { ok: true, allowed: working }
+}
+
 export function createJurisdictionRouter(config: JurisdictionRouterConfig): JurisdictionRouter {
 	const classifier = config.classifier ?? createPiiClassifier()
 
@@ -140,15 +172,10 @@ export function createJurisdictionRouter(config: JurisdictionRouterConfig): Juri
 			const matches = classifier.classify(text)
 			const detectedClasses = [...new Set(matches.map((m) => m.piiClass))]
 
-			const jurisdiction = options.jurisdiction ?? null
-			const rules = jurisdiction
-				? (config.policy.byJurisdiction[jurisdiction] ?? config.policy.default)
-				: config.policy.default
-			const jurisdictionUsed = jurisdiction
-				? jurisdiction in config.policy.byJurisdiction
-					? jurisdiction
-					: ('default' as const)
-				: ('default' as const)
+			const { rules, jurisdictionUsed } = resolveJurisdictionRules(
+				config.policy,
+				options.jurisdiction,
+			)
 
 			if (!rules) {
 				return {
@@ -160,31 +187,18 @@ export function createJurisdictionRouter(config: JurisdictionRouterConfig): Juri
 				}
 			}
 
-			// Intersection: a provider is allowed only if it is allowed for
-			// EVERY detected class. If no PII detected, the '*' rule applies.
-			let allowedSet: readonly string[]
-			if (detectedClasses.length === 0) {
-				allowedSet = rules.classProviders['*'] ?? options.candidateProviders
-			} else {
-				let working = options.candidateProviders as readonly string[]
-				for (const c of detectedClasses) {
-					const ruleAllowed = rules.classProviders[c] ?? rules.classProviders['*']
-					if (!ruleAllowed) {
-						return {
-							detectedClasses,
-							allowedProviders: [],
-							deniedProviders: [...options.candidateProviders],
-							jurisdictionUsed,
-							reason: `No rule for class "${c}" in jurisdiction "${jurisdictionUsed}" (no fallback '*' either); denying all`,
-						}
-					}
-					working = intersect(working, ruleAllowed)
-					if (working.length === 0) break
+			const computation = computeAllowedSet(detectedClasses, rules, options.candidateProviders)
+			if (!computation.ok) {
+				return {
+					detectedClasses,
+					allowedProviders: [],
+					deniedProviders: [...options.candidateProviders],
+					jurisdictionUsed,
+					reason: `No rule for class "${computation.blockingClass}" in jurisdiction "${jurisdictionUsed}" (no fallback '*' either); denying all`,
 				}
-				allowedSet = working
 			}
 
-			const allowedProviders = intersect(options.candidateProviders, allowedSet)
+			const allowedProviders = intersect(options.candidateProviders, computation.allowed)
 			const deniedProviders = options.candidateProviders.filter(
 				(p) => !allowedProviders.includes(p),
 			)

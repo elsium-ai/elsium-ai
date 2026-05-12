@@ -82,6 +82,14 @@ export interface ApprovalStore {
 
 // ─── In-memory reference adapter ────────────────────────────────
 
+function matchesApprovalFilter(state: ApprovalState, filter?: ApprovalStoreFilter): boolean {
+	const expectedStatus = filter?.status ?? 'pending'
+	if (state.status !== expectedStatus) return false
+	if (!filter?.stage) return true
+	const stage = state.stages[state.currentStage]
+	return !!stage && stage.name === filter.stage
+}
+
 export function createInMemoryApprovalStore(): ApprovalStore {
 	const records = new Map<string, ApprovalState>()
 
@@ -110,13 +118,7 @@ export function createInMemoryApprovalStore(): ApprovalStore {
 		async listPending(filter?: ApprovalStoreFilter): Promise<readonly ApprovalState[]> {
 			const result: ApprovalState[] = []
 			for (const state of records.values()) {
-				if (filter?.status && state.status !== filter.status) continue
-				if (!filter?.status && state.status !== 'pending') continue
-				if (filter?.stage) {
-					const stage = state.stages[state.currentStage]
-					if (!stage || stage.name !== filter.stage) continue
-				}
-				result.push(clone(state))
+				if (matchesApprovalFilter(state, filter)) result.push(clone(state))
 			}
 			return result
 		},
