@@ -1,7 +1,7 @@
 import type { ToolDefinition } from '@elsium-ai/core'
 import { ElsiumError, createLogger, generateId, zodToJsonSchema } from '@elsium-ai/core'
 import type { z } from 'zod'
-import { createWorkerSandboxRunner } from './sandbox/runner'
+import { createSandboxRunner } from './sandbox/runner'
 import type { SandboxConfig, SandboxRunner } from './sandbox/types'
 
 const log = createLogger()
@@ -17,7 +17,7 @@ function warnBunSandboxOnce(toolName: string): void {
 	if (bunSandboxWarningShown) return
 	bunSandboxWarningShown = true
 	log.warn(
-		`Tool "${toolName}" uses sandbox.mode="worker" under Bun. Crash isolation is incomplete on Bun: process.exit() inside the handler does NOT terminate the worker (it does on Node). Other guarantees (process, memory, closure-state, timeout, abort) hold. Track: https://github.com/elsium-ai/elsium-ai/issues — search for "Bun crash isolation".`,
+		`Tool "${toolName}" uses sandbox.mode="worker" under Bun. Crash isolation is incomplete on Bun: process.exit() inside the handler does NOT terminate the worker (it does on Node). Switch to sandbox.mode="process" for full crash-isolation parity under Bun. Other guarantees (process, memory, closure-state, timeout, abort) hold.`,
 	)
 }
 
@@ -143,14 +143,14 @@ export function defineTool<TInput, TOutput>(
 			`Tool "${config.name}" requires either an inline "handler" or a "sandbox" config`,
 		)
 	}
-	if (config.sandbox && config.sandbox.mode !== 'worker') {
-		throw ElsiumError.validation(
-			`Tool "${config.name}" sandbox.mode must be "worker" (received "${(config.sandbox as { mode: string }).mode}")`,
-		)
-	}
-
-	if (config.sandbox && IS_BUN) {
-		warnBunSandboxOnce(config.name)
+	if (config.sandbox) {
+		const mode = config.sandbox.mode
+		if (mode !== 'worker' && mode !== 'process') {
+			throw ElsiumError.validation(`Unknown sandbox mode: "${mode}"`)
+		}
+		if (IS_BUN && mode === 'worker') {
+			warnBunSandboxOnce(config.name)
+		}
 	}
 
 	const { name, description, output, sandbox, timeoutMs = 30_000 } = config
@@ -162,7 +162,7 @@ export function defineTool<TInput, TOutput>(
 			if (!sandbox) {
 				throw ElsiumError.validation(`Tool "${name}" has no sandbox config`)
 			}
-			sandboxRunner = createWorkerSandboxRunner(sandbox, timeoutMs)
+			sandboxRunner = createSandboxRunner(sandbox, timeoutMs)
 		}
 		return sandboxRunner
 	}

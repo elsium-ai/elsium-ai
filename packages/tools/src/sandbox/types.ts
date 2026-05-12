@@ -9,7 +9,7 @@ export type Capability =
 	| (string & {})
 
 export interface SandboxConfig {
-	mode: 'worker'
+	mode: 'worker' | 'process'
 	handler: URL | string
 	timeoutMs?: number
 	capabilities?: Capability[]
