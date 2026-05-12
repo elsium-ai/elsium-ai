@@ -278,6 +278,28 @@ await runRedTeam({ name: 'custom', runner: myRunner, probes })
 
 See the [package README](../../packages/testing/README.md) for full documentation on these modules.
 
+### Replay — matching strategies
+
+`createReplayPlayer(entries, options?)` accepts a `strategy` option:
+
+| Strategy | Default | Behavior | Use when |
+|---|---|---|---|
+| `'sequential'` | yes | Returns entries in record order, ignoring request content. | Tests that reliably replay calls in the same order they were recorded. Brittle to reorderings. |
+| `'hash'` | — | Computes a stable SHA-256 over the request shape (model, messages, system, tool names, JSON-mode flag) and returns the first matching entry. Each repeat advances a per-hash cursor. | Tests where call order can vary, or where the same request appears multiple times with different responses. |
+
+```ts
+import { createReplayPlayer } from 'elsium-ai'
+
+// Default — sequential, ignores request content
+const seqPlayer = createReplayPlayer(entries)
+
+// Hash matching — order-independent
+const hashPlayer = createReplayPlayer(entries, { strategy: 'hash' })
+const response = await hashPlayer.complete(myRequest) // matched by hash(myRequest)
+```
+
+Cosmetic request fields (`signal`, `stream`) are excluded from the hash so a cancellable test run still matches an entry recorded without `AbortSignal`.
+
 ---
 
 ## Agent Metrics

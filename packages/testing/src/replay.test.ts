@@ -367,3 +367,93 @@ describe('recorder → player round-trip', () => {
 		expect(result.message.content).toBe('safe')
 	})
 })
+
+// ─── X3a: hash matching strategy ──────────────────────────────────
+
+describe('createReplayPlayer — hash strategy', () => {
+	function entryFor(content: string, response = makeResponse(`${content}-resp`)): ReplayEntry {
+		return { request: makeRequest(content), response, timestamp: Date.now() }
+	}
+
+	it('default strategy is sequential (backwards compatible)', async () => {
+		const entries = [entryFor('a'), entryFor('b')]
+		const player = createReplayPlayer(entries) // no options
+		const r1 = await player.complete(makeRequest('z')) // request ignored in sequential
+		const r2 = await player.complete(makeRequest('z'))
+		expect(r1.message.content).toBe('a-resp')
+		expect(r2.message.content).toBe('b-resp')
+	})
+
+	it('hash strategy matches by request hash, ignoring order of replay', async () => {
+		const entries = [entryFor('first'), entryFor('second')]
+		const player = createReplayPlayer(entries, { strategy: 'hash' })
+
+		// Replay in reverse order — sequential would be wrong, hash must be right.
+		const r1 = await player.complete(makeRequest('second'))
+		const r2 = await player.complete(makeRequest('first'))
+		expect(r1.message.content).toBe('second-resp')
+		expect(r2.message.content).toBe('first-resp')
+	})
+
+	it('hash strategy throws a helpful error on miss', async () => {
+		const entries = [entryFor('known')]
+		const player = createReplayPlayer(entries, { strategy: 'hash' })
+		await expect(player.complete(makeRequest('unknown'))).rejects.toThrow(/Replay miss/)
+	})
+
+	it('hash strategy advances per-hash cursor for repeat requests', async () => {
+		const entries: ReplayEntry[] = [
+			{ request: makeRequest('q'), response: makeResponse('r1'), timestamp: 1 },
+			{ request: makeRequest('q'), response: makeResponse('r2'), timestamp: 2 },
+		]
+		const player = createReplayPlayer(entries, { strategy: 'hash' })
+
+		const a = await player.complete(makeRequest('q'))
+		const b = await player.complete(makeRequest('q'))
+		expect(a.message.content).toBe('r1')
+		expect(b.message.content).toBe('r2')
+
+		await expect(player.complete(makeRequest('q'))).rejects.toThrow(/Replay miss/)
+	})
+
+	it('hash strategy ignores cosmetic differences (signal, stream flag)', async () => {
+		const entries = [entryFor('hello')]
+		const player = createReplayPlayer(entries, { strategy: 'hash' })
+
+		const controller = new AbortController()
+		const reqWithSignal: CompletionRequest = {
+			...makeRequest('hello'),
+			signal: controller.signal,
+			stream: true,
+		}
+
+		const r = await player.complete(reqWithSignal)
+		expect(r.message.content).toBe('hello-resp')
+	})
+
+	it('hash strategy distinguishes by model', async () => {
+		const reqA: CompletionRequest = { messages: [{ role: 'user', content: 'x' }], model: 'gpt-5' }
+		const reqB: CompletionRequest = {
+			messages: [{ role: 'user', content: 'x' }],
+			model: 'claude-sonnet-4-6',
+		}
+		const entries: ReplayEntry[] = [
+			{ request: reqA, response: makeResponse('A'), timestamp: 1 },
+			{ request: reqB, response: makeResponse('B'), timestamp: 2 },
+		]
+		const player = createReplayPlayer(entries, { strategy: 'hash' })
+
+		expect((await player.complete(reqB)).message.content).toBe('B')
+		expect((await player.complete(reqA)).message.content).toBe('A')
+	})
+
+	it('remaining count is correct under hash strategy', async () => {
+		const entries = [entryFor('a'), entryFor('b'), entryFor('c')]
+		const player = createReplayPlayer(entries, { strategy: 'hash' })
+		expect(player.remaining).toBe(3)
+		await player.complete(makeRequest('b'))
+		expect(player.remaining).toBe(2)
+		await player.complete(makeRequest('a'))
+		expect(player.remaining).toBe(1)
+	})
+})
