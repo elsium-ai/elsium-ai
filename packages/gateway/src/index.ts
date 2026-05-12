@@ -84,3 +84,15 @@ export type {
 	ProviderMesh,
 	MeshAuditLogger,
 } from './router'
+
+// Declarative Routing Policy (R3 — data-driven routing decisions)
+export { createDeclarativeRouter } from './routing-policy'
+export type {
+	DeclarativeRouter,
+	RoutingContext,
+	RoutingPolicy,
+	RoutingResolution,
+	RoutingRule,
+	RoutingTarget,
+	ServiceLevelObjective,
+} from './routing-policy'

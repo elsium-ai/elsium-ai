@@ -173,6 +173,8 @@ export {
 	createGoogleProvider,
 	createOpenAICompatibleProvider,
 	createProviderMesh,
+	// Declarative Routing (R3)
+	createDeclarativeRouter,
 	securityMiddleware,
 	detectPromptInjection,
 	detectJailbreak,
@@ -206,6 +208,14 @@ export type {
 	RoutingStrategy,
 	ProviderMesh,
 	MeshAuditLogger,
+	// RoutingPolicy types (R3)
+	DeclarativeRouter,
+	RoutingContext,
+	RoutingPolicy,
+	RoutingResolution,
+	RoutingRule,
+	RoutingTarget,
+	ServiceLevelObjective,
 	SecurityMiddlewareConfig,
 	SecurityViolation,
 	SecurityResult,

@@ -91,6 +91,7 @@ export {
 	createBuiltinEvaluator,
 	createDeclarativePolicySet,
 	declarativePolicyMiddleware,
+	evaluateCondition,
 	verifyBundle,
 } from './policy-document'
 export type {

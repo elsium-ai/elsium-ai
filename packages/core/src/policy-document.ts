@@ -194,6 +194,18 @@ function evalNumericComparison(
 	}
 }
 
+/**
+ * Evaluate a ConditionExpression against a context record. Exposed so other
+ * data-driven engines (e.g. RoutingPolicy in gateway) can reuse the same
+ * 8-operator semantics without duplicating logic.
+ */
+export function evaluateCondition(
+	expr: ConditionExpression,
+	ctx: Readonly<Record<string, string | number | boolean>> | undefined,
+): boolean {
+	return evalCondition(expr, ctx)
+}
+
 function evalCondition(expr: ConditionExpression, ctx: AuthorizationRequest['context']): boolean {
 	const value = getCtxField(ctx, expr.field)
 	if (value === undefined) return false
