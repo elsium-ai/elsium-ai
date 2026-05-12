@@ -115,9 +115,45 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 	const sortedProviders = [...config.providers]
 
 	const gateways = new Map<string, Gateway>()
+	// Circuit breakers are scoped per (provider, model) tuple. A flaky model
+	// on one provider should not trip the entire provider for other models.
+	// Keys: `${provider}::${model}`. Breakers are lazy-created on first call
+	// because the model isn't known at mesh-construction time (the user can
+	// supply request.model dynamically).
 	const circuitBreakers = new Map<string, CircuitBreaker>()
 
 	const audit = config.audit
+
+	function cbKey(provider: string, model: string | undefined): string {
+		return `${provider}::${model ?? '*'}`
+	}
+
+	function getOrCreateCircuitBreaker(
+		provider: string,
+		model: string | undefined,
+	): CircuitBreaker | null {
+		if (!config.circuitBreaker) return null
+		const key = cbKey(provider, model)
+		const existing = circuitBreakers.get(key)
+		if (existing) return existing
+
+		const cbConfig = typeof config.circuitBreaker === 'boolean' ? {} : config.circuitBreaker
+		const wrappedConfig: CircuitBreakerConfig = {
+			...cbConfig,
+			onStateChange(from, to) {
+				cbConfig.onStateChange?.(from, to)
+				audit?.log('circuit_breaker_state_change', {
+					provider,
+					model: model ?? null,
+					fromState: from,
+					toState: to,
+				})
+			},
+		}
+		const cb = createCircuitBreaker(wrappedConfig)
+		circuitBreakers.set(key, cb)
+		return cb
+	}
 
 	for (const entry of sortedProviders) {
 		const gw = gateway({
@@ -128,31 +164,26 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		})
 		gateways.set(entry.name, gw)
 
-		if (config.circuitBreaker) {
-			const cbConfig = typeof config.circuitBreaker === 'boolean' ? {} : config.circuitBreaker
-			const providerName = entry.name
-			const wrappedConfig: CircuitBreakerConfig = {
-				...cbConfig,
-				onStateChange(from, to) {
-					cbConfig.onStateChange?.(from, to)
-					audit?.log('circuit_breaker_state_change', {
-						provider: providerName,
-						fromState: from,
-						toState: to,
-					})
-				},
-			}
-			circuitBreakers.set(entry.name, createCircuitBreaker(wrappedConfig))
+		// Pre-warm the (provider, configured-model) breaker if a model was
+		// declared in the mesh entry. Dynamic models still get lazy breakers.
+		if (config.circuitBreaker && entry.model) {
+			getOrCreateCircuitBreaker(entry.name, entry.model)
 		}
 	}
 
-	function callWithCircuitBreaker<T>(providerName: string, fn: () => Promise<T>): Promise<T> {
-		const cb = circuitBreakers.get(providerName)
+	function callWithCircuitBreaker<T>(
+		provider: string,
+		model: string | undefined,
+		fn: () => Promise<T>,
+	): Promise<T> {
+		const cb = getOrCreateCircuitBreaker(provider, model)
 		return cb ? cb.execute(fn) : fn()
 	}
 
-	function isProviderAvailable(providerName: string): boolean {
-		const cb = circuitBreakers.get(providerName)
+	function isProviderAvailable(provider: string, model: string | undefined): boolean {
+		if (!config.circuitBreaker) return true
+		const cb = circuitBreakers.get(cbKey(provider, model))
+		// No breaker yet for this (provider, model) → never failed, available.
 		return !cb || cb.state !== 'open'
 	}
 
@@ -170,8 +201,9 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 
 	function attemptProvider(entry: ProviderEntry, request: CompletionRequest): Promise<LLMResponse> {
 		const gw = getGateway(entry.name)
-		return callWithCircuitBreaker(entry.name, () =>
-			gw.complete({ ...request, model: request.model ?? entry.model }),
+		const targetModel = request.model ?? entry.model
+		return callWithCircuitBreaker(entry.name, targetModel, () =>
+			gw.complete({ ...request, model: targetModel }),
 		)
 	}
 
@@ -197,7 +229,8 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		let failedProvider: string | null = null
 
 		for (const entry of providers) {
-			if (!isProviderAvailable(entry.name)) continue
+			const targetModel = request.model ?? entry.model
+			if (!isProviderAvailable(entry.name, targetModel)) continue
 
 			try {
 				const response = await attemptProvider(entry, request)
@@ -246,14 +279,17 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 
 	async function latencyOptimizedComplete(request: CompletionRequest): Promise<LLMResponse> {
 		const controller = new AbortController()
-		const availableProviders = sortedProviders.filter((e) => isProviderAvailable(e.name))
+		const availableProviders = sortedProviders.filter((e) =>
+			isProviderAvailable(e.name, request.model ?? e.model),
+		)
 
 		const promises = availableProviders.map(async (entry) => {
 			const gw = getGateway(entry.name)
-			return callWithCircuitBreaker(entry.name, () =>
+			const targetModel = request.model ?? entry.model
+			return callWithCircuitBreaker(entry.name, targetModel, () =>
 				gw.complete({
 					...request,
-					model: request.model ?? entry.model,
+					model: targetModel,
 					signal: controller.signal,
 				}),
 			)
@@ -355,8 +391,9 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		emit: (event: import('@elsium-ai/core').StreamEvent) => void,
 	): Promise<StreamAttemptResult> {
 		const gw = getGateway(entry.name)
-		const providerStream = await callWithCircuitBreaker(entry.name, async () =>
-			gw.stream({ ...request, model: request.model ?? entry.model }),
+		const targetModel = request.model ?? entry.model
+		const providerStream = await callWithCircuitBreaker(entry.name, targetModel, async () =>
+			gw.stream({ ...request, model: targetModel }),
 		)
 
 		let hasEmittedContent = false
@@ -432,7 +469,7 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 		providers: ProviderEntry[],
 		request: CompletionRequest,
 	): ElsiumStream {
-		const available = providers.filter((e) => isProviderAvailable(e.name))
+		const available = providers.filter((e) => isProviderAvailable(e.name, request.model ?? e.model))
 		if (available.length === 0) {
 			return errorStream('All providers unavailable')
 		}
@@ -469,7 +506,9 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 	}
 
 	function streamLatencyOptimized(request: CompletionRequest): ElsiumStream {
-		const available = sortedProviders.filter((e) => isProviderAvailable(e.name))
+		const available = sortedProviders.filter((e) =>
+			isProviderAvailable(e.name, request.model ?? e.model),
+		)
 		if (available.length === 0) {
 			return errorStream('All providers unavailable')
 		}
@@ -479,11 +518,12 @@ export function createProviderMesh(config: ProviderMeshConfig): ProviderMesh {
 
 			const racePromises = available.map(async (entry) => {
 				const gw = getGateway(entry.name)
-				return callWithCircuitBreaker(entry.name, async () => ({
+				const targetModel = request.model ?? entry.model
+				return callWithCircuitBreaker(entry.name, targetModel, async () => ({
 					entry,
 					stream: gw.stream({
 						...request,
-						model: request.model ?? entry.model,
+						model: targetModel,
 						signal: controller.signal,
 					}),
 				}))
