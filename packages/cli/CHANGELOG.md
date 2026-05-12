@@ -1,5 +1,13 @@
 # @elsium-ai/cli
 
+## 0.14.0
+
+### Patch Changes
+
+- elsium-ai@0.14.0
+- @elsium-ai/core@0.14.0
+- @elsium-ai/observe@0.14.0
+
 ## 0.13.0
 
 ### Patch Changes

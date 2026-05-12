@@ -1,5 +1,15 @@
 # @elsium-ai/agents
 
+## 0.14.0
+
+### Patch Changes
+
+- Updated dependencies [b245bf2]
+  - @elsium-ai/tools@0.14.0
+  - @elsium-ai/core@0.14.0
+  - @elsium-ai/gateway@0.14.0
+  - @elsium-ai/observe@0.14.0
+
 ## 0.13.0
 
 ### Minor Changes
@@ -12,14 +22,14 @@
 
   ```ts
   // Before
-  const id = createAgentIdentity({ agentId, secret })
-  const signed = id.sign(payload)
-  const ok = id.verify(signed)
+  const id = createAgentIdentity({ agentId, secret });
+  const signed = id.sign(payload);
+  const ok = id.verify(signed);
 
   // After
-  const id = await createAgentIdentity({ agentId, secret })
-  const signed = await id.sign(payload)
-  const ok = await id.verify(signed)
+  const id = await createAgentIdentity({ agentId, secret });
+  const signed = await id.sign(payload);
+  const ok = await id.verify(signed);
   ```
 
   Reason: Web Crypto `subtle.*` is async on every cross-runtime target. Closes #41 for this module.
