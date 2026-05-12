@@ -56,7 +56,7 @@ describe('createSignedReplayRecorder', () => {
 		await wrapped(mkReq('b'))
 		await wrapped(mkReq('c'))
 
-		const result = verifyReplay(rec.export(), SECRET)
+		const result = await verifyReplay(rec.export(), SECRET)
 		expect(result.valid).toBe(true)
 		expect(result.entryCount).toBe(3)
 	})
@@ -83,7 +83,7 @@ describe('createSignedReplayRecorder', () => {
 					: e,
 			),
 		}
-		const result = verifyReplay(tampered, SECRET)
+		const result = await verifyReplay(tampered, SECRET)
 		expect(result.valid).toBe(false)
 		expect(result.invalidAtIndex).toBe(0)
 		expect(result.reason).toMatch(/signature mismatch/)
@@ -100,7 +100,7 @@ describe('createSignedReplayRecorder', () => {
 			...file,
 			entries: [file.entries[1], file.entries[0]],
 		}
-		const result = verifyReplay(reordered, SECRET)
+		const result = await verifyReplay(reordered, SECRET)
 		expect(result.valid).toBe(false)
 		expect(result.invalidAtIndex).toBe(0)
 	})
@@ -109,25 +109,25 @@ describe('createSignedReplayRecorder', () => {
 		const rec = createSignedReplayRecorder({ secret: SECRET })
 		const wrapped = rec.wrap(vi.fn().mockResolvedValue(mkResp()))
 		await wrapped(mkReq('x'))
-		const result = verifyReplay(rec.export(), 'wrong-secret-also-long-enough-x')
+		const result = await verifyReplay(rec.export(), 'wrong-secret-also-long-enough-x')
 		expect(result.valid).toBe(false)
 	})
 
-	it('verifyReplay rejects unsupported apiVersion / algorithm', () => {
-		const result1 = verifyReplay(
+	it('verifyReplay rejects unsupported apiVersion / algorithm', async () => {
+		const result1 = await verifyReplay(
 			JSON.stringify({ apiVersion: 'elsium.replay/v999', algorithm: 'hmac-sha256', entries: [] }),
 			SECRET,
 		)
 		expect(result1.valid).toBe(false)
-		const result2 = verifyReplay(
+		const result2 = await verifyReplay(
 			JSON.stringify({ apiVersion: 'elsium.replay/v1', algorithm: 'md5', entries: [] }),
 			SECRET,
 		)
 		expect(result2.valid).toBe(false)
 	})
 
-	it('verifyReplay rejects malformed JSON', () => {
-		const result = verifyReplay('{ not valid json', SECRET)
+	it('verifyReplay rejects malformed JSON', async () => {
+		const result = await verifyReplay('{ not valid json', SECRET)
 		expect(result.valid).toBe(false)
 		expect(result.reason).toMatch(/Invalid JSON/)
 	})
@@ -137,7 +137,7 @@ describe('createSignedReplayRecorder', () => {
 		const wrapped = rec.wrap(vi.fn().mockResolvedValue(mkResp()))
 		await wrapped(mkReq('1'))
 		const json = rec.toJSON()
-		expect(verifyReplay(json, SECRET).valid).toBe(true)
+		expect((await verifyReplay(json, SECRET)).valid).toBe(true)
 	})
 
 	it('clear resets the chain and lets recording restart from zero sentinel', async () => {
@@ -172,7 +172,7 @@ describe('createSignedReplayPlayer', () => {
 				},
 			],
 		}
-		expect(() => createSignedReplayPlayer(tampered, { secret: SECRET })).toThrow(
+		await expect(createSignedReplayPlayer(tampered, { secret: SECRET })).rejects.toThrow(
 			/verification failed/,
 		)
 	})
@@ -181,7 +181,7 @@ describe('createSignedReplayPlayer', () => {
 		const rec = createSignedReplayRecorder({ secret: SECRET })
 		const wrapped = rec.wrap(vi.fn().mockResolvedValue(mkResp('hi')))
 		await wrapped(mkReq())
-		const player = createSignedReplayPlayer(rec.export(), { secret: SECRET })
+		const player = await createSignedReplayPlayer(rec.export(), { secret: SECRET })
 		expect(player.verification.valid).toBe(true)
 		const resp = await player.complete(mkReq())
 		expect(resp.message.content).toBe('hi')
@@ -200,7 +200,7 @@ describe('createSignedReplayPlayer', () => {
 				},
 			],
 		}
-		const player = createSignedReplayPlayer(tampered, { secret: SECRET, strict: false })
+		const player = await createSignedReplayPlayer(tampered, { secret: SECRET, strict: false })
 		expect(player.verification.valid).toBe(false)
 		await expect(player.complete(mkReq())).resolves.toBeDefined()
 	})

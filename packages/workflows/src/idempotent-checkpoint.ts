@@ -21,8 +21,7 @@
  * against their chosen backend. See docs/guides/persistent-stores.md.
  */
 
-import { createHash } from 'node:crypto'
-import { ElsiumError } from '@elsium-ai/core'
+import { ElsiumError, sha256Hex } from '@elsium-ai/core'
 import { type CheckpointStore, createInMemoryCheckpointStore } from './checkpoint'
 import { executeStep } from './step'
 import type { StepConfig, StepContext, StepResult } from './types'
@@ -72,14 +71,14 @@ function stableStringify(value: unknown): string {
 	return `{${pairs.join(',')}}`
 }
 
-export function defaultIdempotencyKey(input: unknown): string {
-	return createHash('sha256').update(stableStringify(input)).digest('hex')
+export async function defaultIdempotencyKey(input: unknown): Promise<string> {
+	return sha256Hex(stableStringify(input))
 }
 
-export function resolveIdempotencyKey<TInput>(
+export async function resolveIdempotencyKey<TInput>(
 	step: IdempotentStepConfig<TInput, unknown>,
 	input: TInput,
-): string | null {
+): Promise<string | null> {
 	if (!step.idempotent) return null
 	return step.idempotencyKey ? step.idempotencyKey(input) : defaultIdempotencyKey(input)
 }
@@ -144,7 +143,7 @@ export async function executeIdempotentStep<TInput, TOutput>(
 ): Promise<StepResult<TOutput>> {
 	const { workflowId, step, input, context, store } = args
 
-	const idempotencyKey = resolveIdempotencyKey(step, input as TInput)
+	const idempotencyKey = await resolveIdempotencyKey(step, input as TInput)
 	if (idempotencyKey === null) {
 		// Not idempotent — fall back to normal step execution.
 		return executeStep(step, input, context)

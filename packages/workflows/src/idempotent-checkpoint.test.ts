@@ -15,44 +15,44 @@ const baseContext = {
 }
 
 describe('defaultIdempotencyKey', () => {
-	it('returns the same hash for equivalent inputs regardless of key order', () => {
-		const a = defaultIdempotencyKey({ user: 'alice', count: 1 })
-		const b = defaultIdempotencyKey({ count: 1, user: 'alice' })
+	it('returns the same hash for equivalent inputs regardless of key order', async () => {
+		const a = await defaultIdempotencyKey({ user: 'alice', count: 1 })
+		const b = await defaultIdempotencyKey({ count: 1, user: 'alice' })
 		expect(a).toBe(b)
 	})
 
-	it('returns different hashes for different inputs', () => {
-		expect(defaultIdempotencyKey({ a: 1 })).not.toBe(defaultIdempotencyKey({ a: 2 }))
+	it('returns different hashes for different inputs', async () => {
+		expect(await defaultIdempotencyKey({ a: 1 })).not.toBe(await defaultIdempotencyKey({ a: 2 }))
 	})
 
-	it('handles arrays, primitives, null deterministically', () => {
-		expect(defaultIdempotencyKey([1, 2, 3])).toBe(defaultIdempotencyKey([1, 2, 3]))
-		expect(defaultIdempotencyKey(null)).toBe(defaultIdempotencyKey(null))
-		expect(defaultIdempotencyKey('hello')).toBe(defaultIdempotencyKey('hello'))
+	it('handles arrays, primitives, null deterministically', async () => {
+		expect(await defaultIdempotencyKey([1, 2, 3])).toBe(await defaultIdempotencyKey([1, 2, 3]))
+		expect(await defaultIdempotencyKey(null)).toBe(await defaultIdempotencyKey(null))
+		expect(await defaultIdempotencyKey('hello')).toBe(await defaultIdempotencyKey('hello'))
 	})
 })
 
 describe('resolveIdempotencyKey', () => {
-	it('returns null when step is not idempotent', () => {
+	it('returns null when step is not idempotent', async () => {
 		const s: IdempotentStepConfig = step('s', { handler: async () => 'x' })
-		expect(resolveIdempotencyKey(s, { foo: 1 })).toBeNull()
+		expect(await resolveIdempotencyKey(s, { foo: 1 })).toBeNull()
 	})
 
-	it('uses custom idempotencyKey when provided', () => {
+	it('uses custom idempotencyKey when provided', async () => {
 		const s: IdempotentStepConfig<{ id: string }, unknown> = {
 			...step('s', { handler: async () => 'x' }),
 			idempotent: true,
 			idempotencyKey: (input) => `user:${input.id}`,
 		}
-		expect(resolveIdempotencyKey(s, { id: '42' })).toBe('user:42')
+		expect(await resolveIdempotencyKey(s, { id: '42' })).toBe('user:42')
 	})
 
-	it('defaults to a stable SHA-256 over input', () => {
+	it('defaults to a stable SHA-256 over input', async () => {
 		const s: IdempotentStepConfig = {
 			...step('s', { handler: async () => 'x' }),
 			idempotent: true,
 		}
-		const k = resolveIdempotencyKey(s, { hello: 'world' })
+		const k = await resolveIdempotencyKey(s, { hello: 'world' })
 		expect(k).toMatch(/^[0-9a-f]{64}$/)
 	})
 })

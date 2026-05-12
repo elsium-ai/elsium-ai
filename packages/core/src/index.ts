@@ -117,3 +117,12 @@ export type {
 // Shutdown
 export { createShutdownManager } from './shutdown'
 export type { ShutdownConfig, ShutdownManager } from './shutdown'
+
+// Web Crypto utilities (runtime-agnostic primitives for governance code)
+export {
+	hmacSha256Hex,
+	randomHexString,
+	sha256Hex,
+	timingSafeEqualHex,
+	timingSafeEqualString,
+} from './web-crypto'

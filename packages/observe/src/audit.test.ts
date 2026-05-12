@@ -129,16 +129,18 @@ describe('AuditTrail', () => {
 		trail.log('llm_call', { a: 1 })
 		trail.log('llm_call', { a: 2 })
 
+		await trail.flush()
 		expect(trail.count).toBe(2)
 	})
 
-	it('count is correct after eviction', () => {
+	it('count is correct after eviction', async () => {
 		const trail = createAuditTrail({ maxEvents: 5 })
 
 		for (let i = 0; i < 8; i++) {
 			trail.log('llm_call', { index: i })
 		}
 
+		await trail.flush()
 		expect(trail.count).toBe(5)
 	})
 
@@ -184,6 +186,7 @@ describe('AuditTrail', () => {
 
 		const trail = createAuditTrail({ storage: adapter, hashChain: true })
 		trail.log('llm_call', { model: 'test' })
+		await trail.flush()
 
 		expect(events).toHaveLength(1)
 		expect(events[0].previousHash).toBe(preExistingHash)
@@ -216,8 +219,8 @@ describe('AuditTrail', () => {
 		// Log before awaiting ready() — the entry must still use the correct hash
 		trail.log('llm_call', { model: 'test' })
 
-		// Await initialization; this also drains all queued log() calls
-		await trail.ready()
+		// Await initialization + chain drain so the entry has been hashed and appended.
+		await trail.flush()
 
 		expect(events).toHaveLength(1)
 		expect(events[0].previousHash).toBe(preExistingHash)
@@ -349,13 +352,14 @@ describe('AuditTrail batched mode', () => {
 })
 
 describe('AuditTrail ring buffer eviction', () => {
-	it('eviction is O(1) — count stays at max', () => {
+	it('eviction is O(1) — count stays at max', async () => {
 		const trail = createAuditTrail({ maxEvents: 5 })
 
 		for (let i = 0; i < 100; i++) {
 			trail.log('llm_call', { index: i })
 		}
 
+		await trail.flush()
 		expect(trail.count).toBe(5)
 	})
 

@@ -16,12 +16,13 @@
  * file without its secret is just data; with the secret it is evidence.
  */
 
-import { createHmac, timingSafeEqual } from 'node:crypto'
 import {
 	type CompletionRequest,
 	ElsiumError,
 	type LLMResponse,
 	type StreamEvent,
+	hmacSha256Hex,
+	timingSafeEqualHex,
 } from '@elsium-ai/core'
 import type { ReplayEntry } from './replay'
 
@@ -51,9 +52,13 @@ function stableStringify(value: unknown): string {
 	return `{${pairs.join(',')}}`
 }
 
-function signEntry(entry: ReplayEntry, previousSignature: string, secret: string): string {
+async function signEntry(
+	entry: ReplayEntry,
+	previousSignature: string,
+	secret: string,
+): Promise<string> {
 	const payload = `${previousSignature}|${stableStringify(entry)}`
-	return createHmac('sha256', secret).update(payload).digest('hex')
+	return hmacSha256Hex(secret, payload)
 }
 
 // ─── Signed recorder / player ──────────────────────────────────
@@ -88,7 +93,7 @@ export function createSignedReplayRecorder(
 				const response = await completeFn(request)
 				const entry: ReplayEntry = { request, response, timestamp: Date.now() }
 				const previousSignature = lastSig
-				const signature = signEntry(entry, previousSignature, config.secret)
+				const signature = await signEntry(entry, previousSignature, config.secret)
 				signed.push({ entry, previousSignature, signature })
 				lastSig = signature
 				return response
@@ -131,10 +136,10 @@ export interface ReplayVerification {
 	readonly reason?: string
 }
 
-export function verifyReplay(
+export async function verifyReplay(
 	fileOrJson: SignedReplayFile | string,
 	secret: string,
-): ReplayVerification {
+): Promise<ReplayVerification> {
 	let file: SignedReplayFile
 	try {
 		file =
@@ -174,10 +179,8 @@ export function verifyReplay(
 				reason: `Entry ${i}: previousSignature mismatch (chain broken)`,
 			}
 		}
-		const expected = signEntry(e.entry, e.previousSignature, secret)
-		const actualBuf = Buffer.from(e.signature, 'hex')
-		const expectedBuf = Buffer.from(expected, 'hex')
-		if (actualBuf.length !== expectedBuf.length || !timingSafeEqual(actualBuf, expectedBuf)) {
+		const expected = await signEntry(e.entry, e.previousSignature, secret)
+		if (!timingSafeEqualHex(e.signature, expected)) {
 			return {
 				valid: false,
 				entryCount: file.entries.length,
@@ -205,11 +208,11 @@ export interface SignedReplayPlayerOptions {
 	readonly strict?: boolean
 }
 
-export function createSignedReplayPlayer(
+export async function createSignedReplayPlayer(
 	fileOrJson: SignedReplayFile | string,
 	options: SignedReplayPlayerOptions,
-): SignedReplayPlayer {
-	const verification = verifyReplay(fileOrJson, options.secret)
+): Promise<SignedReplayPlayer> {
+	const verification = await verifyReplay(fileOrJson, options.secret)
 	const strict = options.strict !== false
 	if (!verification.valid && strict) {
 		throw ElsiumError.validation(
