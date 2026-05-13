@@ -94,7 +94,6 @@ jobs:
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
-    continue-on-error: true
     concurrency:
       group: benchmark-${{ github.ref }}
       cancel-in-progress: true
@@ -110,3 +109,4 @@ jobs:
 
       - name: Benchmark regression check
         run: bun run bench:check
+        continue-on-error: true
