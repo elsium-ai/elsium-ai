@@ -86,14 +86,17 @@ bun benchmarks/check-regression.ts --tolerance 0.3
 
 ### CI Integration
 
-Add to your CI pipeline:
+The CI pipeline runs the benchmark regression check on every pull request:
 
 ```yaml
 - name: Benchmark regression check
   run: bun run bench:check
+  continue-on-error: true
 ```
 
-This runs the benchmark, compares against the frozen baseline, and fails the build if any metric regresses beyond tolerance. Commit `baseline.json` to the repo so CI has a reference point.
+This runs the benchmark, compares against the frozen baseline, and warns if any metric regresses beyond tolerance (default 20%). The job uses `continue-on-error: true` (advisory mode) initially to collect stability data on GitHub-hosted runners before promoting to a required check. Regressions are surfaced as `::warning` annotations directly in the PR.
+
+Commit `baseline.json` to the repo so CI has a reference point.
 
 ## Benchmark Descriptions
 

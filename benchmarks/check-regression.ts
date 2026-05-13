@@ -228,6 +228,17 @@ if (improvements.length > 0) {
 }
 
 if (failures.length > 0) {
+	// GitHub Actions annotations
+	for (const f of failures) {
+		const b = fmtValue(f.name, f.baseline)
+		const c = fmtValue(f.name, f.current)
+		const pct = (f.change * 100).toFixed(1)
+		const tol = (tolerance * 100).toFixed(0)
+		console.warn(
+			`::warning title=Benchmark Regression,file=benchmarks/results/baseline.json::${f.name}.${f.metric}: ${b} → ${c} (+${pct}% > ${tol}% tolerance)`,
+		)
+	}
+
 	console.log(`  ✗ ${failures.length} REGRESSION(S) DETECTED`)
 	console.log()
 	for (const f of failures) {
