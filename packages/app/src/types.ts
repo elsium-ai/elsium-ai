@@ -1,5 +1,6 @@
 import type { Agent } from '@elsium-ai/agents'
 import type { RAGPipeline } from '@elsium-ai/rag'
+import type { ServerAdapter } from './adapter'
 
 export interface AppConfig {
 	gateway: {
@@ -19,6 +20,7 @@ export interface AppConfig {
 }
 
 export interface ServerConfig {
+	adapter?: ServerAdapter
 	port?: number
 	hostname?: string
 	cors?: boolean | CorsConfig

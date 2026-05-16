@@ -1,8 +1,7 @@
 import type { TenantContext } from '@elsium-ai/core'
 import { Hono } from 'hono'
+import { honoAdapter } from './hono-adapter'
 import { tenantMiddleware, tenantRateLimitMiddleware } from './tenant'
-
-// ─── Helpers ─────────────────────────────────────────────────────
 
 function req(method: string, path: string, headers?: Record<string, string>): Request {
 	return new Request(`http://localhost${path}`, { method, headers })
@@ -30,14 +29,12 @@ const defaultTenant: TenantContext = {
 	tier: 'default',
 }
 
-// ─── tenantMiddleware ────────────────────────────────────────────
-
 describe('tenantMiddleware', () => {
 	it('sets tenant on context when extractor returns a tenant', async () => {
 		const app = new Hono()
 		app.use(
 			'*',
-			tenantMiddleware({
+			tenantMiddleware(honoAdapter, {
 				extractTenant: () => freeTenant,
 			}),
 		)
@@ -63,9 +60,9 @@ describe('tenantMiddleware', () => {
 		const app = new Hono()
 		app.use(
 			'*',
-			tenantMiddleware({
+			tenantMiddleware(honoAdapter, {
 				extractTenant: (c) => {
-					const key = c.req.header('X-Tenant-Key')
+					const key = honoAdapter.header(c, 'X-Tenant-Key')
 					return key ? (tenants[key] ?? null) : null
 				},
 			}),
@@ -86,7 +83,7 @@ describe('tenantMiddleware', () => {
 		const app = new Hono()
 		app.use(
 			'*',
-			tenantMiddleware({
+			tenantMiddleware(honoAdapter, {
 				extractTenant: () => null,
 				onUnknownTenant: 'reject',
 			}),
@@ -104,7 +101,7 @@ describe('tenantMiddleware', () => {
 		const app = new Hono()
 		app.use(
 			'*',
-			tenantMiddleware({
+			tenantMiddleware(honoAdapter, {
 				extractTenant: () => null,
 			}),
 		)
@@ -119,7 +116,7 @@ describe('tenantMiddleware', () => {
 		const app = new Hono()
 		app.use(
 			'*',
-			tenantMiddleware({
+			tenantMiddleware(honoAdapter, {
 				extractTenant: () => null,
 				onUnknownTenant: 'default',
 				defaultTenant,
@@ -142,10 +139,9 @@ describe('tenantMiddleware', () => {
 		const app = new Hono()
 		app.use(
 			'*',
-			tenantMiddleware({
+			tenantMiddleware(honoAdapter, {
 				extractTenant: () => null,
 				onUnknownTenant: 'default',
-				// no defaultTenant provided
 			}),
 		)
 		app.get('/test', (c) => c.json({ ok: true }))
@@ -156,13 +152,11 @@ describe('tenantMiddleware', () => {
 	})
 })
 
-// ─── tenantRateLimitMiddleware ───────────────────────────────────
-
 describe('tenantRateLimitMiddleware', () => {
 	it('allows requests when tenant has no rate limit configured', async () => {
 		const app = new Hono()
-		app.use('*', tenantMiddleware({ extractTenant: () => unlimitedTenant }))
-		app.use('*', tenantRateLimitMiddleware())
+		app.use('*', tenantMiddleware(honoAdapter, { extractTenant: () => unlimitedTenant }))
+		app.use('*', tenantRateLimitMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ ok: true }))
 
 		const res = await app.fetch(req('GET', '/test'))
@@ -172,8 +166,7 @@ describe('tenantRateLimitMiddleware', () => {
 
 	it('allows requests when no tenant is set on context', async () => {
 		const app = new Hono()
-		// Intentionally skip tenant middleware — no tenant in context
-		app.use('*', tenantRateLimitMiddleware())
+		app.use('*', tenantRateLimitMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ ok: true }))
 
 		const res = await app.fetch(req('GET', '/test'))
@@ -183,11 +176,10 @@ describe('tenantRateLimitMiddleware', () => {
 
 	it('allows requests within the rate limit', async () => {
 		const app = new Hono()
-		app.use('*', tenantMiddleware({ extractTenant: () => freeTenant }))
-		app.use('*', tenantRateLimitMiddleware())
+		app.use('*', tenantMiddleware(honoAdapter, { extractTenant: () => freeTenant }))
+		app.use('*', tenantRateLimitMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ ok: true }))
 
-		// freeTenant has maxRequestsPerMinute: 3
 		const res1 = await app.fetch(req('GET', '/test'))
 		const res2 = await app.fetch(req('GET', '/test'))
 		const res3 = await app.fetch(req('GET', '/test'))
@@ -199,15 +191,14 @@ describe('tenantRateLimitMiddleware', () => {
 
 	it('blocks requests exceeding the rate limit', async () => {
 		const app = new Hono()
-		app.use('*', tenantMiddleware({ extractTenant: () => freeTenant }))
-		app.use('*', tenantRateLimitMiddleware())
+		app.use('*', tenantMiddleware(honoAdapter, { extractTenant: () => freeTenant }))
+		app.use('*', tenantRateLimitMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ ok: true }))
 
-		// freeTenant has maxRequestsPerMinute: 3
 		await app.fetch(req('GET', '/test'))
 		await app.fetch(req('GET', '/test'))
 		await app.fetch(req('GET', '/test'))
-		const res = await app.fetch(req('GET', '/test')) // 4th request
+		const res = await app.fetch(req('GET', '/test'))
 
 		expect(res.status).toBe(429)
 		const json = await res.json()
@@ -219,20 +210,17 @@ describe('tenantRateLimitMiddleware', () => {
 		let currentTenant = freeTenant
 
 		const app = new Hono()
-		app.use('*', tenantMiddleware({ extractTenant: () => currentTenant }))
-		app.use('*', tenantRateLimitMiddleware())
+		app.use('*', tenantMiddleware(honoAdapter, { extractTenant: () => currentTenant }))
+		app.use('*', tenantRateLimitMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ ok: true }))
 
-		// Exhaust freeTenant's limit (3 requests)
 		await app.fetch(req('GET', '/test'))
 		await app.fetch(req('GET', '/test'))
 		await app.fetch(req('GET', '/test'))
 
-		// 4th request from freeTenant is blocked
 		const blockedRes = await app.fetch(req('GET', '/test'))
 		expect(blockedRes.status).toBe(429)
 
-		// Switch to proTenant — should still be allowed
 		currentTenant = proTenant
 		const proRes = await app.fetch(req('GET', '/test'))
 		expect(proRes.status).toBe(200)

@@ -1,3 +1,7 @@
+// Adapter
+export { honoAdapter } from './hono-adapter'
+export type { ServerAdapter } from './adapter'
+
 // App
 export { createApp } from './app'
 export type { ElsiumApp } from './app'
@@ -19,7 +23,7 @@ export type {
 } from './types'
 
 // SSE
-export { sseHeaders, formatSSE, streamResponse } from './sse'
+export { sseHeaders, formatSSE } from './sse'
 
 // Middleware
 export {

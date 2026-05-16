@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { describe, expect, it, vi } from 'vitest'
+import { honoAdapter } from './hono-adapter'
 import {
 	authMiddleware,
 	corsMiddleware,
@@ -7,8 +8,6 @@ import {
 	requestIdMiddleware,
 	requestLoggerMiddleware,
 } from './middleware'
-
-// ─── Helpers ─────────────────────────────────────────────────────
 
 function getReq(path: string, headers: Record<string, string> = {}): Request {
 	return new Request(`http://localhost${path}`, { method: 'GET', headers })
@@ -18,12 +17,10 @@ function postReq(path: string, headers: Record<string, string> = {}): Request {
 	return new Request(`http://localhost${path}`, { method: 'POST', headers })
 }
 
-// ─── corsMiddleware ───────────────────────────────────────────────
-
 describe('corsMiddleware', () => {
 	it('sets wildcard origin when called with true', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware(true))
+		app.use('*', corsMiddleware(honoAdapter, true))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test', { Origin: 'http://example.com' }))
@@ -33,7 +30,12 @@ describe('corsMiddleware', () => {
 
 	it('reflects matched origin from array', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware({ origin: ['http://app.example.com', 'http://admin.example.com'] }))
+		app.use(
+			'*',
+			corsMiddleware(honoAdapter, {
+				origin: ['http://app.example.com', 'http://admin.example.com'],
+			}),
+		)
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test', { Origin: 'http://app.example.com' }))
@@ -44,7 +46,7 @@ describe('corsMiddleware', () => {
 
 	it('does not set Allow-Origin for unrecognised origin', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware({ origin: ['http://trusted.com'] }))
+		app.use('*', corsMiddleware(honoAdapter, { origin: ['http://trusted.com'] }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test', { Origin: 'http://evil.com' }))
@@ -54,7 +56,7 @@ describe('corsMiddleware', () => {
 
 	it('uses string origin directly', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware({ origin: 'https://myapp.io' }))
+		app.use('*', corsMiddleware(honoAdapter, { origin: 'https://myapp.io' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test', { Origin: 'anything' }))
@@ -64,7 +66,7 @@ describe('corsMiddleware', () => {
 
 	it('responds 200 to OPTIONS preflight', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware(true))
+		app.use('*', corsMiddleware(honoAdapter, true))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(new Request('http://localhost/test', { method: 'OPTIONS' }))
@@ -74,7 +76,7 @@ describe('corsMiddleware', () => {
 
 	it('sets Allow-Methods header', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware({ methods: ['GET', 'DELETE'] }))
+		app.use('*', corsMiddleware(honoAdapter, { methods: ['GET', 'DELETE'] }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -85,7 +87,7 @@ describe('corsMiddleware', () => {
 
 	it('sets Allow-Headers header', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware({ headers: ['X-Custom-Header'] }))
+		app.use('*', corsMiddleware(honoAdapter, { headers: ['X-Custom-Header'] }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -95,7 +97,7 @@ describe('corsMiddleware', () => {
 
 	it('sets Allow-Credentials when credentials: true', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware({ credentials: true, origin: 'https://app.com' }))
+		app.use('*', corsMiddleware(honoAdapter, { credentials: true, origin: 'https://app.com' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test', { Origin: 'https://app.com' }))
@@ -105,7 +107,7 @@ describe('corsMiddleware', () => {
 
 	it('does not set Allow-Credentials when credentials is not set', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware(true))
+		app.use('*', corsMiddleware(honoAdapter, true))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -115,7 +117,7 @@ describe('corsMiddleware', () => {
 
 	it('uses default methods when config is boolean true', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware(true))
+		app.use('*', corsMiddleware(honoAdapter, true))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -127,12 +129,10 @@ describe('corsMiddleware', () => {
 	})
 })
 
-// ─── authMiddleware ───────────────────────────────────────────────
-
 describe('authMiddleware', () => {
 	it('passes request with correct bearer token', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'supersecret' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'supersecret' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test', { Authorization: 'Bearer supersecret' }))
@@ -142,7 +142,7 @@ describe('authMiddleware', () => {
 
 	it('rejects when Authorization header is absent', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'supersecret' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'supersecret' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -154,7 +154,7 @@ describe('authMiddleware', () => {
 
 	it('rejects wrong token', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'supersecret' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'supersecret' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test', { Authorization: 'Bearer wrongtoken' }))
@@ -166,10 +166,9 @@ describe('authMiddleware', () => {
 
 	it('rejects token with different length (timing-safe check)', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'short' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'short' }))
 		app.get('/test', (c) => c.text('ok'))
 
-		// Different length — timingSafeEqual requires equal lengths; the middleware must return 401
 		const res = await app.fetch(
 			getReq('/test', { Authorization: 'Bearer averylongtokenthatdoesnotmatch' }),
 		)
@@ -179,7 +178,7 @@ describe('authMiddleware', () => {
 
 	it('skips auth check for /health endpoint', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'secret' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'secret' }))
 		app.get('/health', (c) => c.json({ status: 'ok' }))
 
 		const res = await app.fetch(getReq('/health'))
@@ -189,22 +188,19 @@ describe('authMiddleware', () => {
 
 	it('strips Bearer prefix before comparing', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'mytoken' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'mytoken' }))
 		app.get('/test', (c) => c.text('ok'))
 
-		// With extra spaces after Bearer — the replace strips it
 		const res = await app.fetch(getReq('/test', { Authorization: 'Bearer mytoken' }))
 
 		expect(res.status).toBe(200)
 	})
 })
 
-// ─── rateLimitMiddleware ──────────────────────────────────────────
-
 describe('rateLimitMiddleware', () => {
 	it('allows requests within the window limit', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 10 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 10 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -214,7 +210,7 @@ describe('rateLimitMiddleware', () => {
 
 	it('sets X-RateLimit-Limit header', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 5 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 5 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -224,7 +220,7 @@ describe('rateLimitMiddleware', () => {
 
 	it('sets X-RateLimit-Remaining and decrements per request', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 3 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 3 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const r1 = await app.fetch(getReq('/test'))
@@ -236,7 +232,7 @@ describe('rateLimitMiddleware', () => {
 
 	it('blocks requests that exceed the limit and returns 429', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 2 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 2 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		await app.fetch(getReq('/test'))
@@ -250,7 +246,7 @@ describe('rateLimitMiddleware', () => {
 
 	it('includes retryAfterMs in 429 response', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 1 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 1 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		await app.fetch(getReq('/test'))
@@ -263,7 +259,7 @@ describe('rateLimitMiddleware', () => {
 
 	it('sets X-RateLimit-Remaining to 0 when at the limit (not negative)', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 1 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 1 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -272,10 +268,9 @@ describe('rateLimitMiddleware', () => {
 
 	it('uses CF-Connecting-IP for client identification', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 1 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 1 }))
 		app.get('/test', (c) => c.text('ok'))
 
-		// Two different IPs — each should have their own window
 		const r1 = await app.fetch(getReq('/test', { 'CF-Connecting-IP': '1.2.3.4' }))
 		const r2 = await app.fetch(getReq('/test', { 'CF-Connecting-IP': '5.6.7.8' }))
 
@@ -284,12 +279,10 @@ describe('rateLimitMiddleware', () => {
 	})
 })
 
-// ─── requestIdMiddleware ──────────────────────────────────────────
-
 describe('requestIdMiddleware', () => {
 	it('generates a request ID when none is provided', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ id: c.get('requestId') }))
 
 		const res = await app.fetch(getReq('/test'))
@@ -301,7 +294,7 @@ describe('requestIdMiddleware', () => {
 
 	it('echoes a valid incoming X-Request-ID', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ id: c.get('requestId') }))
 
 		const res = await app.fetch(getReq('/test', { 'X-Request-ID': 'my-custom-id-42' }))
@@ -313,7 +306,7 @@ describe('requestIdMiddleware', () => {
 
 	it('replaces malicious X-Request-ID with generated ID', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ id: c.get('requestId') }))
 
 		const res = await app.fetch(getReq('/test', { 'X-Request-ID': '<script>xss</script>' }))
@@ -325,7 +318,7 @@ describe('requestIdMiddleware', () => {
 
 	it('rejects IDs longer than 128 characters', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ id: c.get('requestId') }))
 
 		const longId = 'a'.repeat(129)
@@ -337,7 +330,7 @@ describe('requestIdMiddleware', () => {
 
 	it('sets X-Request-ID on the response', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(getReq('/test'))
@@ -346,12 +339,10 @@ describe('requestIdMiddleware', () => {
 	})
 })
 
-// ─── requestLoggerMiddleware ──────────────────────────────────────
-
 describe('requestLoggerMiddleware', () => {
 	it('does not interfere with the response', async () => {
 		const app = new Hono()
-		app.use('*', requestLoggerMiddleware())
+		app.use('*', requestLoggerMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ ok: true }))
 
 		const res = await app.fetch(getReq('/test'))
@@ -364,7 +355,7 @@ describe('requestLoggerMiddleware', () => {
 	it('calls logger.info with method, path, and status', async () => {
 		const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 		const app = new Hono()
-		app.use('*', requestLoggerMiddleware(logger as never))
+		app.use('*', requestLoggerMiddleware(honoAdapter, logger as never))
 		app.get('/ping', (c) => c.text('pong'))
 
 		await app.fetch(getReq('/ping'))
@@ -381,8 +372,7 @@ describe('requestLoggerMiddleware', () => {
 
 	it('uses its own logger when none is provided', async () => {
 		const app = new Hono()
-		// Should not throw — uses internal createLogger()
-		app.use('*', requestLoggerMiddleware())
+		app.use('*', requestLoggerMiddleware(honoAdapter))
 		app.get('/test', (c) => c.text('ok'))
 
 		await expect(app.fetch(getReq('/test'))).resolves.toBeDefined()
@@ -391,8 +381,8 @@ describe('requestLoggerMiddleware', () => {
 	it('logs request ID when it is set on context', async () => {
 		const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
-		app.use('*', requestLoggerMiddleware(logger as never))
+		app.use('*', requestIdMiddleware(honoAdapter))
+		app.use('*', requestLoggerMiddleware(honoAdapter, logger as never))
 		app.get('/test', (c) => c.text('ok'))
 
 		await app.fetch(getReq('/test', { 'X-Request-ID': 'track-me-123' }))

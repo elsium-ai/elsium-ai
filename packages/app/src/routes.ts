@@ -2,9 +2,7 @@ import type { Agent } from '@elsium-ai/agents'
 import { ElsiumError } from '@elsium-ai/core'
 import type { Gateway, ProviderMesh } from '@elsium-ai/gateway'
 import type { Tracer } from '@elsium-ai/observe'
-import type { Context } from 'hono'
-import { Hono } from 'hono'
-import { streamResponse } from './sse'
+import type { ServerAdapter } from './adapter'
 import type {
 	ChatRequest,
 	ChatResponse,
@@ -21,11 +19,20 @@ function parseJsonBody<T>(raw: string): { ok: true; data: T } | { ok: false } {
 	}
 }
 
-function elsiumErrorResponse(c: Context, err: unknown, fallbackMessage: string) {
+function elsiumErrorResponse(
+	adapter: ServerAdapter,
+	c: unknown,
+	err: unknown,
+	fallbackMessage: string,
+) {
 	if (err instanceof ElsiumError) {
-		return c.json({ error: err.message, code: err.code }, (err.statusCode ?? 500) as 500)
+		return adapter.json(
+			c,
+			{ error: err.message, code: err.code },
+			(err.statusCode ?? 500) as number,
+		)
 	}
-	return c.json({ error: fallbackMessage }, 500)
+	return adapter.json(c, { error: fallbackMessage }, 500)
 }
 
 function resolveAgent(
@@ -41,15 +48,19 @@ function resolveAgent(
 const MAX_BODY_SIZE = 1_048_576
 
 function parseRequestBody<T>(
-	c: Context,
+	adapter: ServerAdapter,
+	c: unknown,
 	rawText: string,
 ): { ok: true; data: T } | { ok: false; response: Response } {
 	if (rawText.length > MAX_BODY_SIZE) {
-		return { ok: false, response: c.json({ error: 'Request body too large (max 1MB)' }, 413) }
+		return {
+			ok: false,
+			response: adapter.json(c, { error: 'Request body too large (max 1MB)' }, 413),
+		}
 	}
 	const parsed = parseJsonBody<T>(rawText)
 	if (!parsed.ok) {
-		return { ok: false, response: c.json({ error: 'Invalid JSON in request body' }, 400) }
+		return { ok: false, response: adapter.json(c, { error: 'Invalid JSON in request body' }, 400) }
 	}
 	return { ok: true, data: parsed.data }
 }
@@ -83,25 +94,24 @@ export interface RoutesDeps {
 	providers: string[]
 }
 
-export function createRoutes(deps: RoutesDeps): Hono {
-	const app = new Hono()
+export function createRoutes<TInstance>(
+	adapter: ServerAdapter<TInstance>,
+	deps: RoutesDeps,
+): TInstance {
+	const app = adapter.createSubRouter()
 	let totalRequests = 0
 
-	// ─── Health ────────────────────────────────────────────────
-
-	app.get('/health', (c) => {
+	adapter.get(app, '/health', (c) => {
 		const response: HealthResponse = {
 			status: 'ok',
 			version: deps.version,
 			uptime: Math.round((Date.now() - deps.startTime) / 1000),
 			providers: deps.providers,
 		}
-		return c.json(response)
+		return adapter.json(c, response)
 	})
 
-	// ─── Metrics ──────────────────────────────────────────────
-
-	app.get('/metrics', (c) => {
+	adapter.get(app, '/metrics', (c) => {
 		const costReport = deps.tracer?.getCostReport()
 
 		const byModel: MetricsResponse['byModel'] = {}
@@ -122,26 +132,24 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			totalCost: costReport?.totalCost ?? 0,
 			byModel,
 		}
-		return c.json(response)
+		return adapter.json(c, response)
 	})
 
-	// ─── Chat ─────────────────────────────────────────────────
-
-	app.post('/chat', async (c) => {
+	adapter.post(app, '/chat', async (c) => {
 		totalRequests++
 
-		const rawText = await c.req.text()
-		const parsed = parseRequestBody<ChatRequest>(c, rawText)
+		const rawText = await adapter.bodyText(c)
+		const parsed = parseRequestBody<ChatRequest>(adapter, c, rawText)
 		if (!parsed.ok) return parsed.response
 
 		const body = parsed.data
 		if (!body.message) {
-			return c.json({ error: 'message is required' }, 400)
+			return adapter.json(c, { error: 'message is required' }, 400)
 		}
 
 		const resolved = resolveAgent(body.agent, deps.agents, deps.defaultAgent)
 		if ('error' in resolved) {
-			return c.json({ error: resolved.error }, 404)
+			return adapter.json(c, { error: resolved.error }, 404)
 		}
 
 		if (body.stream) {
@@ -151,14 +159,14 @@ export function createRoutes(deps: RoutesDeps): Hono {
 				system: resolved.agent.config.system,
 				model: resolved.agent.config.model,
 			})
-			return streamResponse(c, agentStream)
+			return adapter.streamResponse(c, agentStream)
 		}
 
 		let result: Awaited<ReturnType<Agent['run']>>
 		try {
 			result = await resolved.agent.run(body.message)
 		} catch (err) {
-			return elsiumErrorResponse(c, err, 'Agent execution failed')
+			return elsiumErrorResponse(adapter, c, err, 'Agent execution failed')
 		}
 
 		deps.tracer?.trackLLMCall({
@@ -169,22 +177,20 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			latencyMs: 0,
 		})
 
-		return c.json(buildChatResponse(result, resolved.agent.config.model))
+		return adapter.json(c, buildChatResponse(result, resolved.agent.config.model))
 	})
 
-	// ─── Complete ─────────────────────────────────────────────
-
-	app.post('/complete', async (c) => {
+	adapter.post(app, '/complete', async (c) => {
 		totalRequests++
 
-		const rawText = await c.req.text()
-		const parsed = parseRequestBody<CompleteRequest>(c, rawText)
+		const rawText = await adapter.bodyText(c)
+		const parsed = parseRequestBody<CompleteRequest>(adapter, c, rawText)
 		if (!parsed.ok) return parsed.response
 
 		const body = parsed.data
 
 		if (!body.messages?.length) {
-			return c.json({ error: 'messages array is required' }, 400)
+			return adapter.json(c, { error: 'messages array is required' }, 400)
 		}
 
 		const messages = body.messages.map((m) => ({
@@ -202,7 +208,7 @@ export function createRoutes(deps: RoutesDeps): Hono {
 				maxTokens: body.maxTokens,
 				temperature: body.temperature,
 			})
-			return streamResponse(c, stream)
+			return adapter.streamResponse(c, stream)
 		}
 
 		let response: Awaited<ReturnType<Gateway['complete']>>
@@ -215,7 +221,7 @@ export function createRoutes(deps: RoutesDeps): Hono {
 				temperature: body.temperature,
 			})
 		} catch (err) {
-			return elsiumErrorResponse(c, err, 'Completion failed')
+			return elsiumErrorResponse(adapter, c, err, 'Completion failed')
 		}
 
 		deps.tracer?.trackLLMCall({
@@ -226,7 +232,7 @@ export function createRoutes(deps: RoutesDeps): Hono {
 			latencyMs: response.latencyMs,
 		})
 
-		return c.json({
+		return adapter.json(c, {
 			id: response.id,
 			message: response.message.content,
 			model: response.model,
@@ -236,15 +242,13 @@ export function createRoutes(deps: RoutesDeps): Hono {
 		})
 	})
 
-	// ─── List Agents ──────────────────────────────────────────
-
-	app.get('/agents', (c) => {
+	adapter.get(app, '/agents', (c) => {
 		const agents = Array.from(deps.agents.entries()).map(([name, agent]) => ({
 			name,
 			model: agent.config.model ?? 'default',
 			tools: agent.config.tools?.map((t) => t.name) ?? [],
 		}))
-		return c.json({ agents })
+		return adapter.json(c, { agents })
 	})
 
 	return app

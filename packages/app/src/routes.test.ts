@@ -3,9 +3,8 @@ import { ElsiumError, type LLMResponse, createStream } from '@elsium-ai/core'
 import type { Gateway } from '@elsium-ai/gateway'
 import type { Tracer } from '@elsium-ai/observe'
 import { describe, expect, it, vi } from 'vitest'
+import { honoAdapter } from './hono-adapter'
 import { type RoutesDeps, createRoutes } from './routes'
-
-// ─── Helpers ─────────────────────────────────────────────────────
 
 function makeLLMResponse(overrides: Partial<LLMResponse> = {}): LLMResponse {
 	return {
@@ -119,11 +118,9 @@ function rawReq(method: string, path: string, raw: string): Request {
 	})
 }
 
-// ─── GET /health ──────────────────────────────────────────────────
-
 describe('GET /health', () => {
 	it('returns status ok with version and providers', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.request('/health')
 		const json = await res.json()
 
@@ -136,7 +133,7 @@ describe('GET /health', () => {
 
 	it('reflects uptime since startTime', async () => {
 		const startTime = Date.now() - 5000
-		const app = createRoutes(setupDeps({ startTime }))
+		const app = createRoutes(honoAdapter, setupDeps({ startTime }))
 		const res = await app.request('/health')
 		const json = await res.json()
 
@@ -144,7 +141,7 @@ describe('GET /health', () => {
 	})
 
 	it('returns multiple providers', async () => {
-		const app = createRoutes(setupDeps({ providers: ['openai', 'anthropic'] }))
+		const app = createRoutes(honoAdapter, setupDeps({ providers: ['openai', 'anthropic'] }))
 		const res = await app.request('/health')
 		const json = await res.json()
 
@@ -153,11 +150,9 @@ describe('GET /health', () => {
 	})
 })
 
-// ─── GET /metrics ─────────────────────────────────────────────────
-
 describe('GET /metrics', () => {
 	it('returns metrics with tracer cost report', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.request('/metrics')
 		const json = await res.json()
 
@@ -170,7 +165,7 @@ describe('GET /metrics', () => {
 	})
 
 	it('returns zero values when no tracer is provided', async () => {
-		const app = createRoutes(setupDeps({ tracer: undefined }))
+		const app = createRoutes(honoAdapter, setupDeps({ tracer: undefined }))
 		const res = await app.request('/metrics')
 		const json = await res.json()
 
@@ -180,7 +175,7 @@ describe('GET /metrics', () => {
 	})
 
 	it('increments totalRequests per chat call', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		await app.fetch(jsonReq('POST', '/chat', { message: 'Hi' }))
 
 		const metricsRes = await app.request('/metrics')
@@ -189,11 +184,9 @@ describe('GET /metrics', () => {
 	})
 })
 
-// ─── POST /chat ───────────────────────────────────────────────────
-
 describe('POST /chat', () => {
 	it('runs default agent and returns response', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(jsonReq('POST', '/chat', { message: 'Hello' }))
 		const json = await res.json()
 
@@ -209,7 +202,7 @@ describe('POST /chat', () => {
 			['writer', mockAgent('writer', 'Written content')],
 			['coder', mockAgent('coder', 'Code content')],
 		])
-		const app = createRoutes(setupDeps({ agents, defaultAgent: agents.get('writer') }))
+		const app = createRoutes(honoAdapter, setupDeps({ agents, defaultAgent: agents.get('writer') }))
 
 		const res = await app.fetch(jsonReq('POST', '/chat', { message: 'Write', agent: 'coder' }))
 		const json = await res.json()
@@ -219,7 +212,7 @@ describe('POST /chat', () => {
 
 	it('tracks LLM call on tracer', async () => {
 		const tracer = mockTracer()
-		const app = createRoutes(setupDeps({ tracer }))
+		const app = createRoutes(honoAdapter, setupDeps({ tracer }))
 		await app.fetch(jsonReq('POST', '/chat', { message: 'Hello' }))
 
 		expect(tracer.trackLLMCall).toHaveBeenCalledOnce()
@@ -230,7 +223,7 @@ describe('POST /chat', () => {
 	})
 
 	it('returns 400 when message field is missing', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(jsonReq('POST', '/chat', {}))
 
 		expect(res.status).toBe(400)
@@ -239,7 +232,7 @@ describe('POST /chat', () => {
 	})
 
 	it('returns 400 for malformed JSON', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(rawReq('POST', '/chat', '{bad json'))
 
 		expect(res.status).toBe(400)
@@ -248,7 +241,7 @@ describe('POST /chat', () => {
 	})
 
 	it('returns 413 when body exceeds 1MB', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const bigBody = JSON.stringify({ message: 'x'.repeat(1_100_000) })
 		const res = await app.fetch(rawReq('POST', '/chat', bigBody))
 
@@ -256,7 +249,7 @@ describe('POST /chat', () => {
 	})
 
 	it('returns 404 for unknown agent name', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(jsonReq('POST', '/chat', { message: 'Hi', agent: 'missing' }))
 
 		expect(res.status).toBe(404)
@@ -265,7 +258,7 @@ describe('POST /chat', () => {
 	})
 
 	it('returns 404 when no default agent and no agent name', async () => {
-		const app = createRoutes(setupDeps({ agents: new Map(), defaultAgent: undefined }))
+		const app = createRoutes(honoAdapter, setupDeps({ agents: new Map(), defaultAgent: undefined }))
 		const res = await app.fetch(jsonReq('POST', '/chat', { message: 'Hi' }))
 
 		expect(res.status).toBe(404)
@@ -277,6 +270,7 @@ describe('POST /chat', () => {
 			throw ElsiumError.rateLimit('openai', 3000)
 		}
 		const app = createRoutes(
+			honoAdapter,
 			setupDeps({ agents: new Map([['failing', agent]]), defaultAgent: agent }),
 		)
 		const res = await app.fetch(jsonReq('POST', '/chat', { message: 'Hi' }))
@@ -292,6 +286,7 @@ describe('POST /chat', () => {
 			throw new Error('Unexpected crash')
 		}
 		const app = createRoutes(
+			honoAdapter,
 			setupDeps({ agents: new Map([['failing', agent]]), defaultAgent: agent }),
 		)
 		const res = await app.fetch(jsonReq('POST', '/chat', { message: 'Hi' }))
@@ -302,11 +297,9 @@ describe('POST /chat', () => {
 	})
 })
 
-// ─── POST /complete ───────────────────────────────────────────────
-
 describe('POST /complete', () => {
 	it('calls gateway.complete and returns response', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(
 			jsonReq('POST', '/complete', {
 				messages: [{ role: 'user', content: 'Hello' }],
@@ -326,7 +319,7 @@ describe('POST /complete', () => {
 		const gw = mockGateway()
 		gw.complete = completeSpy
 
-		const app = createRoutes(setupDeps({ gateway: gw }))
+		const app = createRoutes(honoAdapter, setupDeps({ gateway: gw }))
 		await app.fetch(
 			jsonReq('POST', '/complete', {
 				messages: [{ role: 'user', content: 'Hi' }],
@@ -347,28 +340,28 @@ describe('POST /complete', () => {
 
 	it('tracks LLM call on tracer', async () => {
 		const tracer = mockTracer()
-		const app = createRoutes(setupDeps({ tracer }))
+		const app = createRoutes(honoAdapter, setupDeps({ tracer }))
 		await app.fetch(jsonReq('POST', '/complete', { messages: [{ role: 'user', content: 'Hi' }] }))
 
 		expect(tracer.trackLLMCall).toHaveBeenCalledOnce()
 	})
 
 	it('returns 400 when messages array is absent', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(jsonReq('POST', '/complete', {}))
 
 		expect(res.status).toBe(400)
 	})
 
 	it('returns 400 when messages array is empty', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(jsonReq('POST', '/complete', { messages: [] }))
 
 		expect(res.status).toBe(400)
 	})
 
 	it('returns 400 for malformed JSON', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const res = await app.fetch(rawReq('POST', '/complete', 'not-json'))
 		const json = await res.json()
 
@@ -377,7 +370,7 @@ describe('POST /complete', () => {
 	})
 
 	it('returns 413 when body is too large', async () => {
-		const app = createRoutes(setupDeps())
+		const app = createRoutes(honoAdapter, setupDeps())
 		const bigBody = JSON.stringify({
 			messages: [{ role: 'user', content: 'x'.repeat(1_100_000) }],
 		})
@@ -391,7 +384,7 @@ describe('POST /complete', () => {
 		gw.complete = async () => {
 			throw ElsiumError.authError('openai')
 		}
-		const app = createRoutes(setupDeps({ gateway: gw }))
+		const app = createRoutes(honoAdapter, setupDeps({ gateway: gw }))
 		const res = await app.fetch(
 			jsonReq('POST', '/complete', { messages: [{ role: 'user', content: 'Hi' }] }),
 		)
@@ -406,7 +399,7 @@ describe('POST /complete', () => {
 		gw.complete = async () => {
 			throw new Error('Connection refused')
 		}
-		const app = createRoutes(setupDeps({ gateway: gw }))
+		const app = createRoutes(honoAdapter, setupDeps({ gateway: gw }))
 		const res = await app.fetch(
 			jsonReq('POST', '/complete', { messages: [{ role: 'user', content: 'Hi' }] }),
 		)
@@ -417,15 +410,13 @@ describe('POST /complete', () => {
 	})
 })
 
-// ─── GET /agents ──────────────────────────────────────────────────
-
 describe('GET /agents', () => {
 	it('returns list of registered agents', async () => {
 		const agents = new Map([
 			['writer', mockAgent('writer')],
 			['coder', mockAgent('coder')],
 		])
-		const app = createRoutes(setupDeps({ agents }))
+		const app = createRoutes(honoAdapter, setupDeps({ agents }))
 		const res = await app.request('/agents')
 		const json = await res.json()
 
@@ -437,7 +428,7 @@ describe('GET /agents', () => {
 	})
 
 	it('returns empty list when no agents registered', async () => {
-		const app = createRoutes(setupDeps({ agents: new Map() }))
+		const app = createRoutes(honoAdapter, setupDeps({ agents: new Map() }))
 		const res = await app.request('/agents')
 		const json = await res.json()
 
@@ -473,7 +464,7 @@ describe('GET /agents', () => {
 			resetMemory() {},
 		}
 
-		const app = createRoutes(setupDeps({ agents: new Map([['search-agent', agent]]) }))
+		const app = createRoutes(honoAdapter, setupDeps({ agents: new Map([['search-agent', agent]]) }))
 		const res = await app.request('/agents')
 		const json = await res.json()
 		const entry = json.agents[0]
@@ -486,7 +477,7 @@ describe('GET /agents', () => {
 		const agent = mockAgent('no-model')
 		agent.config = { name: 'no-model', system: 'Minimal' }
 
-		const app = createRoutes(setupDeps({ agents: new Map([['no-model', agent]]) }))
+		const app = createRoutes(honoAdapter, setupDeps({ agents: new Map([['no-model', agent]]) }))
 		const res = await app.request('/agents')
 		const json = await res.json()
 

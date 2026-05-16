@@ -1,15 +1,13 @@
 import { type Logger, createLogger, generateId, timingSafeEqualString } from '@elsium-ai/core'
-import type { Context, Next } from 'hono'
+import type { ServerAdapter } from './adapter'
 import type { AuthConfig, CorsConfig, RateLimitConfig } from './types'
 
-// ─── CORS ────────────────────────────────────────────────────────
-
-export function corsMiddleware(config: CorsConfig | boolean = true) {
+export function corsMiddleware(adapter: ServerAdapter, config: CorsConfig | boolean = true) {
 	const opts: CorsConfig =
 		typeof config === 'boolean' ? { origin: '*', methods: ['GET', 'POST', 'OPTIONS'] } : config
 
-	return async (c: Context, next: Next) => {
-		const requestOrigin = c.req.header('Origin') ?? ''
+	return async (c: unknown, next: () => Promise<void>) => {
+		const requestOrigin = adapter.header(c, 'Origin') ?? ''
 
 		let allowedOrigin: string
 		if (Array.isArray(opts.origin)) {
@@ -19,57 +17,54 @@ export function corsMiddleware(config: CorsConfig | boolean = true) {
 		}
 
 		if (allowedOrigin) {
-			c.res.headers.set('Access-Control-Allow-Origin', allowedOrigin)
-			c.res.headers.set('Vary', 'Origin')
+			adapter.setHeader(c, 'Access-Control-Allow-Origin', allowedOrigin)
+			adapter.setHeader(c, 'Vary', 'Origin')
 		}
-		c.res.headers.set(
+		adapter.setHeader(
+			c,
 			'Access-Control-Allow-Methods',
 			(opts.methods ?? ['GET', 'POST', 'OPTIONS']).join(', '),
 		)
-		c.res.headers.set(
+		adapter.setHeader(
+			c,
 			'Access-Control-Allow-Headers',
 			(opts.headers ?? ['Content-Type', 'Authorization']).join(', '),
 		)
 
 		if (opts.credentials) {
-			c.res.headers.set('Access-Control-Allow-Credentials', 'true')
+			adapter.setHeader(c, 'Access-Control-Allow-Credentials', 'true')
 		}
 
-		if (c.req.method === 'OPTIONS') {
-			return c.body(null, 200)
+		if (adapter.method(c) === 'OPTIONS') {
+			return adapter.body(c, null, 200)
 		}
 
 		await next()
 	}
 }
 
-// ─── Auth ────────────────────────────────────────────────────────
-
-export function authMiddleware(config: AuthConfig) {
-	return async (c: Context, next: Next) => {
-		// Skip health endpoint
-		if (c.req.path === '/health') {
+export function authMiddleware(adapter: ServerAdapter, config: AuthConfig) {
+	return async (c: unknown, next: () => Promise<void>) => {
+		if (adapter.path(c) === '/health') {
 			return next()
 		}
 
-		const authorization = c.req.header('Authorization')
+		const authorization = adapter.header(c, 'Authorization')
 
 		if (!authorization) {
-			return c.json({ error: 'Missing Authorization header' }, 401)
+			return adapter.json(c, { error: 'Missing Authorization header' }, 401)
 		}
 
 		if (config.type === 'bearer') {
 			const token = authorization.replace(/^Bearer\s+/, '')
 			if (!timingSafeEqualString(token, config.token)) {
-				return c.json({ error: 'Invalid token' }, 401)
+				return adapter.json(c, { error: 'Invalid token' }, 401)
 			}
 		}
 
 		await next()
 	}
 }
-
-// ─── Rate Limiting ───────────────────────────────────────────────
 
 function cleanupExpiredEntries(
 	requests: Map<string, { count: number; resetTime: number }>,
@@ -80,23 +75,20 @@ function cleanupExpiredEntries(
 	}
 }
 
-export function rateLimitMiddleware(config: RateLimitConfig) {
+export function rateLimitMiddleware(adapter: ServerAdapter, config: RateLimitConfig) {
 	const requests = new Map<string, { count: number; resetTime: number }>()
 
-	return async (c: Context, next: Next) => {
-		// Use CF-Connecting-IP (from trusted proxy) or fall back to a per-request hash
-		// Do NOT trust X-Forwarded-For as it's client-controlled
-		const clientId = c.req.header('CF-Connecting-IP') ?? c.req.header('X-Real-IP') ?? 'anonymous'
+	return async (c: unknown, next: () => Promise<void>) => {
+		const clientId =
+			adapter.header(c, 'CF-Connecting-IP') ?? adapter.header(c, 'X-Real-IP') ?? 'anonymous'
 		const now = Date.now()
 
-		// Periodic cleanup: evict expired entries when map grows large
 		if (requests.size > 10_000) {
 			cleanupExpiredEntries(requests, now)
 		}
 
-		// DoS protection: hard cap on map size
 		if (requests.size > 100_000) {
-			return c.json({ error: 'Too many requests', retryAfterMs: config.windowMs }, 429)
+			return adapter.json(c, { error: 'Too many requests', retryAfterMs: config.windowMs }, 429)
 		}
 
 		let record = requests.get(clientId)
@@ -108,52 +100,53 @@ export function rateLimitMiddleware(config: RateLimitConfig) {
 
 		record.count++
 
-		c.res.headers.set('X-RateLimit-Limit', String(config.maxRequests))
-		c.res.headers.set(
+		adapter.setHeader(c, 'X-RateLimit-Limit', String(config.maxRequests))
+		adapter.setHeader(
+			c,
 			'X-RateLimit-Remaining',
 			String(Math.max(0, config.maxRequests - record.count)),
 		)
-		c.res.headers.set('X-RateLimit-Reset', String(Math.ceil(record.resetTime / 1000)))
+		adapter.setHeader(c, 'X-RateLimit-Reset', String(Math.ceil(record.resetTime / 1000)))
 
 		if (record.count > config.maxRequests) {
-			return c.json({ error: 'Too many requests', retryAfterMs: record.resetTime - now }, 429)
+			return adapter.json(
+				c,
+				{ error: 'Too many requests', retryAfterMs: record.resetTime - now },
+				429,
+			)
 		}
 
 		await next()
 	}
 }
 
-// ─── Request ID ──────────────────────────────────────────────────
-
-export function requestIdMiddleware() {
-	return async (c: Context, next: Next) => {
-		const raw = c.req.header('X-Request-ID')
+export function requestIdMiddleware(adapter: ServerAdapter) {
+	return async (c: unknown, next: () => Promise<void>) => {
+		const raw = adapter.header(c, 'X-Request-ID')
 		const id = raw && /^[\w\-.:]{1,128}$/.test(raw) ? raw : generateId('req')
-		c.set('requestId', id)
+		adapter.set(c, 'requestId', id)
 
 		await next()
 
-		c.res.headers.set('X-Request-ID', id)
+		adapter.setHeader(c, 'X-Request-ID', id)
 	}
 }
 
-// ─── Request Logger ──────────────────────────────────────────────
-
-export function requestLoggerMiddleware(logger?: Logger) {
+export function requestLoggerMiddleware(adapter: ServerAdapter, logger?: Logger) {
 	const log = logger ?? createLogger()
 
-	return async (c: Context, next: Next) => {
+	return async (c: unknown, next: () => Promise<void>) => {
 		const start = Date.now()
 
 		await next()
 
 		const duration = Date.now() - start
-		log.info(`${c.req.method} ${c.req.path}`, {
-			method: c.req.method,
-			path: c.req.path,
-			status: c.res.status,
+		log.info(`${adapter.method(c)} ${adapter.path(c)}`, {
+			method: adapter.method(c),
+			path: adapter.path(c),
+			status: adapter.getStatus(c),
 			durationMs: duration,
-			requestId: c.get('requestId'),
+			requestId: adapter.getContext(c, 'requestId'),
 		})
 	}
 }

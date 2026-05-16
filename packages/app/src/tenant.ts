@@ -1,10 +1,8 @@
 import type { TenantContext } from '@elsium-ai/core'
 import { createLogger } from '@elsium-ai/core'
-import type { Context, Next } from 'hono'
+import type { ServerAdapter } from './adapter'
 
 const log = createLogger()
-
-// ─── Sliding Window Tracking ────────────────────────────────────
 
 interface UsageWindow {
 	tokens: number
@@ -15,26 +13,26 @@ interface UsageWindow {
 const tenantUsage = new Map<string, { minute: UsageWindow; day: UsageWindow }>()
 
 export interface TenantMiddlewareConfig {
-	extractTenant: (c: Context) => TenantContext | null
+	extractTenant: (c: unknown) => TenantContext | null
 	onUnknownTenant?: 'reject' | 'default'
 	defaultTenant?: TenantContext
 }
 
-export function tenantMiddleware(config: TenantMiddlewareConfig) {
+export function tenantMiddleware(adapter: ServerAdapter, config: TenantMiddlewareConfig) {
 	const { extractTenant, onUnknownTenant = 'reject', defaultTenant } = config
 
-	return async (c: Context, next: Next) => {
+	return async (c: unknown, next: () => Promise<void>) => {
 		const tenant = extractTenant(c)
 
 		if (!tenant) {
 			if (onUnknownTenant === 'default' && defaultTenant) {
-				c.set('tenant', defaultTenant)
+				adapter.set(c, 'tenant', defaultTenant)
 				log.debug('Using default tenant', { tenantId: defaultTenant.tenantId })
 			} else {
-				return c.json({ error: 'Tenant identification required' }, 401)
+				return adapter.json(c, { error: 'Tenant identification required' }, 401)
 			}
 		} else {
-			c.set('tenant', tenant)
+			adapter.set(c, 'tenant', tenant)
 			log.debug('Tenant identified', { tenantId: tenant.tenantId })
 		}
 
@@ -47,11 +45,11 @@ interface RateLimitEntry {
 	windowStart: number
 }
 
-export function tenantRateLimitMiddleware() {
+export function tenantRateLimitMiddleware(adapter: ServerAdapter) {
 	const windows = new Map<string, RateLimitEntry>()
 
-	return async (c: Context, next: Next) => {
-		const tenant = c.get('tenant') as TenantContext | undefined
+	return async (c: unknown, next: () => Promise<void>) => {
+		const tenant = adapter.getContext(c, 'tenant') as TenantContext | undefined
 		if (!tenant?.limits?.maxRequestsPerMinute) {
 			await next()
 			return
@@ -72,7 +70,8 @@ export function tenantRateLimitMiddleware() {
 		entry.count++
 
 		if (entry.count > limit) {
-			return c.json(
+			return adapter.json(
+				c,
 				{
 					error: 'Rate limit exceeded',
 					retryAfterMs: windowMs - (now - entry.windowStart),
@@ -84,8 +83,6 @@ export function tenantRateLimitMiddleware() {
 		await next()
 	}
 }
-
-// ─── Tenant Budget Middleware ───────────────────────────────────
 
 function getOrCreateUsage(tenantId: string) {
 	let usage = tenantUsage.get(tenantId)
@@ -109,9 +106,9 @@ function resetWindowIfExpired(window: UsageWindow, durationMs: number): void {
 	}
 }
 
-export function tenantBudgetMiddleware() {
-	return async (c: Context, next: Next) => {
-		const tenant = c.get('tenant') as TenantContext | undefined
+export function tenantBudgetMiddleware(adapter: ServerAdapter) {
+	return async (c: unknown, next: () => Promise<void>) => {
+		const tenant = adapter.getContext(c, 'tenant') as TenantContext | undefined
 		if (!tenant?.limits) {
 			await next()
 			return
@@ -119,27 +116,24 @@ export function tenantBudgetMiddleware() {
 
 		const usage = getOrCreateUsage(tenant.tenantId)
 
-		// Reset expired windows
 		resetWindowIfExpired(usage.minute, 60_000)
 		resetWindowIfExpired(usage.day, 86_400_000)
 
-		// Pre-check: deny if already exceeded
 		if (
 			tenant.limits.maxTokensPerMinute &&
 			usage.minute.tokens >= tenant.limits.maxTokensPerMinute
 		) {
-			return c.json({ error: 'Token rate limit exceeded', retryAfterMs: 60_000 }, 429)
+			return adapter.json(c, { error: 'Token rate limit exceeded', retryAfterMs: 60_000 }, 429)
 		}
 
 		if (tenant.limits.maxCostPerDay && usage.day.cost >= tenant.limits.maxCostPerDay) {
-			return c.json({ error: 'Daily cost limit exceeded' }, 429)
+			return adapter.json(c, { error: 'Daily cost limit exceeded' }, 429)
 		}
 
 		await next()
 
-		// Post-response: track usage from response headers or body
-		const tokenCount = Number(c.res.headers.get('x-token-count')) || 0
-		const cost = Number(c.res.headers.get('x-cost')) || 0
+		const tokenCount = Number(adapter.res(c).headers.get('x-token-count')) || 0
+		const cost = Number(adapter.res(c).headers.get('x-cost')) || 0
 
 		if (tokenCount > 0) {
 			usage.minute.tokens += tokenCount

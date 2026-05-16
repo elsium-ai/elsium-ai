@@ -6,6 +6,7 @@ import { observe } from '@elsium-ai/observe'
 import { Hono } from 'hono'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app'
+import { honoAdapter } from './hono-adapter'
 import {
 	authMiddleware,
 	corsMiddleware,
@@ -14,8 +15,6 @@ import {
 	requestLoggerMiddleware,
 } from './middleware'
 import { type RoutesDeps, createRoutes } from './routes'
-
-// ─── Helpers ─────────────────────────────────────────────────────
 
 function mockGateway(responseOverrides: Partial<LLMResponse> = {}): Gateway {
 	const response: LLMResponse = {
@@ -95,7 +94,7 @@ function setupRoutes(overrides: Partial<RoutesDeps> = {}): Hono {
 		providers: ['anthropic'],
 		...overrides,
 	}
-	return createRoutes(deps)
+	return createRoutes(honoAdapter, deps)
 }
 
 function req(method: string, path: string, body?: unknown): Request {
@@ -112,8 +111,6 @@ function rawReq(method: string, path: string, rawBody: string): Request {
 	})
 }
 
-// ─── Health ──────────────────────────────────────────────────────
-
 describe('GET /health', () => {
 	it('returns ok status', async () => {
 		const app = setupRoutes()
@@ -128,8 +125,6 @@ describe('GET /health', () => {
 	})
 })
 
-// ─── Metrics ─────────────────────────────────────────────────────
-
 describe('GET /metrics', () => {
 	it('returns metrics', async () => {
 		const app = setupRoutes()
@@ -142,8 +137,6 @@ describe('GET /metrics', () => {
 		expect(json.totalCost).toBe(0)
 	})
 })
-
-// ─── Chat ────────────────────────────────────────────────────────
 
 describe('POST /chat', () => {
 	it('chats with default agent', async () => {
@@ -255,8 +248,6 @@ describe('POST /chat', () => {
 	})
 })
 
-// ─── Complete ────────────────────────────────────────────────────
-
 describe('POST /complete', () => {
 	it('completes with gateway', async () => {
 		const app = setupRoutes()
@@ -326,8 +317,6 @@ describe('POST /complete', () => {
 	})
 })
 
-// ─── Agents List ─────────────────────────────────────────────────
-
 describe('GET /agents', () => {
 	it('lists available agents', async () => {
 		const agents = new Map([
@@ -346,12 +335,10 @@ describe('GET /agents', () => {
 	})
 })
 
-// ─── CORS Middleware ─────────────────────────────────────────────
-
 describe('corsMiddleware', () => {
 	it('adds CORS headers', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware({ origin: ['http://example.com'] }))
+		app.use('*', corsMiddleware(honoAdapter, { origin: ['http://example.com'] }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const corsReq = new Request('http://localhost/test', {
@@ -364,7 +351,7 @@ describe('corsMiddleware', () => {
 
 	it('handles preflight OPTIONS', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware())
+		app.use('*', corsMiddleware(honoAdapter))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(req('OPTIONS', '/test'))
@@ -373,7 +360,7 @@ describe('corsMiddleware', () => {
 
 	it('allows all origins when config is true', async () => {
 		const app = new Hono()
-		app.use('*', corsMiddleware(true))
+		app.use('*', corsMiddleware(honoAdapter, true))
 		app.get('/test', (c) => c.text('ok'))
 
 		const corsReq = new Request('http://localhost/test', {
@@ -385,12 +372,10 @@ describe('corsMiddleware', () => {
 	})
 })
 
-// ─── Auth Middleware ─────────────────────────────────────────────
-
 describe('authMiddleware', () => {
 	it('allows requests with valid token', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'secret123' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'secret123' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const r = new Request('http://localhost/test', {
@@ -402,7 +387,7 @@ describe('authMiddleware', () => {
 
 	it('rejects requests without token', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'secret123' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'secret123' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(req('GET', '/test'))
@@ -411,7 +396,7 @@ describe('authMiddleware', () => {
 
 	it('rejects invalid tokens', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'secret123' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'secret123' }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const r = new Request('http://localhost/test', {
@@ -423,7 +408,7 @@ describe('authMiddleware', () => {
 
 	it('skips auth for health endpoint', async () => {
 		const app = new Hono()
-		app.use('*', authMiddleware({ type: 'bearer', token: 'secret123' }))
+		app.use('*', authMiddleware(honoAdapter, { type: 'bearer', token: 'secret123' }))
 		app.get('/health', (c) => c.json({ status: 'ok' }))
 
 		const res = await app.fetch(req('GET', '/health'))
@@ -431,12 +416,10 @@ describe('authMiddleware', () => {
 	})
 })
 
-// ─── Rate Limit Middleware ───────────────────────────────────────
-
 describe('rateLimitMiddleware', () => {
 	it('allows requests within limit', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 5 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 5 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(req('GET', '/test'))
@@ -446,7 +429,7 @@ describe('rateLimitMiddleware', () => {
 
 	it('blocks requests over limit', async () => {
 		const app = new Hono()
-		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 2 }))
+		app.use('*', rateLimitMiddleware(honoAdapter, { windowMs: 60_000, maxRequests: 2 }))
 		app.get('/test', (c) => c.text('ok'))
 
 		await app.fetch(req('GET', '/test'))
@@ -459,12 +442,10 @@ describe('rateLimitMiddleware', () => {
 	})
 })
 
-// ─── Request ID Middleware ───────────────────────────────────────
-
 describe('requestIdMiddleware', () => {
 	it('generates a request ID when none is sent', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ requestId: c.get('requestId') }))
 
 		const res = await app.fetch(req('GET', '/test'))
@@ -476,7 +457,7 @@ describe('requestIdMiddleware', () => {
 
 	it('passes through incoming X-Request-ID', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ requestId: c.get('requestId') }))
 
 		const r = new Request('http://localhost/test', {
@@ -491,7 +472,7 @@ describe('requestIdMiddleware', () => {
 
 	it('rejects malicious X-Request-ID and generates a new one', async () => {
 		const app = new Hono()
-		app.use('*', requestIdMiddleware())
+		app.use('*', requestIdMiddleware(honoAdapter))
 		app.get('/test', (c) => c.json({ requestId: c.get('requestId') }))
 
 		const r = new Request('http://localhost/test', {
@@ -505,12 +486,10 @@ describe('requestIdMiddleware', () => {
 	})
 })
 
-// ─── Request Logger Middleware ───────────────────────────────────
-
 describe('requestLoggerMiddleware', () => {
 	it('runs without error', async () => {
 		const app = new Hono()
-		app.use('*', requestLoggerMiddleware())
+		app.use('*', requestLoggerMiddleware(honoAdapter))
 		app.get('/test', (c) => c.text('ok'))
 
 		const res = await app.fetch(req('GET', '/test'))
@@ -518,11 +497,8 @@ describe('requestLoggerMiddleware', () => {
 	})
 })
 
-// ─── createApp ───────────────────────────────────────────────────
-
 describe('createApp', () => {
 	beforeEach(() => {
-		// Register a mock provider so createApp can instantiate a gateway
 		registerProviderFactory('mock-app', () => ({
 			name: 'mock-app',
 			defaultModel: 'mock-model',
@@ -550,7 +526,7 @@ describe('createApp', () => {
 		}))
 	})
 
-	it('creates an app with hono, gateway, and tracer', () => {
+	it('creates an app with instance, gateway, and tracer', () => {
 		const app = createApp({
 			gateway: {
 				providers: {
@@ -560,7 +536,7 @@ describe('createApp', () => {
 			},
 		})
 
-		expect(app.hono).toBeInstanceOf(Hono)
+		expect(app.instance).toBeInstanceOf(Hono)
 		expect(app.gateway).toBeDefined()
 		expect(app.gateway.complete).toBeTypeOf('function')
 		expect(app.gateway.stream).toBeTypeOf('function')
@@ -598,8 +574,7 @@ describe('createApp', () => {
 			agents: [agent],
 		})
 
-		// Test health endpoint through the Hono instance
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.instance.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(200)
@@ -638,7 +613,7 @@ describe('createApp', () => {
 			agents: [agent],
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/agents', { method: 'GET' }))
+		const res = await app.instance.fetch(new Request('http://localhost/agents', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(200)
@@ -664,7 +639,7 @@ describe('createApp', () => {
 			version: '1.2.3',
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.instance.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(json.version).toBe('1.2.3')
@@ -677,7 +652,7 @@ describe('createApp', () => {
 			},
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.instance.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(json.version).toBe('0.2.2')
@@ -690,7 +665,9 @@ describe('createApp', () => {
 			},
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/nonexistent', { method: 'GET' }))
+		const res = await app.instance.fetch(
+			new Request('http://localhost/nonexistent', { method: 'GET' }),
+		)
 		const json = await res.json()
 
 		expect(res.status).toBe(404)

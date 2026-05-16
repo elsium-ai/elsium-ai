@@ -7,10 +7,8 @@ import {
 } from '@elsium-ai/core'
 import { type Gateway, type ProviderMesh, createProviderMesh, gateway } from '@elsium-ai/gateway'
 import { type Tracer, observe } from '@elsium-ai/observe'
-
-const log = createLogger()
-import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
+import type { ServerAdapter } from './adapter'
+import { honoAdapter } from './hono-adapter'
 import {
 	authMiddleware,
 	corsMiddleware,
@@ -21,30 +19,36 @@ import {
 import { createRoutes } from './routes'
 import type { AppConfig } from './types'
 
-export interface ElsiumApp {
-	readonly hono: Hono
+const log = createLogger()
+
+export interface ElsiumApp<TInstance = unknown> {
+	readonly instance: TInstance
 	readonly gateway: Gateway
 	readonly mesh: ProviderMesh | undefined
 	readonly tracer: Tracer
 	listen(port?: number): { port: number; stop: () => Promise<void> }
 }
 
-export function createApp(config: AppConfig): ElsiumApp {
-	const app = new Hono()
+export function createApp<TInstance = unknown>(config: AppConfig): ElsiumApp<TInstance> {
+	const adapter: ServerAdapter<TInstance> =
+		(config.server?.adapter as ServerAdapter<TInstance>) ??
+		(honoAdapter as unknown as ServerAdapter<TInstance>)
+
+	const app = adapter.create()
 
 	// ─── Global Error Handler ─────────────────────────────────
 
-	app.onError((err, c) => {
+	adapter.onError(app, (err, c) => {
 		const statusCode = err instanceof ElsiumError ? (err.statusCode ?? 500) : 500
 		const code = err instanceof ElsiumError ? err.code : 'UNKNOWN'
-		log.error('Unhandled error', { error: err.message, code, path: c.req.path })
-		return c.json({ error: err.message, code }, statusCode as 500)
+		log.error('Unhandled error', { error: err.message, code, path: adapter.path(c) })
+		return adapter.json(c, { error: err.message, code }, statusCode)
 	})
 
 	// ─── Not Found Handler ────────────────────────────────────
 
-	app.notFound((c) => {
-		return c.json({ error: 'Not found' }, 404)
+	adapter.notFound(app, (c) => {
+		return adapter.json(c, { error: 'Not found' }, 404)
 	})
 
 	// ─── Gateway ──────────────────────────────────────────────
@@ -99,19 +103,19 @@ export function createApp(config: AppConfig): ElsiumApp {
 
 	const serverConfig = config.server ?? {}
 
-	app.use('*', requestIdMiddleware())
-	app.use('*', requestLoggerMiddleware(log))
+	adapter.use(app, requestIdMiddleware(adapter))
+	adapter.use(app, requestLoggerMiddleware(adapter, log))
 
 	if (serverConfig.cors) {
-		app.use('*', corsMiddleware(serverConfig.cors))
+		adapter.use(app, corsMiddleware(adapter, serverConfig.cors))
 	}
 
 	if (serverConfig.auth) {
-		app.use('*', authMiddleware(serverConfig.auth))
+		adapter.use(app, authMiddleware(adapter, serverConfig.auth))
 	}
 
 	if (serverConfig.rateLimit) {
-		app.use('*', rateLimitMiddleware(serverConfig.rateLimit))
+		adapter.use(app, rateLimitMiddleware(adapter, serverConfig.rateLimit))
 	}
 
 	// ─── Agents ───────────────────────────────────────────────
@@ -127,7 +131,7 @@ export function createApp(config: AppConfig): ElsiumApp {
 
 	// ─── Routes ───────────────────────────────────────────────
 
-	const routes = createRoutes({
+	const routes = createRoutes(adapter, {
 		gateway: gw,
 		mesh,
 		agents: agentMap,
@@ -138,12 +142,12 @@ export function createApp(config: AppConfig): ElsiumApp {
 		providers: providerNames,
 	})
 
-	app.route('/', routes)
+	adapter.route(app, '/', routes)
 
 	// ─── Return ───────────────────────────────────────────────
 
 	return {
-		hono: app,
+		instance: app,
 		gateway: gw,
 		mesh,
 		tracer,
@@ -152,11 +156,7 @@ export function createApp(config: AppConfig): ElsiumApp {
 			const listenPort = port ?? serverConfig.port ?? 3000
 			const hostname = serverConfig.hostname ?? '0.0.0.0'
 
-			const server = serve({
-				fetch: app.fetch,
-				port: listenPort,
-				hostname,
-			})
+			const { port: actualPort, close } = adapter.listen(app, listenPort, hostname)
 
 			let shutdownManager: ShutdownManager | undefined
 			if (serverConfig.gracefulShutdown) {
@@ -177,12 +177,12 @@ export function createApp(config: AppConfig): ElsiumApp {
 			})
 
 			return {
-				port: listenPort,
+				port: actualPort,
 				stop: async () => {
 					if (shutdownManager) {
 						await shutdownManager.shutdown()
 					}
-					server.close()
+					close()
 				},
 			}
 		},

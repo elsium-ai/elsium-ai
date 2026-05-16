@@ -1,5 +1,5 @@
 import { createLogger } from '@elsium-ai/core'
-import type { Context, Next } from 'hono'
+import type { ServerAdapter } from './adapter'
 
 const log = createLogger()
 
@@ -27,13 +27,16 @@ export interface Role {
 export interface RBACConfig {
 	roles: Role[]
 	defaultRole?: string
-	roleExtractor?: (c: Context) => string | undefined
+	roleExtractor?: (c: unknown) => string | undefined
 	trustRoleHeader?: boolean
 }
 
 export interface RBAC {
 	hasPermission(role: string, permission: Permission): boolean
-	middleware(required: Permission): (c: Context, next: Next) => Promise<Response | undefined>
+	middleware(
+		adapter: ServerAdapter,
+		required: Permission,
+	): (c: unknown, next: () => Promise<void>) => Promise<Response | undefined>
 	getRolePermissions(role: string): Permission[]
 }
 
@@ -67,10 +70,9 @@ const BUILT_IN_ROLES: Role[] = [
 function matchPermission(granted: Permission, required: Permission): boolean {
 	if (granted === required) return true
 
-	// Wildcard matching: model:use:* matches model:use:gpt-4o
 	if (granted.endsWith(':*')) {
-		const prefix = granted.slice(0, -1) // Remove the *
-		return required.startsWith(prefix) || required === granted.slice(0, -2) // model:use:* also grants model:use
+		const prefix = granted.slice(0, -1)
+		return required.startsWith(prefix) || required === granted.slice(0, -2)
 	}
 
 	return false
@@ -85,18 +87,16 @@ export function createRBAC(config: RBACConfig): RBAC {
 
 	const roleMap = new Map<string, Role>()
 
-	// Register built-in roles first (can be overridden)
 	for (const role of BUILT_IN_ROLES) {
 		roleMap.set(role.name, role)
 	}
 
-	// Register user-defined roles (override built-ins)
 	for (const role of config.roles) {
 		roleMap.set(role.name, role)
 	}
 
 	function flattenPermissions(roleName: string, visited = new Set<string>()): Permission[] {
-		if (visited.has(roleName)) return [] // Prevent circular inheritance
+		if (visited.has(roleName)) return []
 		visited.add(roleName)
 
 		const role = roleMap.get(roleName)
@@ -123,13 +123,13 @@ export function createRBAC(config: RBACConfig): RBAC {
 			return [...new Set(flattenPermissions(roleName))]
 		},
 
-		middleware(required: Permission) {
-			return async (c: Context, next: Next): Promise<Response | undefined> => {
+		middleware(adapter, required) {
+			return async (c: unknown, next: () => Promise<void>): Promise<Response | undefined> => {
 				const extractor =
 					config.roleExtractor ??
-					((ctx: Context) => {
+					((ctx: unknown) => {
 						if (config.trustRoleHeader) {
-							return ctx.req.header('X-Role') ?? config.defaultRole ?? 'viewer'
+							return adapter.header(ctx, 'X-Role') ?? config.defaultRole ?? 'viewer'
 						}
 						return config.defaultRole ?? 'viewer'
 					})
@@ -137,17 +137,17 @@ export function createRBAC(config: RBACConfig): RBAC {
 				const roleName = extractor(c)
 
 				if (!roleName) {
-					return c.json({ error: 'No role assigned' }, 403)
+					return adapter.json(c, { error: 'No role assigned' }, 403)
 				}
 
 				if (!roleMap.has(roleName)) {
-					return c.json({ error: `Unknown role: ${roleName}` }, 403)
+					return adapter.json(c, { error: `Unknown role: ${roleName}` }, 403)
 				}
 
 				const hasAccess = flattenPermissions(roleName).some((p) => matchPermission(p, required))
 
 				if (!hasAccess) {
-					return c.json({ error: `Insufficient permissions. Required: ${required}` }, 403)
+					return adapter.json(c, { error: `Insufficient permissions. Required: ${required}` }, 403)
 				}
 
 				await next()
