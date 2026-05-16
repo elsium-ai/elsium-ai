@@ -16,10 +16,10 @@ export const honoAdapter: ServerAdapter<Hono> = {
 	},
 
 	use(app, handler) {
-		app.use('*', (c: Context, next: Next) => {
-			const result = handler(c, next)
-			return result as ReturnType<typeof handler>
-		})
+		app.use(
+			'*',
+			(c: Context, next: Next) => handler(c, next) as unknown as Promise<Response | undefined>,
+		)
 	},
 
 	get(app, path, handler) {
@@ -51,11 +51,11 @@ export const honoAdapter: ServerAdapter<Hono> = {
 	},
 
 	json(c, data, status) {
-		return (c as Context).json(data, status)
+		return (c as Context).json(data, status as any)
 	},
 
 	body(c, data, status) {
-		return (c as Context).body(data, status as 200 | 400 | 401 | 403 | 404 | 413 | 429 | 500)
+		return (c as Context).body(data as any, status as any)
 	},
 
 	header(c, name) {
