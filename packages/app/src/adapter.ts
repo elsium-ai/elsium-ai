@@ -2,7 +2,6 @@ import type { ElsiumStream } from '@elsium-ai/core'
 
 export type NextHandler = () => Promise<void>
 
-// biome-ignore lint/suspicious/noConfusingVoidType: void needed in union for Promise<void> middleware
 export type MiddlewareHandler = (
 	c: unknown,
 	next: NextHandler,

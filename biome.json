@@ -34,6 +34,18 @@
 			"trailingCommas": "all"
 		}
 	},
+	"overrides": [
+		{
+			"include": ["packages/app/src/adapter.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConfusingVoidType": "off"
+					}
+				}
+			}
+		}
+	],
 	"files": {
 		"ignore": ["node_modules", "dist", ".changeset", "coverage", "*.json", "*.d.ts", "*.d.ts.map"]
 	}
