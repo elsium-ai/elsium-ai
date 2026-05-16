@@ -742,7 +742,6 @@ export {
 	// SSE
 	sseHeaders,
 	formatSSE,
-	streamResponse,
 	// Tenant
 	tenantMiddleware,
 	tenantRateLimitMiddleware,
