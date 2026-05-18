@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import { describe, expect, it, vi } from 'vitest'
 import type { MCPClient, MCPClientConfig, MCPToolInfo } from './client'
 import type { MCPAuditEvent, MCPAuditLogger } from './trust'
 import { createTrustedMCPClient } from './trust'
@@ -305,9 +305,7 @@ describe('callTool', () => {
 				},
 			],
 		})
-		await expect(client.callTool('delete-file', {})).rejects.toThrow(
-			/not allowed/,
-		)
+		await expect(client.callTool('delete-file', {})).rejects.toThrow(/not allowed/)
 	})
 
 	it('throws for tool not in allowed list', async () => {
@@ -320,9 +318,7 @@ describe('callTool', () => {
 				},
 			],
 		})
-		await expect(client.callTool('write-file', {})).rejects.toThrow(
-			/not allowed/,
-		)
+		await expect(client.callTool('write-file', {})).rejects.toThrow(/not allowed/)
 	})
 
 	it('throws when output exceeds default size limit', async () => {
@@ -341,9 +337,7 @@ describe('callTool', () => {
 			getPrompt: vi.fn().mockResolvedValue([]),
 		})
 		const client = createTrustedMCPClient(createMockMCPConfig(), {})
-		await expect(client.callTool('read-file', {})).rejects.toThrow(
-			/exceeds maximum size/,
-		)
+		await expect(client.callTool('read-file', {})).rejects.toThrow(/exceeds maximum size/)
 	})
 
 	it('throws when output exceeds custom size limit', async () => {
@@ -364,9 +358,7 @@ describe('callTool', () => {
 		const client = createTrustedMCPClient(createMockMCPConfig(), {
 			maxToolOutputSize: 50,
 		})
-		await expect(client.callTool('read-file', {})).rejects.toThrow(
-			/exceeds maximum size/,
-		)
+		await expect(client.callTool('read-file', {})).rejects.toThrow(/exceeds maximum size/)
 	})
 
 	it('handles string output for size check', async () => {
@@ -384,9 +376,7 @@ describe('callTool', () => {
 			getPrompt: vi.fn().mockResolvedValue([]),
 		})
 		const client = createTrustedMCPClient(createMockMCPConfig(), {})
-		await expect(client.callTool('read-file', {})).rejects.toThrow(
-			/exceeds maximum size/,
-		)
+		await expect(client.callTool('read-file', {})).rejects.toThrow(/exceeds maximum size/)
 	})
 
 	it('audits tool_call and tool_result events on success', async () => {
@@ -501,9 +491,9 @@ describe('generateManifest', () => {
 			connected: false,
 			connect: vi.fn(),
 			disconnect: vi.fn(),
-			listTools: vi.fn().mockResolvedValue([
-				{ name: 'tool-a', description: 'A', inputSchema: { type: 'object' } },
-			]),
+			listTools: vi
+				.fn()
+				.mockResolvedValue([{ name: 'tool-a', description: 'A', inputSchema: { type: 'object' } }]),
 			callTool: vi.fn(),
 			toElsiumTools: vi.fn().mockResolvedValue([]),
 			listResources: vi.fn().mockResolvedValue([]),
@@ -513,14 +503,13 @@ describe('generateManifest', () => {
 		})
 		const clientA = createTrustedMCPClient(createMockMCPConfig(), {})
 		const mA = await clientA.generateManifest()
-
 		;(createMCPClient as ReturnType<typeof vi.fn>).mockReturnValueOnce({
 			connected: false,
 			connect: vi.fn(),
 			disconnect: vi.fn(),
-			listTools: vi.fn().mockResolvedValue([
-				{ name: 'tool-b', description: 'B', inputSchema: { type: 'object' } },
-			]),
+			listTools: vi
+				.fn()
+				.mockResolvedValue([{ name: 'tool-b', description: 'B', inputSchema: { type: 'object' } }]),
 			callTool: vi.fn(),
 			toElsiumTools: vi.fn().mockResolvedValue([]),
 			listResources: vi.fn().mockResolvedValue([]),
@@ -546,9 +535,7 @@ describe('verifyManifest', () => {
 		const { createMCPClient } = await import('./client')
 		const manifest = {
 			serverName: 'test-server',
-			tools: [
-				{ name: 'read-file', description: 'Read', inputSchemaHash: 'abc' },
-			],
+			tools: [{ name: 'read-file', description: 'Read', inputSchemaHash: 'abc' }],
 			generatedAt: Date.now(),
 			hash: 'different-hash-value',
 		}
@@ -560,9 +547,7 @@ describe('verifyManifest', () => {
 		const logger = createMockAuditLogger()
 		const manifest = {
 			serverName: 'test-server',
-			tools: [
-				{ name: 'read-file', description: 'Read', inputSchemaHash: 'abc' },
-			],
+			tools: [{ name: 'read-file', description: 'Read', inputSchemaHash: 'abc' }],
 			generatedAt: Date.now(),
 			hash: 'fake-hash',
 		}
