@@ -11,10 +11,7 @@ const log = createLogger()
 export function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
 	if (!('_def' in schema)) return { type: 'object' }
 
-	const result = libZodToJsonSchema(schema, {
-		$schema: null,
-		ignoreUnknownDefinitions: true,
-	}) as Record<string, unknown>
+	const result = libZodToJsonSchema(schema) as Record<string, unknown>
 
 	return postProcess(result)
 }
