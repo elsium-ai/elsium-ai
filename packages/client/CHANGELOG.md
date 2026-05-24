@@ -1,5 +1,18 @@
 # @elsium-ai/client
 
+## 0.15.0
+
+### Patch Changes
+
+- Updated dependencies [35bad42]
+- Updated dependencies [6a9adac]
+- Updated dependencies [409ab6f]
+- Updated dependencies [0bfee9e]
+- Updated dependencies [11126a4]
+- Updated dependencies [ea71268]
+- Updated dependencies [09ae00a]
+  - @elsium-ai/core@0.15.0
+
 ## 0.14.0
 
 ### Patch Changes

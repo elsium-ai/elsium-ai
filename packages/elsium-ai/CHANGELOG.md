@@ -1,5 +1,37 @@
 # elsium-ai
 
+## 0.15.0
+
+### Patch Changes
+
+- 409ab6f: Docs round 2 — close documentation gaps for the six MVP features shipped in 0.12.x. Adds full sections to `docs/fundamentals.md` and `docs/getting-started.md` for thinking/reasoning stream events, `withToolTypes` typed tool-call streams, CARG cost-aware routed generation, tool contracts (`sideEffectLevel` + idempotency + preconditions + `dryRunHandler`), `askHuman` durable human-in-the-loop, and `replayFrom` time-travel replay. Extends the relevant package READMEs (`packages/tools`, `packages/agents`, `packages/testing`) with What's-Inside table rows and standalone sections. Adds runnable examples — `examples/carg-cascade/`, `examples/thinking-stream/`, `examples/typed-tool-stream/`, `examples/tool-contracts/`, `examples/ask-human/`, `examples/replay-from/` — and refreshes `examples/README.md` to index them. Docs/examples only; no runtime behavior change.
+- Updated dependencies [9061574]
+- Updated dependencies [35bad42]
+- Updated dependencies [6491511]
+- Updated dependencies [2445e26]
+- Updated dependencies [6a9adac]
+- Updated dependencies [a46946f]
+- Updated dependencies [409ab6f]
+- Updated dependencies [0bfee9e]
+- Updated dependencies [61be1c2]
+- Updated dependencies [dcad45e]
+- Updated dependencies [11126a4]
+- Updated dependencies [dabe46d]
+- Updated dependencies [ea71268]
+- Updated dependencies [33c71e1]
+- Updated dependencies [09ae00a]
+  - @elsium-ai/agents@0.15.0
+  - @elsium-ai/core@0.15.0
+  - @elsium-ai/observe@0.15.0
+  - @elsium-ai/gateway@0.15.0
+  - @elsium-ai/mcp@0.15.0
+  - @elsium-ai/rag@0.15.0
+  - @elsium-ai/tools@0.15.0
+  - @elsium-ai/testing@0.15.0
+  - @elsium-ai/app@0.15.0
+  - @elsium-ai/client@0.15.0
+  - @elsium-ai/workflows@0.15.0
+
 ## 0.14.0
 
 ### Patch Changes
