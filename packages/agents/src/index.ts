@@ -176,3 +176,32 @@ export type {
 	VerifiedMessage,
 	MemoryIntegrityResult,
 } from './stores/index'
+
+// VAG — Verification-Augmented Generation
+export {
+	runWithVerification,
+	composeValidators,
+	zodValidator,
+	regexValidator,
+	semanticAdapter,
+	externalValidator,
+} from './verification/index'
+export type {
+	Validator,
+	ValidationContext,
+	ValidationOutcome,
+	ValidationFailure,
+	RepairContext,
+	GenerateFn,
+	VerificationConfig,
+	VerificationOutcome,
+	VerificationSuccess,
+	VerificationAbort,
+	VerificationAttempt,
+	ComposeValidatorsOptions,
+	ZodValidatorOptions,
+	RegexValidatorOptions,
+	SemanticAdapterOptions,
+	ExternalValidatorOptions,
+	ExternalCheck,
+} from './verification/index'

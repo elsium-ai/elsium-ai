@@ -390,6 +390,13 @@ export {
 	createSecureMemoryStore,
 	computeMessageHash,
 	verifyMessageChain,
+	// VAG — Verification-Augmented Generation
+	runWithVerification,
+	composeValidators,
+	zodValidator,
+	regexValidator,
+	semanticAdapter,
+	externalValidator,
 } from '@elsium-ai/agents'
 
 export type {
@@ -504,6 +511,24 @@ export type {
 	IntegrityMetadata,
 	VerifiedMessage,
 	MemoryIntegrityResult,
+	// VAG types
+	Validator,
+	ValidationContext,
+	ValidationOutcome,
+	ValidationFailure,
+	RepairContext,
+	GenerateFn,
+	VerificationConfig,
+	VerificationOutcome as AgentVerificationOutcome,
+	VerificationSuccess,
+	VerificationAbort,
+	VerificationAttempt,
+	ComposeValidatorsOptions,
+	ZodValidatorOptions,
+	RegexValidatorOptions,
+	SemanticAdapterOptions,
+	ExternalValidatorOptions,
+	ExternalCheck,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────
