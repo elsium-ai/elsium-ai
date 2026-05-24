@@ -26,6 +26,7 @@ npm install @elsium-ai/core
 | **Request Dedup** | `createDedup()`, `dedupMiddleware()`, `DedupConfig`, `Dedup` |
 | **Policy Engine** | `createPolicySet()`, `policyMiddleware()`, `modelAccessPolicy()`, `tokenLimitPolicy()`, `costLimitPolicy()`, `contentPolicy()`, `PolicyDecision`, `PolicyResult`, `PolicyContext`, `PolicyRule`, `PolicyConfig`, `PolicySet` |
 | **Shutdown** | `createShutdownManager()`, `ShutdownConfig`, `ShutdownManager` |
+| **Crypto foundation** | `generateEd25519KeyPair()`, `createEd25519Signer()`, `createEd25519Verifier()`, `createKeyRegistry()`, `createInMemoryWriteOnceStore()`, `createFileWriteOnceStore()`, `Signature`, `VerifyResult`, `Signer`, `Verifier`, `KeyRegistry`, `WriteOnceStore` |
 
 ---
 
@@ -1140,6 +1141,79 @@ console.log(shutdown.inFlight) // 0 after completion
 // Cleanup in tests
 shutdown.dispose()
 ```
+
+---
+
+## Crypto Foundation
+
+Primitive cryptography for upstream packages that need signed audit trails, verifiable execution proofs, and tamper-evident storage. These primitives are deliberately low-level — they are the building blocks for ElsiumAI's verifiable agent execution and capability token systems.
+
+### Ed25519 signing
+
+```ts
+import { generateEd25519KeyPair, createEd25519Signer, createEd25519Verifier, createKeyRegistry } from '@elsium-ai/core'
+
+const pair = generateEd25519KeyPair()
+// pair.privateKey: PKCS#8 PEM
+// pair.publicKey:  SPKI PEM
+// pair.fingerprint: SHA-256 hex of SPKI DER
+
+const signer = createEd25519Signer({ privateKey: pair.privateKey, keyId: 'org-aperion-k7' })
+const sig = signer.sign('payload to sign')
+// sig.algorithm === 'Ed25519'
+// sig.keyId === 'org-aperion-k7'
+// sig.value: base64url
+
+const registry = createKeyRegistry({
+  trustRoots: [{ keyId: 'org-aperion-k7', publicKey: pair.publicKey, label: 'main signing key' }],
+})
+
+const verifier = createEd25519Verifier({ resolver: registry })
+const result = verifier.verify('payload to sign', sig)
+// result.valid === true
+```
+
+### Key registry with validity windows
+
+```ts
+import { createKeyRegistry } from '@elsium-ai/core'
+
+const registry = createKeyRegistry()
+registry.add('k1', publicKeyPem, {
+  notBefore: Date.UTC(2026, 0, 1),
+  notAfter: Date.UTC(2027, 0, 1),
+  label: 'rotated-key-v1',
+})
+
+registry.isValid('k1')        // true if current time is within window
+registry.resolve('k1')        // returns KeyObject only if valid right now
+registry.list()               // all trusted keys with metadata
+registry.remove('k1')         // revoke
+```
+
+Rejects prototype-pollution keyIds (`__proto__`, `constructor`, `prototype`), refuses re-adding the same `keyId`, and validates `notBefore < notAfter`.
+
+### Write-once tamper-evident storage
+
+```ts
+import { createInMemoryWriteOnceStore, createFileWriteOnceStore } from '@elsium-ai/core'
+
+const memStore = createInMemoryWriteOnceStore()
+const fileStore = createFileWriteOnceStore({ dir: './proofs', fsync: true })
+
+const receipt = await fileStore.put('proof/01HX9Y2/proof.json', JSON.stringify(proof))
+// receipt.hash: sha-256 hex of payload
+// receipt.size: bytes
+// receipt.writtenAt: epoch ms
+
+await fileStore.put('proof/01HX9Y2/proof.json', '...')  // throws WriteOnceConflictError
+
+for await (const key of fileStore.list('proof/')) {
+  // walks recursively, yields relative keys
+}
+```
+
+File adapter uses `O_EXCL` (`flag: 'wx'`) for atomic write-once semantics on POSIX filesystems. Keys are validated against path traversal (`..`, absolute paths).
 
 ---
 

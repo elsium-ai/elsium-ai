@@ -64,6 +64,17 @@ export {
 	verifyBundle,
 	// Shutdown
 	createShutdownManager,
+	// Crypto foundation (Ed25519, key registry, tamper-evident storage)
+	createEd25519Signer,
+	createEd25519Verifier,
+	generateEd25519KeyPair,
+	computeKeyFingerprint,
+	publicKeyFromPem,
+	privateKeyFromPem,
+	createKeyRegistry,
+	createInMemoryWriteOnceStore,
+	createFileWriteOnceStore,
+	WriteOnceConflictError,
 } from '@elsium-ai/core'
 
 export type {
@@ -149,6 +160,20 @@ export type {
 	// Shutdown types
 	ShutdownConfig,
 	ShutdownManager,
+	// Crypto foundation types
+	Signature,
+	VerifyResult,
+	Signer,
+	Verifier,
+	PublicKeyResolver,
+	Ed25519KeyPair,
+	KeyRegistry,
+	KeyRegistryConfig,
+	TrustedKey,
+	AddKeyOptions,
+	WriteOnceStore,
+	WriteReceipt,
+	FileWriteOnceStoreConfig,
 } from '@elsium-ai/core'
 
 // ─── Gateway ────────────────────────────────────────────────────
