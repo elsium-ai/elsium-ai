@@ -61,6 +61,11 @@ interface GatewayConfig {
 interface Gateway {
   complete(request: CompletionRequest): Promise<LLMResponse>
   stream(request: CompletionRequest): ElsiumStream
+  generateObject<T>(request: CompletionRequest & { schema: z.ZodType<T> }): Promise<{
+    object: T
+    response: LLMResponse
+  }>
+  /** @deprecated Use generateObject() — returns `{ object, response }`. */
   generate<T>(request: CompletionRequest & { schema: z.ZodType<T> }): Promise<{
     data: T
     response: LLMResponse
@@ -76,8 +81,9 @@ interface Gateway {
 |---|---|
 | `complete(request)` | Send a completion request and return the full response. |
 | `stream(request)` | Stream a completion request, returning an async-iterable `ElsiumStream`. |
-| `generate<T>(request)` | Structured output -- sends a Zod schema, parses and validates the LLM's JSON response. |
-| `extract<T>(schema, input, options?)` | Structured extraction -- takes a Zod schema and text input, returns typed data with auto-retry on validation failure. |
+| `generateObject<T>(request)` | Structured output — sends a Zod schema, parses and validates the LLM's response. Returns `{ object, response }`. |
+| `generate<T>(request)` | Deprecated alias for `generateObject` — returns `{ data, response }`. |
+| `extract<T>(schema, input, options?)` | Structured extraction — takes a Zod schema and text input, returns typed data with auto-retry on validation failure. |
 | `provider` | Read-only reference to the underlying `LLMProvider` instance. |
 | `lastCall()` | Returns the most recent `XRayData` entry, or `null` if X-Ray is disabled. |
 | `callHistory(limit?)` | Returns up to `limit` (default 10) recent `XRayData` entries. |
@@ -131,7 +137,7 @@ const llm = gateway({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-const { data } = await llm.generate({
+const { object } = await llm.generateObject({
   messages: [{ role: 'user', content: 'Describe the planet Mars.' }],
   schema: z.object({
     name: z.string(),
@@ -140,8 +146,24 @@ const { data } = await llm.generate({
   }),
 })
 
-console.log(data.name) // "Mars"
+console.log(object.name) // "Mars"
 ```
+
+For one-shot calls without instantiating a gateway, use the standalone `generateObject` function:
+
+```ts
+import { generateObject } from '@elsium-ai/gateway'
+import { z } from 'zod'
+
+const { object } = await generateObject({
+  provider: 'openai',
+  apiKey: process.env.OPENAI_API_KEY!,
+  schema: z.object({ name: z.string(), age: z.number() }),
+  prompt: 'Pick a fictional astronaut and describe them briefly.',
+})
+```
+
+The standalone form accepts either `messages` (full conversation) or `prompt` (shorthand for a single user message). All native provider modes are used automatically: OpenAI `response_format: json_schema (strict)`, Anthropic forced tool-use, Google `responseSchema`.
 
 #### Structured Extraction
 

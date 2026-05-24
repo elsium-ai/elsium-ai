@@ -55,6 +55,11 @@ export interface ExtractOptions {
 export interface Gateway {
 	complete(request: CompletionRequest): Promise<LLMResponse>
 	stream(request: CompletionRequest): ElsiumStream
+	generateObject<T>(request: CompletionRequest & { schema: z.ZodType<T> }): Promise<{
+		object: T
+		response: LLMResponse
+	}>
+	/** @deprecated Use generateObject() — returns `{ object, response }`. */
 	generate<T>(request: CompletionRequest & { schema: z.ZodType<T> }): Promise<{
 		data: T
 		response: LLMResponse
@@ -344,14 +349,13 @@ export function gateway(config: GatewayConfig): Gateway {
 			})
 		},
 
-		async generate<T>(
+		async generateObject<T>(
 			request: CompletionRequest & { schema: z.ZodType<T> },
-		): Promise<{ data: T; response: LLMResponse }> {
+		): Promise<{ object: T; response: LLMResponse }> {
 			const { schema, ...rest } = request
 
 			const jsonSchema = zodToJsonSchema(schema)
 
-			// Pass schema to provider for native JSON mode support
 			const response = await executeWithMiddleware({
 				...rest,
 				schema,
@@ -365,8 +369,6 @@ export function gateway(config: GatewayConfig): Gateway {
 					.join('\n\n'),
 			})
 
-			// Extract structured data — check tool call result first (Anthropic approach),
-			// then try parsing text content
 			const parsed = extractFromToolCalls(response) ?? extractJsonFromText(response)
 
 			const result = schema.safeParse(parsed)
@@ -376,7 +378,14 @@ export function gateway(config: GatewayConfig): Gateway {
 				})
 			}
 
-			return { data: result.data, response }
+			return { object: result.data, response }
+		},
+
+		async generate<T>(
+			request: CompletionRequest & { schema: z.ZodType<T> },
+		): Promise<{ data: T; response: LLMResponse }> {
+			const result = await this.generateObject(request)
+			return { data: result.object, response: result.response }
 		},
 
 		async extract<T>(schema: z.ZodType<T>, input: string, options?: ExtractOptions): Promise<T> {
@@ -387,14 +396,14 @@ export function gateway(config: GatewayConfig): Gateway {
 
 			for (let attempt = 0; attempt <= maxRetries; attempt++) {
 				try {
-					const result = await this.generate({
+					const result = await this.generateObject({
 						messages: [...messages],
 						schema,
 						model: options?.model,
 						system: options?.system,
 						temperature: options?.temperature,
 					})
-					return result.data
+					return result.object
 				} catch (e) {
 					if (e instanceof ElsiumError && e.code === 'VALIDATION_ERROR') {
 						lastError = e

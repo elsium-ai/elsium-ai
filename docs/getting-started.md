@@ -270,16 +270,29 @@ const SentimentSchema = z.object({
   confidence: z.number(),
 })
 
-const { data } = await llm.generate({
+const { object } = await llm.generateObject({
   messages: [{ role: 'user', content: [{ type: 'text', text: 'Analyze: "I love this!"' }] }],
   schema: SentimentSchema,
 })
 
-console.log(data.sentiment)   // 'positive' (fully typed)
-console.log(data.confidence)  // 0.95
+console.log(object.sentiment)   // 'positive' (fully typed)
+console.log(object.confidence)  // 0.95
 ```
 
 Each provider uses its native JSON mode (OpenAI: `json_schema`, Anthropic: tool-use, Google: `responseSchema`).
+
+One-shot without a gateway instance — pass provider + apiKey + a `prompt` shorthand:
+
+```typescript
+import { generateObject } from 'elsium-ai'
+
+const { object } = await generateObject({
+  provider: 'openai',
+  apiKey: process.env.OPENAI_API_KEY!,
+  schema: SentimentSchema,
+  prompt: 'Analyze: "I love this!"',
+})
+```
 
 ## Observability
 

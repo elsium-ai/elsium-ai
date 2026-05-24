@@ -86,6 +86,7 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | Values | Types |
 |--------|-------|
 | `gateway` | `LLMProvider` |
+| `generateObject` | `GenerateObjectOptions` |
 | `registerProviderFactory` | `ProviderFactory` |
 | `calculateCost` | `Gateway` |
 | `estimateCost` | |

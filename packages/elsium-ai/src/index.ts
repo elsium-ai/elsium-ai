@@ -154,6 +154,7 @@ export type {
 // ─── Gateway ────────────────────────────────────────────────────
 export {
 	gateway,
+	generateObject,
 	registerProviderFactory,
 	registerProvider,
 	getProviderFactory,
@@ -207,6 +208,7 @@ export type {
 	Gateway,
 	GatewayConfig,
 	ExtractOptions,
+	GenerateObjectOptions,
 	XRayStore,
 	ProviderMeshConfig,
 	ProviderEntry,

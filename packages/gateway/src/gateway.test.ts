@@ -7,6 +7,7 @@ import {
 	composeMiddleware,
 	costTrackingMiddleware,
 	gateway,
+	generateObject,
 	getProviderFactory,
 	getProviderMetadata,
 	listProviders,
@@ -714,5 +715,220 @@ describe('extract', () => {
 
 		await expect(gw.extract(personSchema, 'Get person')).rejects.toThrow()
 		expect(callCount).toBe(4)
+	})
+})
+
+// ─── generateObject() ────────────────────────────────────────────
+
+describe('gateway.generateObject', () => {
+	const schema = z.object({
+		name: z.string(),
+		age: z.number(),
+	})
+
+	it('returns parsed object under `object` field', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Jane", "age": 27}',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		const result = await gw.generateObject({
+			messages: [{ role: 'user', content: 'Get person' }],
+			schema,
+		})
+
+		expect(result.object.name).toBe('Jane')
+		expect(result.object.age).toBe(27)
+		expect(result.response.provider).toBe('mock')
+	})
+
+	it('strips markdown code fences from JSON output', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '```json\n{"name": "Kai", "age": 19}\n```',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		const { object } = await gw.generateObject({
+			messages: [{ role: 'user', content: 'Get person' }],
+			schema,
+		})
+
+		expect(object.name).toBe('Kai')
+		expect(object.age).toBe(19)
+	})
+
+	it('extracts object from Anthropic-style tool call (_structured_output)', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '',
+					toolCalls: [
+						{
+							id: 'tc_1',
+							name: '_structured_output',
+							arguments: { name: 'Lin', age: 41 },
+						},
+					],
+				},
+				stopReason: 'tool_use',
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		const { object } = await gw.generateObject({
+			messages: [{ role: 'user', content: 'Get person' }],
+			schema,
+		})
+
+		expect(object.name).toBe('Lin')
+		expect(object.age).toBe(41)
+	})
+
+	it('throws validation error when output does not match schema', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Tao", "age": "not-a-number"}',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		await expect(
+			gw.generateObject({
+				messages: [{ role: 'user', content: 'Get person' }],
+				schema,
+			}),
+		).rejects.toThrow('did not match schema')
+	})
+
+	it('legacy generate() still returns `data` field as alias', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Old", "age": 99}',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const gw = gateway({ provider: 'mock', apiKey: 'test-key' })
+		const result = await gw.generate({
+			messages: [{ role: 'user', content: 'Get person' }],
+			schema,
+		})
+
+		expect(result.data.name).toBe('Old')
+		expect(result.data.age).toBe(99)
+	})
+})
+
+// ─── generateObject standalone function ──────────────────────────
+
+describe('generateObject (standalone)', () => {
+	const schema = z.object({
+		name: z.string(),
+		age: z.number(),
+	})
+
+	it('runs one-shot without instantiating gateway', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Mia", "age": 7}',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		const { object, response } = await generateObject({
+			provider: 'mock',
+			apiKey: 'test-key',
+			schema,
+			messages: [{ role: 'user', content: 'Get child' }],
+		})
+
+		expect(object.name).toBe('Mia')
+		expect(object.age).toBe(7)
+		expect(response.provider).toBe('mock')
+	})
+
+	it('accepts `prompt` shorthand instead of messages', async () => {
+		let capturedMessages: { role: string; content: unknown }[] | undefined
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": "Sky", "age": 12}',
+				},
+			},
+		])
+		const origComplete = mockProv.complete.bind(mockProv)
+		mockProv.complete = async (req: CompletionRequest) => {
+			capturedMessages = req.messages
+			return origComplete(req)
+		}
+		registerProviderFactory('mock', () => mockProv)
+
+		const { object } = await generateObject({
+			provider: 'mock',
+			apiKey: 'test-key',
+			schema,
+			prompt: 'Who is Sky?',
+		})
+
+		expect(object.name).toBe('Sky')
+		expect(capturedMessages).toEqual([{ role: 'user', content: 'Who is Sky?' }])
+	})
+
+	it('throws when neither messages nor prompt provided', async () => {
+		registerProviderFactory('mock', () => createMockProvider())
+
+		await expect(
+			generateObject({
+				provider: 'mock',
+				apiKey: 'test-key',
+				schema,
+			}),
+		).rejects.toThrow('requires either `messages` or `prompt`')
+	})
+
+	it('propagates schema mismatch as validation error', async () => {
+		const mockProv = createMockProvider([
+			{
+				message: {
+					role: 'assistant',
+					content: '{"name": 123, "age": "x"}',
+				},
+			},
+		])
+		registerProviderFactory('mock', () => mockProv)
+
+		await expect(
+			generateObject({
+				provider: 'mock',
+				apiKey: 'test-key',
+				schema,
+				prompt: 'hi',
+			}),
+		).rejects.toThrow('did not match schema')
 	})
 })
