@@ -126,3 +126,32 @@ export {
 	timingSafeEqualHex,
 	timingSafeEqualString,
 } from './web-crypto'
+
+// Crypto foundation (Ed25519 signing, key registry, tamper-evident storage)
+export {
+	createEd25519Signer,
+	createEd25519Verifier,
+	generateEd25519KeyPair,
+	computeKeyFingerprint,
+	publicKeyFromPem,
+	privateKeyFromPem,
+	createKeyRegistry,
+	createInMemoryWriteOnceStore,
+	createFileWriteOnceStore,
+	WriteOnceConflictError,
+} from './crypto'
+export type {
+	Signature,
+	VerifyResult,
+	Signer,
+	Verifier,
+	PublicKeyResolver,
+	Ed25519KeyPair,
+	KeyRegistry,
+	KeyRegistryConfig,
+	TrustedKey,
+	AddKeyOptions,
+	WriteOnceStore,
+	WriteReceipt,
+	FileWriteOnceStoreConfig,
+} from './crypto'
