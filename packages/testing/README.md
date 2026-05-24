@@ -22,6 +22,7 @@ npm install @elsium-ai/testing --save-dev
 | **Prompts** | `createPromptRegistry`, `definePrompt`, `PromptDefinition`, `PromptDiff`, `DiffLine`, `PromptRegistry` | Versioned prompt registry with diff and rendering |
 | **Regression** | `createRegressionSuite`, `RegressionBaseline`, `RegressionResult`, `RegressionDetail`, `RegressionSuite` | Baseline-driven regression detection |
 | **Replay** | `createReplayRecorder`, `createReplayPlayer`, `ReplayEntry`, `ReplayRecorder`, `ReplayPlayer` | Record and replay raw LLM completion calls |
+| **`replayFrom`** | `createTraceRecorder`, `replayFrom`, `TraceStep`, `AgentTrace`, `TraceRecorder`, `StepExecutor`, `StepOverride`, `ReplayResult` | Time-travel replay with overrides. `createTraceRecorder` captures every agent step keyed by name; `replayFrom(trace, { fromStep, executor, overrides })` re-feeds earlier steps from the recording and runs the rest live, optionally applying `replace` / `transform` overrides. The debugger workflow: production run failed → grab trace → replay from failing step → try N prompt overrides → fix verified in 90 seconds. |
 | **Pinning** | `createPinStore`, `pinOutput`, `Pin`, `PinStore`, `PinResult` | Pin expected outputs and detect drift |
 | **Determinism** | `assertDeterministic`, `assertStable`, `DeterminismResult`, `StabilityResult` | Verify output consistency across repeated runs |
 | **Tool Assertions** | `assertToolCalls`, `toolCallsToEvalCriteria`, `ToolCallEntry`, `ToolAssertion`, `ToolAssertionResult` | Assert on tool call behavior: which tools, what order, what args |
@@ -1626,6 +1627,48 @@ elsium eval ./evals/suite.ts --format junit     # JUnit XML
 elsium eval ./evals/suite.ts --format github    # GitHub Actions annotations
 elsium eval ./evals/suite.ts --format markdown  # Markdown summary
 ```
+
+---
+
+## `replayFrom` — time-travel replay with overrides
+
+The debugger workflow that AI frameworks have been missing: a production run failed at step N → grab the trace → replay it locally from step N with prompt overrides → fix verified in seconds. `createTraceRecorder` captures every step; `replayFrom` re-feeds steps before `fromStep` from the recording and runs the rest live with optional overrides.
+
+```ts
+import { createTraceRecorder, replayFrom } from '@elsium-ai/testing'
+
+// 1. Record a live run
+const rec = createTraceRecorder({ agentId: 'invoice-extractor' })
+rec.recordStep({ key: 'classify', input: raw, output: 'invoice', durationMs: 50 })
+rec.recordStep({ key: 'extract',  input: raw, output: { total: 1234 }, durationMs: 80 })
+rec.recordStep({ key: 'validate', input: { total: 1234 }, output: { ok: true } })
+const trace = rec.finish()
+// Persist trace.id + trace.steps to your DB / S3
+
+// 2. Later — replay from a failing step with a prompt override
+const result = await replayFrom(trace, {
+  fromStep: 'extract',          // or numeric index
+  executor: async ({ key, input, originalStep }) => {
+    // Steps at or after fromStep run live (your real LLM/tool call)
+    return runStepLive(key, input)
+  },
+  overrides: {
+    extract:  { kind: 'transform', input: (i) => `${i} [v2 prompt]` },
+    validate: { kind: 'replace', output: { ok: 'forced' } },
+  },
+})
+
+// result.steps[i].source ∈ 'replay' | 'live'
+// result.steps[i].overridden ∈ true | false
+// result.finalOutput
+```
+
+Override variants:
+
+- `{ kind: 'replace', output }` — skip the executor entirely and substitute output (counterfactual exploration).
+- `{ kind: 'transform', input?, output? }` — rewrite the input handed to the executor and/or post-process its output (prompt overrides + audit-friendly transforms).
+
+`fromStep` accepts a numeric index or a string key (the `key` you passed to `recordStep`). Out-of-range / unknown-key throw `VALIDATION_ERROR` upfront.
 
 ---
 

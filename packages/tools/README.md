@@ -26,6 +26,7 @@ npm install zod
 | **Format** | `formatToolResult`, `formatToolResultAsText` | Convert raw execution results into the `ToolResult` wire format or plain-text strings for logging |
 | **Built-in Tools** | `httpFetchTool`, `calculatorTool`, `jsonParseTool`, `currentTimeTool` | Ready-to-use tools for HTTP requests, math evaluation, JSON extraction, and current time |
 | **Capability guard** | `withCapability`, `CapabilityGuardOptions`, `CapabilityDenialEvent` | Wrap any tool with a `CapabilityToken` check (signature + validity window + scope). Refusals return a typed denial result and fire an optional `onDeny` callback for audit. |
+| **Tool contracts** | `sideEffectLevel`, `idempotencyKey`, `idempotencyStore`, `preconditions`, `dryRunHandler`, `IdempotencyStore`, `createInMemoryIdempotencyStore`, `PreconditionFn`, `PreconditionFailure`, `SideEffectLevel` | Extend `ToolConfig` with `'read' \| 'write' \| 'destructive'` classification, async preconditions, idempotency-keyed cache to make retries safe, and a `dryRunHandler` so the framework can preview destructive operations when `ctx.dryRun: true`. |
 
 ---
 
@@ -523,6 +524,53 @@ if (result.success) {
   console.log(result.data.timezone) // 'Europe/London'
 }
 ```
+
+---
+
+## Tool Contracts — safe-by-default tool execution
+
+`ToolConfig` accepts four extra fields that make tools safe to retry, dry-run, and audit:
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `sideEffectLevel` | `'read' \| 'write' \| 'destructive'` | When `ctx.dryRun: true`, `write`/`destructive` tools skip the handler (call `dryRunHandler` instead). `read` always runs. Exposed on the public `Tool` so upstream code (capability tokens, auto-approval gates) can branch on it. |
+| `idempotencyKey + idempotencyStore` | `(input) => string` + `IdempotencyStore` port | On a key match, the cached output is returned with `result.idempotent: true`. Prevents double-charge / double-send on flaky network retries. |
+| `preconditions` | `Array<{ name; check(input) }>` | Every check runs before the handler. Failures aggregate into `result.preconditionFailures` and the handler is skipped. |
+| `dryRunHandler` | `(input) => Output` | The preview to return when `ctx.dryRun: true` blocks the real handler. |
+
+```ts
+import { defineTool, createInMemoryIdempotencyStore } from '@elsium-ai/tools'
+import { z } from 'zod'
+
+const idempotencyStore = createInMemoryIdempotencyStore()
+
+const transferTool = defineTool({
+  name: 'transferFunds',
+  description: 'Move money between accounts',
+  input: z.object({ txId: z.string(), amount: z.number().positive(), from: z.string(), to: z.string() }),
+  sideEffectLevel: 'destructive',
+  idempotencyKey: (input) => input.txId,
+  idempotencyStore,
+  preconditions: [
+    { name: 'hasBalance', check: async (i) => ({ ok: await balanceFor(i.from) >= i.amount, reason: 'insufficient balance' }) },
+    { name: 'kycVerified', check: async (i) => ({ ok: await kyc(i.to), reason: 'KYC required' }) },
+  ],
+  dryRunHandler: (input) => ({ ok: true, ref: `PREVIEW:${input.txId}` }),
+  handler: async (input) => bank.transfer(input),
+})
+```
+
+Refusals come back on the typed `ToolExecutionResult`:
+
+```ts
+const result = await transferTool.execute({ txId: 'tx-1', amount: 50, from: 'A', to: 'B' })
+// result.success: boolean
+// result.dryRun?: boolean      — true when handler was skipped due to ctx.dryRun
+// result.idempotent?: boolean  — true when output came from the idempotency cache
+// result.preconditionFailures?: Array<{ name, reason }> — populated when a precondition denied
+```
+
+The `IdempotencyStore` port lets you swap the in-memory adapter for Redis, Postgres, or any backend that implements `get / put / delete`.
 
 ---
 

@@ -21,6 +21,22 @@ Runnable examples that show how to use each piece of the framework. Most run wit
 | [`capability-tokens/`](./capability-tokens/) | β-1 + β-2 — mint scoped tokens, gate tools, delegate subset, revoke | no |
 | [`verification-pipeline/`](./verification-pipeline/) | VAG — `runWithVerification` with Zod schema + business-rule validators + repair loop | yes |
 | [`confidence-strategies/`](./confidence-strategies/) | CAG — `selfConsistency`, `judgeEnsemble`, `logprobScore`, `requireConfidence` with custom escalation | yes |
+| [`tool-contracts/`](./tool-contracts/) | Tool contracts — `sideEffectLevel`, idempotency cache, preconditions, `dryRun` | no |
+| [`ask-human/`](./ask-human/) | `askHuman` — responder mode + durable store mode + timeout | no |
+
+## Streaming & routing
+
+| Example | What it shows | Needs key |
+|---|---|---|
+| [`thinking-stream/`](./thinking-stream/) | `thinking_start/delta/end` events from Anthropic extended thinking + OpenAI reasoning models | yes |
+| [`typed-tool-stream/`](./typed-tool-stream/) | `withToolTypes` — accumulate tool-call deltas and emit Zod-validated, per-tool-typed `tool_call_complete` events | no |
+| [`carg-cascade/`](./carg-cascade/) | CARG — cascade router with classifier-based tier filtering and `escalateOnFailure` hooks | yes |
+
+## Dev tooling
+
+| Example | What it shows | Needs key |
+|---|---|---|
+| [`replay-from/`](./replay-from/) | `createTraceRecorder` + `replayFrom` — record a run, replay from any step with `replace` / `transform` overrides | no |
 
 ## Observability
 

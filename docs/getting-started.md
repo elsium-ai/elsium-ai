@@ -958,6 +958,149 @@ const gated = await requireConfidence(
 
 Demos: [`examples/verification-pipeline/`](../examples/verification-pipeline/) and [`examples/confidence-strategies/`](../examples/confidence-strategies/).
 
+## Cost-Aware Routed Generation (CARG)
+
+Route requests through a cascade of model tiers — start cheap, escalate only when the cheap tier fails or a classifier predicts it will:
+
+```typescript
+import { createCascadeRouter, createHeuristicClassifier } from '@elsium-ai/gateway'
+
+const router = createCascadeRouter({
+  tiers: [
+    { name: 'cheap', gateway: gateway({ provider: 'openai', model: 'gpt-4o-mini', apiKey: env('OPENAI_API_KEY') }) },
+    { name: 'flagship', gateway: gateway({ provider: 'anthropic', model: 'claude-sonnet-4-6', apiKey: env('ANTHROPIC_API_KEY') }) },
+  ],
+  classifier: createHeuristicClassifier({ longInputThreshold: 4000 }),
+  escalateOnFailure: { errors: ['VALIDATION_ERROR', 'TIMEOUT'], maxAttempts: 2 },
+})
+
+const result = await router.complete({ messages: [...] })
+console.log(result.attempts.map((a) => `${a.tier}:${a.outcome}`))
+```
+
+Full example at [`examples/carg-cascade/`](../examples/carg-cascade/).
+
+## Streaming reasoning (thinking events)
+
+Anthropic extended thinking and OpenAI reasoning models emit their internal reasoning as separate stream events you can render in a side panel without polluting the main text stream:
+
+```typescript
+const stream = llm.stream({
+  messages: [{ role: 'user', content: 'Plan a 3-day itinerary in Lisbon' }],
+  model: 'claude-sonnet-4-6',
+  thinking: { enabled: true, budgetTokens: 4000 },
+})
+
+for await (const event of stream) {
+  if (event.type === 'thinking_delta') process.stderr.write(event.text)
+  else if (event.type === 'text_delta') process.stdout.write(event.text)
+  else if (event.type === 'message_end') console.log('reasoning tokens:', event.usage.reasoningTokens)
+}
+```
+
+Full example at [`examples/thinking-stream/`](../examples/thinking-stream/).
+
+## Typed tool call streams (`withToolTypes`)
+
+Wrap any stream to accumulate tool-call argument deltas and emit per-tool-typed `tool_call_complete` events validated against your Zod schemas — no manual JSON parsing, full autocomplete by tool name:
+
+```typescript
+import { withToolTypes } from '@elsium-ai/core'
+
+const schemas = {
+  get_weather: z.object({ city: z.string(), unit: z.enum(['C', 'F']).optional() }),
+  search: z.object({ query: z.string(), limit: z.number().int().positive() }),
+}
+
+for await (const event of withToolTypes(llm.stream({ ... }), schemas)) {
+  if (event.type === 'tool_call_complete' && !('parseError' in event)) {
+    if (event.toolCall.name === 'get_weather') {
+      // event.toolCall.arguments is { city: string; unit?: 'C' | 'F' }
+    }
+  }
+}
+```
+
+Full example at [`examples/typed-tool-stream/`](../examples/typed-tool-stream/).
+
+## Tool contracts (sideEffectLevel + idempotency + preconditions + dry-run)
+
+Declare safety properties on every tool so the framework can prevent double-charges, block preconditions, and preview destructive actions:
+
+```typescript
+import { createInMemoryIdempotencyStore, defineTool } from '@elsium-ai/tools'
+
+const transferTool = defineTool({
+  name: 'transferFunds',
+  input: z.object({ txId: z.string(), from: z.string(), to: z.string(), amount: z.number().positive() }),
+  sideEffectLevel: 'destructive',
+  idempotencyKey: (i) => i.txId,
+  idempotencyStore: createInMemoryIdempotencyStore(),
+  preconditions: [
+    { name: 'hasBalance', check: async (i) => ({ ok: balanceOf(i.from) >= i.amount, reason: 'insufficient' }) },
+  ],
+  dryRunHandler: (i) => ({ ok: true, willTransfer: i.amount, preview: true }),
+  handler: async (i) => doTransfer(i),
+})
+
+await transferTool.execute(input, { dryRun: true })  // skips handler, returns preview
+await transferTool.execute(input)                    // first call runs
+await transferTool.execute(input)                    // second call returns cached result, no double-charge
+```
+
+Full example at [`examples/tool-contracts/`](../examples/tool-contracts/).
+
+## Human-in-the-loop (`askHuman`)
+
+Pause a tool or agent and request approval — synchronously via a responder, or durably via a store that survives process restarts:
+
+```typescript
+import { askHuman, createInMemoryAskHumanStore, resolveAskHuman } from '@elsium-ai/agents'
+
+const store = createInMemoryAskHumanStore()
+
+// Agent issues a question (resolves only when a human writes the answer)
+const decision = await askHuman({
+  requestId: 'req-42',
+  question: 'Approve $1200 refund?',
+  options: ['approve', 'deny'] as const,
+  store,
+  timeoutMs: '7d',
+})
+
+// Elsewhere — webhook / dashboard / CLI:
+await resolveAskHuman(store, 'req-42', {
+  status: 'approved',
+  option: 'approve',
+  decidedBy: 'reviewer@example.com',
+})
+```
+
+Full example at [`examples/ask-human/`](../examples/ask-human/).
+
+## Time-travel replay (`replayFrom`)
+
+Record every step of an agent run, then re-execute from any midpoint with selective overrides — perfect for iterating on prompts without re-paying for upstream LLM calls:
+
+```typescript
+import { createTraceRecorder, replayFrom } from '@elsium-ai/testing'
+
+const recorder = createTraceRecorder({ agentId: 'news-bot' })
+// ... wrap your pipeline so each step recorder.recordStep({ key, input, output, durationMs })
+const trace = recorder.finish()
+
+const result = await replayFrom(trace, {
+  fromStep: 'summarize',
+  executor: async ({ key, input }) => runStep(key, input),
+  overrides: {
+    research: { kind: 'transform', input: (i) => ({ ...i, query: 'tweaked query' }) },
+    summarize: { kind: 'replace', output: { bullets: ['pinned'] } },
+  },
+})
+```
+
+Full example at [`examples/replay-from/`](../examples/replay-from/).
+
 ## Packages
 
 | Package | Description |
