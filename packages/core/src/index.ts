@@ -39,6 +39,16 @@ export type { Result, Ok, Err } from './result'
 export { ElsiumStream, createStream } from './stream'
 export type { StreamTransformer, ResilientStreamOptions } from './stream'
 
+// Stream — typed tool call helper (opt-in narrowing per tool)
+export { withToolTypes } from './stream-typed'
+export type {
+	ToolSchemaMap,
+	ToolArgs,
+	TypedStreamEvent,
+	TypedToolCallComplete,
+	UnknownToolCallComplete,
+} from './stream-typed'
+
 // Logger
 export { createLogger } from './logger'
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from './logger'

@@ -26,6 +26,7 @@ export {
 	// Streaming
 	createStream,
 	ElsiumStream,
+	withToolTypes,
 	// Logger
 	createLogger,
 	// Config
@@ -123,6 +124,11 @@ export type {
 	// Stream types
 	ResilientStreamOptions,
 	StreamTransformer,
+	ToolSchemaMap,
+	ToolArgs,
+	TypedStreamEvent,
+	TypedToolCallComplete,
+	UnknownToolCallComplete,
 	// Logger types
 	LogLevel,
 	Logger,
