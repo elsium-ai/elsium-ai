@@ -138,6 +138,33 @@ export type {
 	ToOTelSpanOptions,
 } from './otel'
 
+// Verifiable Agent Execution — proof recorder for per-run signed execution proofs.
+// Builds on @elsium-ai/core/crypto (Ed25519 + WriteOnceStore).
+export {
+	createProofRecorder,
+	verifyProof,
+	PROOF_SESSION_METADATA_KEY,
+	PROOF_VERSION,
+} from './proof'
+export type {
+	ProofRecorder,
+	ProofRecorderConfig,
+	ProofSession,
+	ProofSessionInputs,
+	StartSessionOptions,
+	FinalizeOptions,
+	ExecutionProof,
+	ProofEvent,
+	ProofEventType,
+	ReproducibilityHints,
+	VerifyProofResult,
+	LLMCallSummary,
+	ToolCallSummary,
+	RagRetrieveSummary,
+	PolicyDecisionSummary,
+	ProofInputDocRef,
+} from './proof'
+
 // OpenTelemetry GenAI Semantic Conventions (in Development per OTel spec).
 // Dual emission policy controlled by OTEL_SEMCONV_STABILITY_OPT_IN.
 export {

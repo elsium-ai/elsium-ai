@@ -651,6 +651,11 @@ export {
 	createGenAIConventionRegistry,
 	getDefaultRegistry,
 	parseSemconvOptIn,
+	// Verifiable Agent Execution (α-1) — signed per-run execution proofs
+	createProofRecorder,
+	verifyProof,
+	PROOF_SESSION_METADATA_KEY,
+	PROOF_VERSION,
 } from '@elsium-ai/observe'
 
 export type {
@@ -761,6 +766,23 @@ export type {
 	EmissionPolicyConfig,
 	SemconvStabilityConfig,
 	SemconvStabilityFlag,
+	// Verifiable Agent Execution types (α-1)
+	ProofRecorder,
+	ProofRecorderConfig,
+	ProofSession,
+	ProofSessionInputs,
+	StartSessionOptions,
+	FinalizeOptions,
+	ExecutionProof,
+	ProofEvent,
+	ProofEventType,
+	ReproducibilityHints,
+	VerifyProofResult,
+	LLMCallSummary,
+	ToolCallSummary,
+	RagRetrieveSummary,
+	PolicyDecisionSummary,
+	ProofInputDocRef,
 } from '@elsium-ai/observe'
 
 // ─── App ────────────────────────────────────────────────────────
