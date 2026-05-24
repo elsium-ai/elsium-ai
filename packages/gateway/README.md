@@ -127,6 +127,47 @@ for await (const event of stream) {
 }
 ```
 
+The `StreamEvent` union is a discriminated union — every event is tagged by `type` and TypeScript narrows the fields automatically:
+
+| `event.type` | Fields | Emitted when |
+|---|---|---|
+| `text_delta` | `text` | Each text token |
+| `thinking_start` | `thinking.id?`, `thinking.signature?` | A thinking block begins (Anthropic extended thinking) |
+| `thinking_delta` | `text`, `thinkingId?` | Each token of the model's internal reasoning |
+| `thinking_end` | `thinkingId?` | The thinking block closes |
+| `tool_call_start` | `toolCall.{id,name}` | A tool call begins |
+| `tool_call_delta` | `toolCallId`, `arguments` (JSON fragment) | Arguments stream in pieces |
+| `tool_call_end` | `toolCallId` | Tool call complete |
+| `message_start` | `id`, `model` | Stream begins |
+| `message_end` | `usage`, `stopReason` | Stream complete (`usage.reasoningTokens` populated for OpenAI o-series) |
+| `error` / `checkpoint` / `recovery` | resilient streaming hooks | — |
+
+#### Extended thinking / reasoning
+
+Opt-in via `thinking` on the `CompletionRequest`. The gateway translates it into the provider's native shape — Anthropic `thinking: { type: 'enabled', budget_tokens }` and OpenAI `reasoning_effort: 'low' | 'medium' | 'high'`. `usage.reasoningTokens` is captured when the provider reports it.
+
+```ts
+import { gateway } from '@elsium-ai/gateway'
+
+const llm = gateway({ provider: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY! })
+
+const stream = llm.stream({
+  messages: [{ role: 'user', content: 'Plan a 3-day itinerary in Lisbon.' }],
+  model: 'claude-sonnet-4-6',
+  thinking: { enabled: true, budgetTokens: 8_000 },
+})
+
+for await (const event of stream) {
+  if (event.type === 'thinking_delta') {
+    process.stderr.write(`💭 ${event.text}`)
+  } else if (event.type === 'text_delta') {
+    process.stdout.write(event.text)
+  }
+}
+```
+
+For OpenAI reasoning models (`o1`, `o3`, etc.), thinking is not streamed in token form (the reasoning traces are private), but `usage.reasoningTokens` is reported on completion so the cost engine and cascade router can attribute it.
+
 #### Structured Output
 
 ```ts

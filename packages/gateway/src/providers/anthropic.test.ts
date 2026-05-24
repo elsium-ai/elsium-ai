@@ -178,4 +178,146 @@ describe('Anthropic Provider', () => {
 
 		vi.unstubAllGlobals()
 	})
+
+	it('forwards thinking config to the API body', async () => {
+		let capturedBody: Record<string, unknown> | undefined
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => {
+			capturedBody = JSON.parse((init?.body as string) ?? '{}')
+			return {
+				ok: true,
+				json: async () => ({
+					id: 'msg_thinking',
+					type: 'message',
+					role: 'assistant',
+					content: [{ type: 'text', text: 'Done.' }],
+					model: 'claude-sonnet-4-6',
+					stop_reason: 'end_turn',
+					usage: { input_tokens: 5, output_tokens: 5 },
+				}),
+			}
+		})
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createAnthropicProvider({ apiKey: 'test-key' })
+		await provider.complete({
+			messages: [{ role: 'user', content: 'Plan an itinerary.' }],
+			thinking: { enabled: true, budgetTokens: 8000 },
+		})
+
+		expect(capturedBody?.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 })
+
+		vi.unstubAllGlobals()
+	})
+
+	it('derives budget_tokens from effort when budgetTokens is absent', async () => {
+		let capturedBody: Record<string, unknown> | undefined
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => {
+			capturedBody = JSON.parse((init?.body as string) ?? '{}')
+			return {
+				ok: true,
+				json: async () => ({
+					id: 'msg_1',
+					type: 'message',
+					role: 'assistant',
+					content: [{ type: 'text', text: 'ok' }],
+					model: 'claude-sonnet-4-6',
+					stop_reason: 'end_turn',
+					usage: { input_tokens: 1, output_tokens: 1 },
+				}),
+			}
+		})
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createAnthropicProvider({ apiKey: 'test-key' })
+		await provider.complete({
+			messages: [{ role: 'user', content: 'x' }],
+			thinking: { enabled: true, effort: 'high' },
+		})
+		expect((capturedBody?.thinking as { budget_tokens: number }).budget_tokens).toBe(16000)
+
+		vi.unstubAllGlobals()
+	})
+
+	it('emits thinking_* stream events when Anthropic returns thinking blocks', async () => {
+		const events = [
+			{ type: 'message_start', message: { id: 'msg_t1' } },
+			{ type: 'content_block_start', content_block: { type: 'thinking', id: 'th_1' } },
+			{ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'Let me think…' } },
+			{ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: ' step 2.' } },
+			{ type: 'content_block_stop', content_block: { type: 'thinking' } },
+			{ type: 'content_block_start', content_block: { type: 'text' } },
+			{ type: 'content_block_delta', delta: { type: 'text_delta', text: 'Answer.' } },
+			{
+				type: 'message_delta',
+				delta: { stop_reason: 'end_turn' },
+				usage: { input_tokens: 4, output_tokens: 3 },
+			},
+		]
+		const encoder = new TextEncoder()
+		const body = new ReadableStream<Uint8Array>({
+			start(controller) {
+				for (const e of events) {
+					controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`))
+				}
+				controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+				controller.close()
+			},
+		})
+		const mockFetch = vi.fn().mockResolvedValue({ ok: true, body })
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createAnthropicProvider({ apiKey: 'test-key' })
+		const stream = provider.stream({
+			messages: [{ role: 'user', content: 'x' }],
+			thinking: { enabled: true, budgetTokens: 2000 },
+		})
+
+		const collected: { type: string; text?: string }[] = []
+		for await (const event of stream) {
+			collected.push({ type: event.type, text: 'text' in event ? event.text : undefined })
+		}
+
+		const types = collected.map((e) => e.type)
+		expect(types).toContain('thinking_start')
+		expect(types).toContain('thinking_delta')
+		expect(types).toContain('thinking_end')
+		expect(types).toContain('text_delta')
+		expect(types).toContain('message_end')
+
+		const thinkingText = collected
+			.filter((e) => e.type === 'thinking_delta')
+			.map((e) => e.text)
+			.join('')
+		expect(thinkingText).toBe('Let me think… step 2.')
+
+		vi.unstubAllGlobals()
+	})
+
+	it('omits thinking when disabled / not requested', async () => {
+		let capturedBody: Record<string, unknown> | undefined
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => {
+			capturedBody = JSON.parse((init?.body as string) ?? '{}')
+			return {
+				ok: true,
+				json: async () => ({
+					id: 'msg_x',
+					type: 'message',
+					role: 'assistant',
+					content: [{ type: 'text', text: 'ok' }],
+					model: 'claude-sonnet-4-6',
+					stop_reason: 'end_turn',
+					usage: { input_tokens: 1, output_tokens: 1 },
+				}),
+			}
+		})
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createAnthropicProvider({ apiKey: 'test-key' })
+		await provider.complete({
+			messages: [{ role: 'user', content: 'x' }],
+		})
+		expect(capturedBody?.thinking).toBeUndefined()
+
+		vi.unstubAllGlobals()
+	})
 })

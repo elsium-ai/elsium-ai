@@ -59,6 +59,7 @@ export interface TokenUsage {
 	totalTokens: number
 	cacheReadTokens?: number
 	cacheWriteTokens?: number
+	reasoningTokens?: number
 }
 
 export interface CostBreakdown {
@@ -86,8 +87,16 @@ export interface LLMResponse {
 
 // ─── Streaming ───────────────────────────────────────────────────
 
+export interface ThinkingBlock {
+	id?: string
+	signature?: string
+}
+
 export type StreamEvent =
 	| { type: 'text_delta'; text: string }
+	| { type: 'thinking_start'; thinking: ThinkingBlock }
+	| { type: 'thinking_delta'; thinkingId?: string; text: string }
+	| { type: 'thinking_end'; thinkingId?: string }
 	| { type: 'tool_call_start'; toolCall: { id: string; name: string } }
 	| { type: 'tool_call_delta'; toolCallId: string; arguments: string }
 	| { type: 'tool_call_end'; toolCallId: string }
@@ -106,6 +115,12 @@ export interface ProviderConfig {
 	maxRetries?: number
 }
 
+export interface ThinkingConfig {
+	enabled?: boolean
+	budgetTokens?: number
+	effort?: 'low' | 'medium' | 'high'
+}
+
 export interface CompletionRequest {
 	messages: Message[]
 	model?: string
@@ -120,6 +135,7 @@ export interface CompletionRequest {
 	stream?: boolean
 	metadata?: Record<string, unknown>
 	signal?: AbortSignal
+	thinking?: ThinkingConfig
 }
 
 export interface ToolDefinition {

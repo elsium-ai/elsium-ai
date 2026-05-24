@@ -255,6 +255,13 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		}
 	}
 
+	function applyReasoning(body: Record<string, unknown>, req: CompletionRequest): void {
+		if (!req.thinking?.enabled) return
+		if (req.thinking.effort) {
+			body.reasoning_effort = req.thinking.effort
+		}
+	}
+
 	function buildRequestBody(req: CompletionRequest): Record<string, unknown> {
 		const messages = formatMessages(req.messages)
 		const model = req.model ?? 'gpt-4o'
@@ -273,6 +280,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 		const tools = formatTools(req.tools)
 		if (tools) body.tools = tools
 		applyResponseFormat(body, req)
+		applyReasoning(body, req)
 
 		return body
 	}
@@ -291,10 +299,14 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
 			return { id: tc.id, name: tc.function.name, arguments: args }
 		})
 
+		const completionDetails = (raw.usage as Record<string, unknown>).completion_tokens_details as
+			| { reasoning_tokens?: number }
+			| undefined
 		const usage: TokenUsage = {
 			inputTokens: raw.usage.prompt_tokens,
 			outputTokens: raw.usage.completion_tokens,
 			totalTokens: raw.usage.total_tokens,
+			reasoningTokens: completionDetails?.reasoning_tokens,
 		}
 
 		const finishReason = choice?.finish_reason
@@ -433,13 +445,19 @@ function processOpenAISSEChunk(
 ): void {
 	// Parse usage from final chunk (stream_options: { include_usage: true })
 	const eventUsage = event.usage as
-		| { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+		| {
+				prompt_tokens?: number
+				completion_tokens?: number
+				total_tokens?: number
+				completion_tokens_details?: { reasoning_tokens?: number }
+		  }
 		| undefined
 	if (eventUsage) {
 		state.usage = {
 			inputTokens: eventUsage.prompt_tokens ?? 0,
 			outputTokens: eventUsage.completion_tokens ?? 0,
 			totalTokens: eventUsage.total_tokens ?? 0,
+			reasoningTokens: eventUsage.completion_tokens_details?.reasoning_tokens,
 		}
 	}
 
