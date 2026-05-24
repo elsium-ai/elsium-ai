@@ -22,3 +22,15 @@ export type { RetrievalToolConfig, RetrievalResult, RetrieveFn } from './retriev
 // Capability guard — opt-in wrapper that gates tool execution on a CapabilityToken
 export { withCapability } from './capability-guard'
 export type { CapabilityGuardOptions, CapabilityDenialEvent } from './capability-guard'
+
+// Tool contracts — sideEffectLevel, preconditions, idempotency, dry-run
+export { createInMemoryIdempotencyStore } from './contracts'
+export type {
+	SideEffectLevel,
+	PreconditionResult,
+	PreconditionFn,
+	PreconditionFailure,
+	IdempotencyEntry,
+	IdempotencyStore,
+	InMemoryIdempotencyStoreConfig,
+} from './contracts'
