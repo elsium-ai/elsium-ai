@@ -1,3 +1,4 @@
+import { DEFAULT_SIMILARITY_VOTER_THRESHOLD } from './defaults'
 import type { ConfidenceSample, Voter } from './types'
 
 function canonicalize(value: unknown): string {
@@ -55,7 +56,7 @@ export interface SimilarityVoterOptions<T> {
 }
 
 export function createSimilarityVoter<T>(options: SimilarityVoterOptions<T>): Voter<T> {
-	const threshold = options.threshold ?? 0.85
+	const threshold = options.threshold ?? DEFAULT_SIMILARITY_VOTER_THRESHOLD
 
 	return {
 		name: 'similarity-cluster',

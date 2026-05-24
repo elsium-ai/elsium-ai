@@ -1,3 +1,4 @@
+import { DEFAULT_SELF_CONSISTENCY_CONCURRENCY, DEFAULT_SELF_CONSISTENCY_SAMPLES } from './defaults'
 import type {
 	CalibratedScore,
 	ConfidenceSample,
@@ -32,9 +33,9 @@ async function runConcurrent<T>(tasks: Array<() => Promise<T>>, concurrency: num
 }
 
 export function selfConsistency<T>(options: SelfConsistencyOptions<T> = {}): ConfidenceStrategy<T> {
-	const n = options.samples ?? 5
+	const n = options.samples ?? DEFAULT_SELF_CONSISTENCY_SAMPLES
 	const voter = options.voter ?? createMajorityVoter<T>()
-	const concurrency = options.concurrency ?? Math.min(n, 5)
+	const concurrency = options.concurrency ?? Math.min(n, DEFAULT_SELF_CONSISTENCY_CONCURRENCY)
 
 	if (n < 1 || !Number.isInteger(n)) {
 		throw new Error('selfConsistency: samples must be a positive integer')

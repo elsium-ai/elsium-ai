@@ -1,0 +1,11 @@
+export const DEFAULT_SELF_CONSISTENCY_SAMPLES = 5
+
+export const DEFAULT_SELF_CONSISTENCY_CONCURRENCY = 5
+
+export const DEFAULT_JUDGE_AGGREGATOR = 'mean' as const
+
+export const DEFAULT_LOGPROB_AGGREGATOR = 'geometric-mean' as const
+
+export const DEFAULT_LOGPROB_FALLBACK_CONFIDENCE = 0.5
+
+export const DEFAULT_SIMILARITY_VOTER_THRESHOLD = 0.85

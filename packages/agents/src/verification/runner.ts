@@ -1,4 +1,5 @@
 import { composeValidators } from './compose'
+import { DEFAULT_MAX_REPAIRS, REPAIR_PROMPT_PREVIEW_CHARS } from './defaults'
 import type {
 	GenerateFn,
 	RepairContext,
@@ -8,16 +9,14 @@ import type {
 	VerificationOutcome,
 } from './types'
 
-const DEFAULT_MAX_REPAIRS = 3
-
 function defaultRepairPrompt(failures: ValidationFailure[], previousValue: unknown): string {
 	const bullets = failures
 		.map((f) => `- [${f.validator}] ${f.reason}${f.repairHint ? ` → ${f.repairHint}` : ''}`)
 		.join('\n')
 	const preview =
 		typeof previousValue === 'string'
-			? previousValue.slice(0, 500)
-			: JSON.stringify(previousValue, null, 2).slice(0, 500)
+			? previousValue.slice(0, REPAIR_PROMPT_PREVIEW_CHARS)
+			: JSON.stringify(previousValue, null, 2).slice(0, REPAIR_PROMPT_PREVIEW_CHARS)
 	return `The previous output failed verification with these issues:\n${bullets}\n\nPrevious output (truncated):\n${preview}\n\nProduce a new output that fixes every issue above.`
 }
 

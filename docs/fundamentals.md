@@ -101,6 +101,16 @@ Three Pillars — where each feature lives:
   - [RBAC (Role-Based Access Control)](#rbac-role-based-access-control)
   - [Approval Gates](#approval-gates)
   - [Audit Trail](#audit-trail)
+- [Verifiable Agent Execution](#verifiable-agent-execution)
+  - [Proof Recorder](#proof-recorder)
+  - [Offline Verification](#offline-verification)
+  - [Replay & Comparison](#replay--comparison)
+- [Capability Tokens](#capability-tokens)
+  - [Mint & Verify](#mint--verify)
+  - [Guards: Tools, LLM, MCP, RAG](#guards-tools-llm-mcp-rag)
+  - [Delegation & Revocation](#delegation--revocation)
+- [Verification-Augmented Generation (VAG)](#verification-augmented-generation-vag)
+- [Confidence-Augmented Generation (CAG)](#confidence-augmented-generation-cag)
 - [Deterministic AI](#deterministic-ai)
   - [Seed Propagation](#seed-propagation)
   - [Output Pinning](#output-pinning)
@@ -3092,6 +3102,305 @@ console.log(formatComplianceReport(report))
 ```
 
 Supported frameworks: `owasp-agentic` (6 checks), `eu-ai-act` (5 checks), `colorado-ai-act` (3 checks), `custom` (user-defined).
+
+---
+
+## Verifiable Agent Execution
+
+> **Cryptographic receipts for every agent run.**
+
+Every agent run can produce a signed `ExecutionProof` — a JSON document with hash-chained events (LLM calls, tool calls, RAG retrievals, policy decisions) and an Ed25519 signature over the chain head. A third party with only the organization's public key can verify offline that the recorded sequence really happened, and that no event was edited after the fact.
+
+The substrate lives in `@elsium-ai/core/crypto` (Ed25519 signing, key registry, write-once tamper-evident storage); the proof recorder lives in `@elsium-ai/observe`; offline verification is exposed as both an API and a CLI command (`elsium verify`).
+
+### Proof Recorder
+
+```ts
+import {
+  createEd25519Signer,
+  createFileWriteOnceStore,
+  generateEd25519KeyPair,
+} from '@elsium-ai/core'
+import { gateway } from '@elsium-ai/gateway'
+import { PROOF_SESSION_METADATA_KEY, createProofRecorder } from '@elsium-ai/observe'
+
+const pair = generateEd25519KeyPair()
+const signer = createEd25519Signer({ privateKey: pair.privateKey, keyId: 'org-aperion-k7' })
+const recorder = createProofRecorder({ signer })
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  middleware: [recorder.middleware()], // auto-records llm.call events
+})
+
+const session = recorder.startSession({
+  agentId: 'invoice-extractor',
+  agentVersion: '1.2.3',
+  inputs: { messages: [{ role: 'user', content: 'Extract this invoice…' }] },
+})
+
+const response = await llm.complete({
+  messages: [...],
+  metadata: { [PROOF_SESSION_METADATA_KEY]: session.proofId },
+})
+
+session.recordToolCall({ tool: 'parse_invoice', inputHash: 'h1', outputHash: 'h2' })
+session.recordPolicyDecision({ rule: 'pii-allowed', result: 'allow' })
+
+const store = createFileWriteOnceStore({ dir: './proofs' })
+const proof = await session.finalize({ finalOutput: { total: 1234 }, store })
+// proof.chainHead, proof.signature, proof.events — written to ./proofs/<proofId>.json
+```
+
+### Offline Verification
+
+The verifier needs only the **public key** and the proof file. No API keys, no network:
+
+```ts
+import { createKeyRegistry } from '@elsium-ai/core'
+import { verifyProof } from '@elsium-ai/observe'
+
+const registry = createKeyRegistry({
+  trustRoots: [{ keyId: 'org-aperion-k7', publicKey: ORG_PUBLIC_KEY_PEM }],
+})
+
+const proof = JSON.parse(await readFile('./proofs/proof_abc.json', 'utf8'))
+const result = verifyProof(proof, registry)
+// result.valid === true if signature + full hash chain check out
+// result.chainBrokenAt when an event was mutated after signing
+```
+
+Or from the CLI:
+
+```bash
+elsium verify ./proofs/proof_abc.json --public-key ./org-aperion.pub
+elsium verify ./proofs/proof_abc.json --trust-roots ./trust-roots.json --json
+```
+
+### Replay & Comparison
+
+Two proofs of the same agent run can be diffed structurally — useful for post-mortems, A/B testing, and CI assertions:
+
+```ts
+import { compareProofs } from '@elsium-ai/observe'
+
+const diff = compareProofs(proofA, proofB, { strategy: 'structural' })
+// 'bit-exact'  → every event's hashSelf must match (requires temperature: 0 + seed)
+// 'structural' → same order/types; tool/rag/policy data identical; llm.call only model+provider
+// diff.deltas — per-event mismatches with structured detail
+// diff.summary — counts: matched / differing / extraInA / extraInB
+```
+
+```bash
+elsium replay ./run-1.json ./run-2.json --strategy structural --json
+```
+
+See [`examples/verifiable-agent-execution/`](../examples/verifiable-agent-execution/) for the end-to-end flow.
+
+---
+
+## Capability Tokens
+
+> **OAuth-style scoped tokens for AI agents.**
+
+Mint an Ed25519-signed token that declares exactly what an agent run is allowed to touch: which tools (with field-level constraints), which LLM providers (with cost/token budgets), which MCP servers, which RAG stores, which data classes. Every guarded execution point verifies the token before doing work — signature, validity window, scope, optional revocation.
+
+### Mint & Verify
+
+```ts
+import {
+  createCapabilityIssuer,
+  createCapabilityVerifier,
+  createEd25519Signer,
+  createKeyRegistry,
+  generateEd25519KeyPair,
+} from '@elsium-ai/core'
+
+const pair = generateEd25519KeyPair()
+const signer = createEd25519Signer({ privateKey: pair.privateKey, keyId: 'org-aperion-k7' })
+const issuer = createCapabilityIssuer({ signer, orgId: 'aperion-gaming' })
+
+const token = issuer.mint({
+  subject: { agent: 'support-bot-v3', runId: 'run_xyz' },
+  capabilities: [
+    { kind: 'tool', name: 'customer.read', constraints: { allowedFields: ['name', 'email'] } },
+    { kind: 'llm',  provider: 'anthropic', maxCost: 0.5, maxTokens: 50_000 },
+    { kind: 'mcp',  server: 'github', tools: ['issues.list'] },
+    { kind: 'rag',  stores: ['kb-public'], maxResults: 10 },
+  ],
+  dataClasses: { allowed: ['public', 'internal'], denied: ['pii', 'financial'] },
+  ttlMs: 60 * 60 * 1000,
+})
+
+const registry = createKeyRegistry({ trustRoots: [{ keyId: 'org-aperion-k7', publicKey: pair.publicKey }] })
+const verifier = createCapabilityVerifier({ resolver: registry })
+const result = verifier.verifyToken(token) // { valid, signatureValid, withinValidityWindow, reason? }
+```
+
+### Guards: Tools, LLM, MCP, RAG
+
+All four guards accept the same shape: `{ token, verifier?, onDeny? }`. Refusals fire `onDeny` for audit and either throw `ElsiumError(AUTH_ERROR)` (LLM/MCP/RAG) or return `ToolExecutionResult { success: false }` (tools).
+
+```ts
+import { withCapability } from '@elsium-ai/tools'
+import { capabilityMiddleware } from '@elsium-ai/gateway'
+import { createCapabilityGuardedMCPClient } from '@elsium-ai/mcp'
+import { withRagCapability } from '@elsium-ai/rag'
+
+// Tool — wraps execute()
+const guardedTool = withCapability(myTool, { token, verifier })
+
+// LLM — gateway middleware
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: '...',
+  middleware: [capabilityMiddleware({ token, verifier })],
+})
+
+// MCP — wraps callTool()
+const guardedMcp = createCapabilityGuardedMCPClient(mcpClient, { token, server: 'github', verifier })
+
+// RAG — wraps query()
+const guardedRag = withRagCapability(ragPipeline, { token, verifier, store: 'kb-public' })
+```
+
+### Delegation & Revocation
+
+A token holder can mint a **strict-subset child token** for a sub-agent. Subset enforcement is checked at mint time per capability kind (tool deniedFields inherited, LLM maxCost/maxTokens ≤ parent, MCP tool allowlists ⊆ parent, RAG stores ⊆ parent, budgets shrink, denied data classes propagate, child `expiresAt` ≤ parent).
+
+```ts
+const child = issuer.delegate(parent, {
+  subject: { agent: 'support-bot-v3:translator-sub' },
+  capabilities: [{ kind: 'llm', provider: 'anthropic', maxCost: 0.1 }], // ⊂ parent's 0.5
+})
+// child.subject.parentToken === parent.tokenId
+```
+
+Revocation uses a pluggable `RevocationStore` (in-memory adapter ships; you implement durable backends). Pass it to the verifier and call `verifyTokenAsync` to consult it:
+
+```ts
+import { createInMemoryRevocationStore } from '@elsium-ai/core'
+
+const revocationStore = createInMemoryRevocationStore()
+const verifier = createCapabilityVerifier({ resolver: registry, revocationStore })
+
+await revocationStore.revoke(token.tokenId, { reason: 'key compromised' })
+const result = await verifier.verifyTokenAsync(token)
+// result.reason === 'revoked'
+```
+
+Revocation is **eventually consistent** — in-flight calls that already passed verification continue. Document this in your runbook; there is no synchronous "kill switch" guarantee.
+
+See [`examples/capability-tokens/`](../examples/capability-tokens/) for the full mint → guard → delegate → revoke flow.
+
+---
+
+## Verification-Augmented Generation (VAG)
+
+> **`generate → validate → repair-or-abort` as a first-class primitive.**
+
+Every serious production team has hand-rolled some version of this: validate the output, reinject the error into the next prompt, retry up to N times, give up gracefully. VAG turns it into a framework contract with composable validators and a tagged outcome you can branch on without `try/catch`.
+
+```ts
+import {
+  composeValidators,
+  externalValidator,
+  runWithVerification,
+  zodValidator,
+} from '@elsium-ai/agents'
+import { z } from 'zod'
+
+const InvoiceSchema = z.object({
+  vendor: z.string(),
+  total: z.number().positive(),
+  lineItems: z.array(z.object({ description: z.string(), amount: z.number() })),
+})
+
+const sumMatches = externalValidator(
+  async (invoice) => {
+    const sum = invoice.lineItems.reduce((s, i) => s + i.amount, 0)
+    return {
+      valid: Math.abs(sum - invoice.total) < 0.01,
+      reason: 'total must equal sum of line items',
+    }
+  },
+  { name: 'sum-matches', repairHint: 'Set `total` equal to sum of `lineItems[].amount`.' },
+)
+
+const outcome = await runWithVerification(
+  async (repair) => {
+    const messages = [
+      { role: 'user' as const, content: 'Extract this invoice…' },
+      ...(repair ? [{ role: 'user' as const, content: repair.repairPrompt }] : []),
+    ]
+    const { object } = await llm.generateObject({ messages, schema: InvoiceSchema })
+    return object
+  },
+  {
+    validators: [zodValidator(InvoiceSchema), sumMatches],
+    maxRepairs: 3, // default — `DEFAULT_MAX_REPAIRS` in `verification/defaults.ts`
+  },
+)
+
+// outcome.status === 'ok' | 'repaired' | 'aborted'
+// outcome.value (when ok/repaired) or outcome.lastValue (when aborted)
+// outcome.history — per-attempt audit (value + validator outcomes + duration)
+```
+
+**Built-in validators**:
+
+| Validator | Use for |
+|---|---|
+| `zodValidator(schema)` | Structured output with a Zod shape. Per-path repair hint. |
+| `regexValidator(pattern, { mode })` | Cheap surface checks: format, forbidden tokens. |
+| `semanticAdapter(semanticValidator, { input })` | Wraps the existing `SemanticValidator` (LLM-as-judge) into the `Validator` contract. |
+| `externalValidator(fn, { name, repairHint })` | Async business rules, API/DB lookups. |
+
+Compose them with `composeValidators(validators, { mode: 'all' | 'short-circuit' })`. See [`examples/verification-pipeline/`](../examples/verification-pipeline/).
+
+---
+
+## Confidence-Augmented Generation (CAG)
+
+> **Calibrated confidence + runtime threshold gates.**
+
+VAG tells you the output is **wrong**. CAG tells you the output is **uncertain** — even when nothing failed validation. Three pluggable strategies and a runtime gate. All implement the same `ConfidenceStrategy<T>` contract and return a `CalibratedScore<T>` with `{ value, confidence, strategy, samples?, details? }`.
+
+```ts
+import {
+  judgeEnsemble,
+  logprobScore,
+  requireConfidence,
+  selfConsistency,
+} from '@elsium-ai/agents'
+
+// Self-consistency: sample N times, vote
+const sc = selfConsistency({ samples: 5 }) // default samples follow Wang et al. 2022
+
+// Judge ensemble: M judges, aggregate mean | median | min
+const je = judgeEnsemble({ judges: [factCheck, toneJudge], aggregator: 'min' })
+
+// Logprob-based: aggregate token logprobs (geometric mean — perplexity calibrated)
+const lp = logprobScore({ aggregator: 'geometric-mean' })
+
+// Runtime gate
+const gated = await requireConfidence(
+  async () => ({ value: await agent.run(prompt).then((r) => r.message.content) }),
+  {
+    strategy: sc,
+    min: 0.8,
+    below: 'escalate', // 'abort' | 'escalate' | callback that returns a new score
+  },
+)
+// gated.status === 'ok' | 'escalated' | 'aborted'
+```
+
+The N samples produced by `selfConsistency` can be reused as VAG validator inputs (one judge per sample, agreement count as a confidence judgment). The two layers compose cleanly: VAG enforces correctness, CAG measures certainty.
+
+Default values for the CAG strategies (e.g., `DEFAULT_SELF_CONSISTENCY_SAMPLES = 5`, `DEFAULT_SIMILARITY_VOTER_THRESHOLD = 0.85`) live in `packages/agents/src/confidence-strategies/defaults.ts` so they are easy to find, override, and audit.
+
+See [`examples/confidence-strategies/`](../examples/confidence-strategies/).
 
 ---
 
