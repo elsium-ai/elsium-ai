@@ -12,7 +12,10 @@
   <a href="https://github.com/elsium-ai/elsium-ai"><strong>GitHub</strong></a>
 </p>
 
-https://github.com/user-attachments/assets/e2a385a6-4c8f-431c-ba2f-9d7c5e86ef5f
+<p align="center">
+  See the framework in action — every demo is interactive and runnable: <a href="https://elsiumai.com/#demos"><strong>elsiumai.com/#demos</strong></a>
+</p>
+
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>

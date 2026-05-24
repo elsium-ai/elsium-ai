@@ -24,6 +24,7 @@ npm install @elsium-ai/agents @elsium-ai/core
 | **Confidence** | `createConfidenceScorer`, `ConfidenceConfig`, `ConfidenceResult` | Score agent output confidence with heuristic and semantic signals |
 | **State Machine** | `executeStateMachine` | Run an agent through a finite state machine of states and transitions |
 | **Approval Gates** | `createApprovalGate`, `shouldRequireApproval`, `ApprovalRequest`, `ApprovalDecision`, `ApprovalCallback`, `ApprovalGateConfig`, `ApprovalGate` | Human-in-the-loop approval for high-stakes operations |
+| **`askHuman`** | `askHuman`, `createInMemoryAskHumanStore`, `resolveAskHuman`, `AskHumanStore`, `AskHumanRequest`, `AskHumanDecision`, `AskHumanRecord`, `AskHumanResponder`, `AskHumanOptions`, `AskHumanStatus` | Standalone unified API for human-in-the-loop pauses. Two modes: responder callback (raced against timeout) or store-backed durable (out-of-band `resolveAskHuman` call). `timeoutMs` accepts a number or a string suffix (`'5s' \| '2m' \| '1h' \| '7d'`). Designed to pair with an `AsyncAgent` task store so the agent state survives a server restart. |
 | **Verification (VAG)** | `runWithVerification`, `composeValidators`, `zodValidator`, `regexValidator`, `semanticAdapter`, `externalValidator`, `Validator`, `VerificationConfig`, `VerificationOutcome`, `RepairContext` | `generate → validate → repair-or-abort` pipeline. Validators (Zod schema, regex, semantic LLM-as-judge, external check) compose; failures are formatted as a repair prompt re-injected into the next generation. Returns `{ status: 'ok' \| 'repaired' \| 'aborted', value, attempts, history }`. |
 | **Confidence Strategies (CAG)** | `selfConsistency`, `judgeEnsemble`, `logprobScore`, `createMajorityVoter`, `createSimilarityVoter`, `requireConfidence`, `ConfidenceTooLowError`, `ConfidenceStrategy`, `CalibratedScore` | Pluggable confidence strategies — self-consistency (N samples + voting), judge ensemble (M judges, mean/median/min), logprob (geometric-mean / mean / min over token logprobs). `requireConfidence(generate, { min, below: 'abort' \| 'escalate' \| callback })` is the threshold gate. Composes with VAG. |
 
@@ -1256,6 +1257,53 @@ const result = await requireConfidence(
 ### Composing CAG with VAG
 
 The N samples produced by `selfConsistency` are reusable as VAG validator inputs (one judge per sample, agreement count as a confidence judgment). The two layers stack cleanly: VAG enforces correctness, CAG measures certainty, and `requireConfidence` is the runtime decision point that routes low-confidence outputs to escalation — directly into the CARG router (next).
+
+---
+
+## `askHuman` — durable human-in-the-loop
+
+`askHuman` consolidates the human-in-the-loop pattern into a single ergonomic call. Two modes:
+
+1. **Responder mode** — the caller supplies a `responder` callback (Slack bot, web UI, anything async). Raced against a setTimeout-based timeout.
+2. **Store mode** — the caller supplies an `AskHumanStore` and the function polls for a decision every 250 ms. The decision is set out-of-band via `resolveAskHuman(store, requestId, decision)`. When the store is durable (e.g., the same task store an `AsyncAgent` uses), the agent state survives a server restart.
+
+```ts
+import { askHuman, createInMemoryAskHumanStore, resolveAskHuman } from '@elsium-ai/agents'
+
+// Mode 1 — responder
+const decision = await askHuman({
+  question: 'Approve $50,000 transfer?',
+  options: ['approve', 'reject', 'modify'] as const,
+  context: { trade, riskScore },
+  timeoutMs: '24h',          // accepts '5s' | '2m' | '1h' | '7d' or a number in ms
+  onTimeout: 'reject',
+  responder: async (req) => slack.askApproval(req),
+})
+
+// Mode 2 — store-backed
+const store = createInMemoryAskHumanStore()
+const pending = askHuman({
+  question: 'Approve $50,000 transfer?',
+  options: ['approve', 'reject'],
+  timeoutMs: '24h',
+  store,
+  requestId: 'review_001',
+})
+
+// Out-of-band (Slack webhook, web UI POST, ...):
+await resolveAskHuman(store, 'review_001', {
+  status: 'approved',
+  option: 'approve',
+  decidedBy: 'jane@org',
+  approved: true,
+  requestId: 'review_001',
+})
+
+const decision = await pending
+// decision.status ∈ 'approved' | 'rejected' | 'timeout' | 'custom'
+```
+
+The `AskHumanStore` port (`save / get / listPending / delete`) lets you swap the in-memory adapter for any durable backend. `listPending()` is the surface a notifier / digest reads ("show me all open approvals for the team").
 
 ---
 

@@ -59,16 +59,20 @@ Three Pillars — where each feature lives:
   - [Middleware Composition](#middleware-composition)
   - [Logging & Cost Tracking Middleware](#logging--cost-tracking-middleware)
   - [Pricing & Cost Calculation](#pricing--cost-calculation)
+  - [Cost-Aware Routed Generation (CARG)](#cost-aware-routed-generation-carg)
 - [Multimodal Content](#multimodal-content)
 - [Structured Output](#structured-output)
   - [Structured Extraction](#structured-extraction)
 - [Streaming](#streaming)
+  - [Thinking / reasoning events](#thinking--reasoning-events)
+  - [Typed tool call arguments — `withToolTypes`](#typed-tool-call-arguments--withtooltypes)
 - [Response Caching](#response-caching)
 - [Output Guardrails](#output-guardrails)
 - [Batch Processing](#batch-processing)
 - [Tools](#tools)
   - [Retrieval Tool](#retrieval-tool)
   - [Tool Result Formatting](#tool-result-formatting)
+  - [Tool Contracts — sideEffectLevel + idempotencyKey + preconditions + dryRun](#tool-contracts--sideeffectlevel--idempotencykey--preconditions--dryrun)
 - [Agents](#agents)
   - [Structured Output](#structured-output)
   - [Streaming](#streaming)
@@ -100,6 +104,7 @@ Three Pillars — where each feature lives:
   - [Policy Engine](#policy-engine)
   - [RBAC (Role-Based Access Control)](#rbac-role-based-access-control)
   - [Approval Gates](#approval-gates)
+  - [askHuman — durable human-in-the-loop](#askhuman--durable-human-in-the-loop)
   - [Audit Trail](#audit-trail)
 - [Verifiable Agent Execution](#verifiable-agent-execution)
   - [Proof Recorder](#proof-recorder)
@@ -131,6 +136,7 @@ Three Pillars — where each feature lives:
   - [Regression Detection](#regression-detection)
   - [Snapshot Testing](#snapshot-testing)
   - [Replay & Fixtures](#replay--fixtures)
+  - [`replayFrom` — time-travel replay with overrides](#replayfrom--time-travel-replay-with-overrides)
   - [Prompt Versioning](#prompt-versioning)
   - [Eval Datasets](#eval-datasets)
   - [Eval Baselines & Regression Detection](#eval-baselines--regression-detection)
@@ -727,6 +733,46 @@ registerPricing('my-custom-model', {
 })
 ```
 
+### Cost-Aware Routed Generation (CARG)
+
+`createCascadeRouter` is an opt-in router that routes a request to the cheapest tier first and **escalates** on provider error, validator failure, low confidence, or a classifier-decided difficulty cap. Together with VAG (correctness) and CAG (certainty), it closes the operational triad: VAG says wrong → escalate; CAG says uncertain → escalate; classifier says too hard for tier X → skip tier X.
+
+```typescript
+import { createCascadeRouter, createHeuristicClassifier } from '@elsium-ai/gateway'
+
+const router = createCascadeRouter(
+  {
+    tiers: [
+      { name: 'haiku',  provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxDifficulty: 0.4 },
+      { name: 'sonnet', provider: 'anthropic', model: 'claude-sonnet-4-6',         maxDifficulty: 0.8 },
+      { name: 'opus',   provider: 'anthropic', model: 'claude-opus-4-7' },
+    ],
+    classifier: createHeuristicClassifier(),
+    escalateOnFailure: {
+      onProviderError: true,
+      validator: async (response) => MySchema.safeParse(JSON.parse(extractText(response.message.content))).success
+        ? { valid: true }
+        : { valid: false, reason: 'schema mismatch' },
+      confidence: async (response) => {
+        const score = await confidenceStrategy.score(async () => ({ value: response.message.content, raw: response }))
+        return { ok: score.confidence >= 0.8, confidence: score.confidence }
+      },
+      maxEscalations: 2,
+    },
+    onAudit: (event) => audit.log('cascade', event),
+  },
+  { apiKeys: { anthropic: process.env.ANTHROPIC_API_KEY! } },
+)
+
+const result = await router.complete({ messages: [...] })
+// result.tier — which tier served
+// result.totalCost / totalLatencyMs — accumulated across attempts
+// result.attempts — per-tier audit (status: ok | failed | validation-failed | low-confidence | skipped-by-classifier)
+// result.classification — { difficulty, domain }
+```
+
+Two built-in classifiers: `createHeuristicClassifier()` (zero-cost, keyword + size scoring) and `createLLMClassifier({ complete })` (asks a cheap model). Custom: implement the `LLMClassifier` interface. See [`examples/carg-cascade/`](../examples/carg-cascade/).
+
 ---
 
 ## Multimodal Content
@@ -956,6 +1002,51 @@ const filtered = stream.pipe(async function* (source) {
   }
 })
 ```
+
+### Thinking / reasoning events
+
+`StreamEvent` includes `thinking_start` / `thinking_delta` / `thinking_end` variants for models that surface their internal reasoning. Opt in via `thinking` on the `CompletionRequest`:
+
+```typescript
+const stream = llm.stream({
+  messages: [{ role: 'user', content: 'Plan a 3-day itinerary in Lisbon.' }],
+  thinking: { enabled: true, budgetTokens: 8_000 }, // or effort: 'low' | 'medium' | 'high'
+})
+
+for await (const event of stream) {
+  if (event.type === 'thinking_delta') process.stderr.write(`💭 ${event.text}`)
+  else if (event.type === 'text_delta') process.stdout.write(event.text)
+  else if (event.type === 'message_end') console.log('reasoning tokens:', event.usage.reasoningTokens)
+}
+```
+
+The gateway translates `thinking` into Anthropic's `thinking: { type: 'enabled', budget_tokens }` and OpenAI's `reasoning_effort`. For OpenAI o-series, traces are private — only `usage.reasoningTokens` is exposed. See [`examples/thinking-stream/`](../examples/thinking-stream/).
+
+### Typed tool call arguments — `withToolTypes`
+
+Raw `tool_call_delta` events stream JSON fragments as strings. `withToolTypes(stream, schemas)` wraps the stream and emits a new typed `tool_call_complete` event whose `toolCall.arguments` is **narrowed per tool name** via a mapped type:
+
+```typescript
+import { withToolTypes } from '@elsium-ai/core'
+import { z } from 'zod'
+
+const schemas = {
+  get_weather: z.object({ city: z.string(), unit: z.enum(['C', 'F']).optional() }),
+  search: z.object({ query: z.string(), limit: z.number().int().positive() }),
+}
+
+const stream = withToolTypes(llm.stream({ messages: [...], tools: [...] }), schemas)
+
+for await (const event of stream) {
+  if (event.type === 'tool_call_complete') {
+    if (event.toolCall.name === 'get_weather') {
+      const { city, unit } = event.toolCall.arguments // typed from Zod
+    }
+  }
+}
+```
+
+Validation failures (bad JSON or schema mismatch) surface as `UnknownToolCallComplete` with `parseError.{ reason, raw }`. Original `tool_call_start/delta/end` events still pass through. See [`examples/typed-tool-stream/`](../examples/typed-tool-stream/).
 
 ---
 
@@ -1240,6 +1331,52 @@ const text = formatToolResultAsText(result)
 console.log(text)
 // "Tool 'search_products' succeeded in 120ms: { products: [...], total: 5 }"
 ```
+
+### Tool Contracts — `sideEffectLevel` + `idempotencyKey` + `preconditions` + `dryRun`
+
+`ToolConfig` accepts four extra fields that turn a tool from "run handler, hope" into something the framework can reason about for safety:
+
+```typescript
+import { defineTool, createInMemoryIdempotencyStore } from '@elsium-ai/tools'
+import { z } from 'zod'
+
+const idempotencyStore = createInMemoryIdempotencyStore()
+
+const transferTool = defineTool({
+  name: 'transferFunds',
+  description: 'Move money between accounts',
+  input: z.object({ txId: z.string(), amount: z.number().positive(), to: z.string() }),
+  sideEffectLevel: 'destructive',
+  idempotencyKey: (input) => input.txId,
+  idempotencyStore,
+  preconditions: [
+    { name: 'hasBalance', check: async (i) => ({ ok: await balanceFor(i.from) >= i.amount, reason: 'insufficient balance' }) },
+    { name: 'kycVerified', check: async (i) => ({ ok: await kyc(i.to), reason: 'KYC required' }) },
+  ],
+  dryRunHandler: (input) => ({ ok: true, ref: `PREVIEW:${input.txId}` }),
+  handler: async (input) => bank.transfer(input),
+})
+
+// Real execution:
+await transferTool.execute({ txId: 'tx-1', amount: 50, to: 'acct-X' })
+
+// Dry-run — skips handler, returns preview
+await transferTool.execute({ txId: 'tx-1', amount: 50, to: 'acct-X' }, { dryRun: true })
+// → { success: true, data: { ok: true, ref: 'PREVIEW:tx-1' }, dryRun: true }
+
+// Second call with same txId — cache hit, handler skipped
+await transferTool.execute({ txId: 'tx-1', amount: 50, to: 'acct-X' })
+// → { success: true, data: <previous>, idempotent: true }
+```
+
+Semantics:
+
+- `sideEffectLevel: 'read' | 'write' | 'destructive'` — `dryRun: true` skips the handler for `write`/`destructive` (calls `dryRunHandler` if provided, otherwise returns `success: true, data: undefined`). `read` tools always run.
+- `preconditions` — all checks run before the handler. Any failure aggregates into `result.preconditionFailures` and the handler is skipped.
+- `idempotencyKey + idempotencyStore` — on a key match, the cached output is returned with `result.idempotent: true`. Critical for safe retries (no double-charge on flaky network).
+- `tool.sideEffectLevel` is exposed on the public `Tool` shape so upstream policy code (auto-approval gates, capability tokens) can branch on it.
+
+See [`examples/tool-contracts/`](../examples/tool-contracts/).
 
 ---
 
@@ -2866,6 +3003,52 @@ const needsApproval = shouldRequireApproval(
 console.log(needsApproval) // true
 ```
 
+### `askHuman` — durable human-in-the-loop
+
+`askHuman` consolidates the HITL pattern into a single ergonomic call. Two modes: a **responder callback** (Slack/web UI raced against a timeout) or a **store-backed durable mode** that survives server restarts when paired with an `AsyncAgent` task store.
+
+```typescript
+import { askHuman, createInMemoryAskHumanStore, resolveAskHuman } from '@elsium-ai/agents'
+
+// Mode 1 — responder (synchronous-style, with timeout race)
+const decision = await askHuman({
+  question: 'Approve $50,000 transfer?',
+  options: ['approve', 'reject', 'modify'] as const,
+  context: { trade, riskScore },
+  timeoutMs: '24h',  // accepts '5s' | '2m' | '1h' | '7d' or a number
+  onTimeout: 'reject',
+  responder: async (req) => {
+    // POST to your Slack bot / web UI; await human decision
+    return slack.askApproval(req)
+  },
+})
+// decision.status: 'approved' | 'rejected' | 'timeout' | 'custom'
+
+// Mode 2 — store-backed (durable; pause survives restarts)
+const store = createInMemoryAskHumanStore()
+const pending = askHuman({
+  question: 'Approve $50,000 transfer?',
+  options: ['approve', 'reject'],
+  timeoutMs: '24h',
+  store,
+  requestId: 'review_001',
+})
+
+// Out-of-band, when the human responds:
+await resolveAskHuman(store, 'review_001', {
+  status: 'approved',
+  option: 'approve',
+  decidedBy: 'jane@org',
+  approved: true,
+  requestId: 'review_001',
+})
+const decision = await pending
+```
+
+The store-backed mode polls every 250 ms for a decision. Swap the in-memory adapter for any backend that implements the `AskHumanStore` port (save / get / listPending / delete) — typically the same task store you use for `AsyncAgent`, so the agent state survives a server restart.
+
+See [`examples/ask-human/`](../examples/ask-human/).
+
 ### Audit Trail
 
 Tamper-proof, hash-chained event log for compliance and forensics:
@@ -4189,6 +4372,44 @@ const fixture = createFixture('support-tests', [
 const provider = fixture.toProvider({ matching: 'request-hash' })
 const response = await provider.complete(request)
 ```
+
+### `replayFrom` — time-travel replay with overrides
+
+`createTraceRecorder` captures every agent step (input → output keyed by name); `replayFrom(trace, { fromStep, executor, overrides })` re-feeds steps before `fromStep` and runs the executor live for the rest, optionally with per-key overrides. The loop is: a run failed in production → grab the trace → replay locally from the failing step → try 3 prompts → fix verified in 90 seconds.
+
+```typescript
+import { createTraceRecorder, replayFrom } from '@elsium-ai/testing'
+
+// Record a live run
+const rec = createTraceRecorder({ agentId: 'invoice-extractor' })
+rec.recordStep({ key: 'classify', input: raw, output: 'invoice' })
+rec.recordStep({ key: 'extract',  input: raw, output: { total: 1234 } })
+rec.recordStep({ key: 'validate', input: { total: 1234 }, output: { ok: true } })
+const trace = rec.finish()
+// Persist trace.id + trace.steps to your DB
+
+// Later — replay from a specific step with an override
+const result = await replayFrom(trace, {
+  fromStep: 'extract',  // or numeric index
+  executor: async ({ key, input, originalStep }) => {
+    // For steps at or after fromStep, run live (your real LLM/tool call)
+    return runStepLive(key, input)
+  },
+  overrides: {
+    extract: { kind: 'transform', input: (i) => `${i} [v2 prompt]` },
+    validate: { kind: 'replace', output: { ok: 'forced' } },
+  },
+})
+// result.steps[i].source === 'replay' | 'live'
+// result.steps[i].overridden === true | false
+// result.finalOutput
+```
+
+Overrides:
+- `{ kind: 'replace', output }` — skip executor entirely, substitute output (counterfactuals).
+- `{ kind: 'transform', input?, output? }` — rewrite the input handed to executor and/or post-process its output (prompt overrides, audit-friendly transformations).
+
+See [`examples/replay-from/`](../examples/replay-from/).
 
 ### Prompt Versioning
 
