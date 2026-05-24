@@ -1,4 +1,5 @@
 import type { LLMResponse } from '@elsium-ai/core'
+import { DEFAULT_LOGPROB_AGGREGATOR, DEFAULT_LOGPROB_FALLBACK_CONFIDENCE } from './defaults'
 import type { CalibratedScore, ConfidenceStrategy, GenerateSample } from './types'
 
 export type LogprobAggregator = 'mean' | 'geometric-mean' | 'min'
@@ -34,8 +35,8 @@ function aggregateLogprobs(logprobs: number[], mode: LogprobAggregator): number 
 
 export function logprobScore<T>(options: LogprobScoreOptions = {}): ConfidenceStrategy<T> {
 	const extract = options.extractLogprobs ?? defaultExtractLogprobs
-	const aggregator: LogprobAggregator = options.aggregator ?? 'geometric-mean'
-	const fallback = options.fallbackConfidence ?? 0.5
+	const aggregator: LogprobAggregator = options.aggregator ?? DEFAULT_LOGPROB_AGGREGATOR
+	const fallback = options.fallbackConfidence ?? DEFAULT_LOGPROB_FALLBACK_CONFIDENCE
 
 	return {
 		name: `logprob(${aggregator})`,

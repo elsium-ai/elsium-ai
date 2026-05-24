@@ -1,0 +1,3 @@
+export const DEFAULT_MAX_REPAIRS = 3
+
+export const REPAIR_PROMPT_PREVIEW_CHARS = 500

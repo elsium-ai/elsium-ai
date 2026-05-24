@@ -1,3 +1,4 @@
+import { DEFAULT_JUDGE_AGGREGATOR } from './defaults'
 import type { CalibratedScore, ConfidenceStrategy, GenerateSample, Judge } from './types'
 
 export type EnsembleAggregator = 'mean' | 'median' | 'min'
@@ -22,7 +23,7 @@ export function judgeEnsemble<T>(options: JudgeEnsembleOptions<T>): ConfidenceSt
 	if (!options.judges?.length) {
 		throw new Error('judgeEnsemble: requires at least one judge')
 	}
-	const aggregator: EnsembleAggregator = options.aggregator ?? 'mean'
+	const aggregator: EnsembleAggregator = options.aggregator ?? DEFAULT_JUDGE_AGGREGATOR
 
 	return {
 		name: `judge-ensemble(${options.judges.length},${aggregator})`,

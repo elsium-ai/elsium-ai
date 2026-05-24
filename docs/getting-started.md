@@ -855,21 +855,124 @@ console.log(result.stateHistory)  // Full trace of transitions
 
 Each state can override the system prompt, available tools, and guardrails. A single conversation history is maintained across all states.
 
+## Verifiable Agent Execution
+
+Capture an agent run as a signed `ExecutionProof` that any third party can verify offline:
+
+```typescript
+import {
+  createEd25519Signer,
+  createFileWriteOnceStore,
+  generateEd25519KeyPair,
+} from '@elsium-ai/core'
+import { gateway } from '@elsium-ai/gateway'
+import { PROOF_SESSION_METADATA_KEY, createProofRecorder } from '@elsium-ai/observe'
+
+const pair = generateEd25519KeyPair()
+const signer = createEd25519Signer({ privateKey: pair.privateKey, keyId: 'org-k1' })
+const recorder = createProofRecorder({ signer })
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [recorder.middleware()],
+})
+
+const session = recorder.startSession({ agentId: 'invoice-extractor' })
+await llm.complete({
+  messages: [{ role: 'user', content: '...' }],
+  metadata: { [PROOF_SESSION_METADATA_KEY]: session.proofId },
+})
+const proof = await session.finalize({
+  store: createFileWriteOnceStore({ dir: './proofs' }),
+})
+
+// Later, on another machine — no API keys needed:
+//   elsium verify ./proofs/<proofId>.json --public-key org.pub
+```
+
+See [`examples/verifiable-agent-execution/`](../examples/verifiable-agent-execution/) for the full demo.
+
+## Capability Tokens
+
+Mint an Ed25519-signed token that scopes what an agent run can touch — tools, LLM providers, MCP servers, RAG stores, data classes — and gate every execution point with the same `{ token, verifier?, onDeny? }` shape:
+
+```typescript
+import { createCapabilityIssuer, createEd25519Signer } from '@elsium-ai/core'
+import { withCapability } from '@elsium-ai/tools'
+import { capabilityMiddleware } from '@elsium-ai/gateway'
+
+const issuer = createCapabilityIssuer({ signer, orgId: 'aperion-gaming' })
+const token = issuer.mint({
+  subject: { agent: 'support-bot' },
+  capabilities: [
+    { kind: 'tool', name: 'customer.read', constraints: { allowedFields: ['name', 'email'] } },
+    { kind: 'llm', provider: 'anthropic', maxCost: 0.5 },
+  ],
+  dataClasses: { denied: ['pii', 'financial'] },
+})
+
+const guardedTool = withCapability(myTool, { token, verifier })
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: '...',
+  middleware: [capabilityMiddleware({ token, verifier })],
+})
+```
+
+Delegation (strict-subset child tokens) and revocation are first-class. See [`examples/capability-tokens/`](../examples/capability-tokens/).
+
+## Verification + Confidence (VAG + CAG)
+
+`runWithVerification` enforces correctness with a repair loop; `requireConfidence` enforces calibrated certainty with a runtime threshold gate. Compose them:
+
+```typescript
+import {
+  runWithVerification,
+  requireConfidence,
+  selfConsistency,
+  zodValidator,
+} from '@elsium-ai/agents'
+
+const verified = await runWithVerification(
+  async (repair) => {
+    const messages = [
+      ...baseMessages,
+      ...(repair ? [{ role: 'user' as const, content: repair.repairPrompt }] : []),
+    ]
+    const { object } = await llm.generateObject({ messages, schema: MySchema })
+    return object
+  },
+  { validators: [zodValidator(MySchema)], maxRepairs: 3 },
+)
+
+const gated = await requireConfidence(
+  async () => ({ value: verified.value }),
+  {
+    strategy: selfConsistency({ samples: 5 }),
+    min: 0.8,
+    below: 'escalate', // or 'abort' or a callback
+  },
+)
+```
+
+Demos: [`examples/verification-pipeline/`](../examples/verification-pipeline/) and [`examples/confidence-strategies/`](../examples/confidence-strategies/).
+
 ## Packages
 
 | Package | Description |
 |---|---|
-| `@elsium-ai/core` | Types, errors, resilient streaming, utilities |
-| `@elsium-ai/gateway` | Multi-provider LLM gateway (Anthropic, OpenAI, Google) with X-Ray, provider mesh, and security middleware |
-| `@elsium-ai/agents` | Agent framework with memory, semantic guardrails, security, confidence, state machines, multi-agent |
-| `@elsium-ai/tools` | Tool definitions with Zod validation |
-| `@elsium-ai/rag` | Document loading, chunking, embeddings, vector search |
-| `@elsium-ai/workflows` | Sequential, parallel, and branching workflows |
-| `@elsium-ai/observe` | Tracing, metrics, cost intelligence engine, OpenTelemetry export |
-| `@elsium-ai/mcp` | Bidirectional MCP client and server bridge |
+| `@elsium-ai/core` | Types, errors, resilient streaming, **Ed25519 crypto foundation**, **capability tokens**, utilities |
+| `@elsium-ai/gateway` | Multi-provider LLM gateway with `generateObject`, X-Ray, provider mesh, security middleware, **`capabilityMiddleware`** |
+| `@elsium-ai/agents` | Agent framework with memory, guardrails, **VAG verification pipeline**, **CAG confidence strategies**, multi-agent |
+| `@elsium-ai/tools` | Tool definitions with Zod validation + **`withCapability` guard** |
+| `@elsium-ai/rag` | Document loading, chunking, embeddings, vector search + **`withRagCapability` guard** |
+| `@elsium-ai/workflows` | Sequential, parallel, branching, resumable workflows |
+| `@elsium-ai/observe` | Tracing, metrics, cost engine, OTel export, **proof recorder + `verifyProof` + `compareProofs`** |
+| `@elsium-ai/mcp` | Bidirectional MCP client and server + **`createCapabilityGuardedMCPClient`** |
 | `@elsium-ai/app` | HTTP server with middleware (CORS, auth, rate limiting) |
 | `@elsium-ai/testing` | Mock providers, evals, prompt versioning, regression suites, replay |
-| `@elsium-ai/cli` | CLI tool for scaffolding, X-Ray inspection, prompt management |
+| `@elsium-ai/cli` | CLI tool: scaffolding, X-Ray, **`elsium verify` + `elsium replay`** for execution proofs |
 
 ## Next Steps
 
