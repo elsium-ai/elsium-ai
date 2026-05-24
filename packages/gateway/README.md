@@ -168,6 +168,44 @@ for await (const event of stream) {
 
 For OpenAI reasoning models (`o1`, `o3`, etc.), thinking is not streamed in token form (the reasoning traces are private), but `usage.reasoningTokens` is reported on completion so the cost engine and cascade router can attribute it.
 
+#### Typed tool call arguments — `withToolTypes`
+
+Raw `tool_call_delta` events stream JSON fragments as strings. Most callers want **parsed, schema-validated, per-tool-typed** arguments instead. `withToolTypes(stream, schemas)` wraps any `AsyncIterable<StreamEvent>` and emits a new typed event whenever a tool call closes:
+
+```ts
+import { withToolTypes } from '@elsium-ai/core'
+import { z } from 'zod'
+
+const schemas = {
+  get_weather: z.object({ city: z.string(), unit: z.enum(['C', 'F']).optional() }),
+  search: z.object({ query: z.string(), limit: z.number().int().positive() }),
+}
+
+const stream = withToolTypes(llm.stream({ messages: [...], tools: [...] }), schemas)
+
+for await (const event of stream) {
+  if (event.type === 'tool_call_complete') {
+    // event.toolCall.name narrows to 'get_weather' | 'search'
+    if (event.toolCall.name === 'get_weather') {
+      const { city, unit } = event.toolCall.arguments // typed from Zod
+    }
+  } else if (event.type === 'text_delta') {
+    process.stdout.write(event.text)
+  }
+}
+```
+
+Behavior:
+
+- Accumulates `tool_call_delta` chunks per `toolCallId` (falls back to the last-started id when the provider omits it).
+- On `tool_call_end`, parses the accumulated JSON and validates against the schema for that tool name.
+- Emits `tool_call_complete` with `toolCall.arguments` typed as the Zod-inferred shape (`TypedToolCallComplete<T>`).
+- On parse failure (invalid JSON or schema mismatch), emits an `UnknownToolCallComplete` variant with `parseError.{ reason, raw }` so the caller can branch.
+- Flushes any tool calls left without a `tool_call_end` when the upstream stream finishes (defensive against providers that shortcut the protocol).
+- Original `tool_call_start` / `tool_call_delta` / `tool_call_end` events still pass through — `tool_call_complete` is purely additive.
+
+The original `StreamEvent` union is **unchanged**; this is an additive opt-in wrapper that lives in `@elsium-ai/core` so any package can use it.
+
 #### Structured Output
 
 ```ts
