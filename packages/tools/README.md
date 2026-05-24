@@ -25,6 +25,7 @@ npm install zod
 | **Toolkit** | `createToolkit`, `Toolkit` | Group related tools into named collections with lookup-by-name execution and batch definition export |
 | **Format** | `formatToolResult`, `formatToolResultAsText` | Convert raw execution results into the `ToolResult` wire format or plain-text strings for logging |
 | **Built-in Tools** | `httpFetchTool`, `calculatorTool`, `jsonParseTool`, `currentTimeTool` | Ready-to-use tools for HTTP requests, math evaluation, JSON extraction, and current time |
+| **Capability guard** | `withCapability`, `CapabilityGuardOptions`, `CapabilityDenialEvent` | Wrap any tool with a `CapabilityToken` check (signature + validity window + scope). Refusals return a typed denial result and fire an optional `onDeny` callback for audit. |
 
 ---
 

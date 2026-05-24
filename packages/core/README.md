@@ -27,6 +27,7 @@ npm install @elsium-ai/core
 | **Policy Engine** | `createPolicySet()`, `policyMiddleware()`, `modelAccessPolicy()`, `tokenLimitPolicy()`, `costLimitPolicy()`, `contentPolicy()`, `PolicyDecision`, `PolicyResult`, `PolicyContext`, `PolicyRule`, `PolicyConfig`, `PolicySet` |
 | **Shutdown** | `createShutdownManager()`, `ShutdownConfig`, `ShutdownManager` |
 | **Crypto foundation** | `generateEd25519KeyPair()`, `createEd25519Signer()`, `createEd25519Verifier()`, `createKeyRegistry()`, `createInMemoryWriteOnceStore()`, `createFileWriteOnceStore()`, `Signature`, `VerifyResult`, `Signer`, `Verifier`, `KeyRegistry`, `WriteOnceStore` |
+| **Capability tokens** | `createCapabilityIssuer()`, `createCapabilityVerifier()`, `canCallTool()`, `canCallLLM()`, `canQueryRag()`, `canUseMcp()`, `checkDataClass()`, `CapabilityToken`, `AgentCapability`, `CapabilityCheckResult` |
 
 ---
 
@@ -1214,6 +1215,87 @@ for await (const key of fileStore.list('proof/')) {
 ```
 
 File adapter uses `O_EXCL` (`flag: 'wx'`) for atomic write-once semantics on POSIX filesystems. Keys are validated against path traversal (`..`, absolute paths).
+
+---
+
+## Capability Tokens
+
+OAuth-style scoped tokens for AI agents. An organization mints a signed token that declares exactly which tools, LLM providers, MCP servers, RAG stores, and data classes a specific agent run is allowed to touch. Every guarded execution point (`@elsium-ai/tools`' `withCapability` is the first; MCP / LLM / RAG guards land in β-2) verifies the token before doing work. Verification is offline and uses only the foundation `KeyRegistry`.
+
+### Minting a token
+
+```ts
+import {
+  generateEd25519KeyPair,
+  createEd25519Signer,
+  createCapabilityIssuer,
+} from '@elsium-ai/core'
+
+const pair = generateEd25519KeyPair()
+const signer = createEd25519Signer({ privateKey: pair.privateKey, keyId: 'org-aperion-k7' })
+const issuer = createCapabilityIssuer({ signer, orgId: 'aperion-gaming' })
+
+const token = issuer.mint({
+  subject: { agent: 'support-bot-v3', runId: 'run_xyz' },
+  capabilities: [
+    { kind: 'tool', name: 'customer.read', constraints: { allowedFields: ['name', 'email'] } },
+    { kind: 'mcp',  server: 'github', tools: ['issues.list', 'prs.read'] },
+    { kind: 'llm',  provider: 'anthropic', maxCost: 0.50, maxTokens: 50_000 },
+    { kind: 'rag',  stores: ['kb-public'], maxResults: 10 },
+  ],
+  dataClasses: { allowed: ['public', 'internal'], denied: ['pii', 'financial'] },
+  ttlMs: 60 * 60 * 1000,
+})
+```
+
+### Verifying and checking scopes
+
+```ts
+import {
+  createKeyRegistry,
+  createCapabilityVerifier,
+  canCallTool,
+  canCallLLM,
+} from '@elsium-ai/core'
+
+const registry = createKeyRegistry({
+  trustRoots: [{ keyId: 'org-aperion-k7', publicKey: ORG_PUBLIC_KEY_PEM }],
+})
+
+const verifier = createCapabilityVerifier({ resolver: registry })
+const result = verifier.verifyToken(token)
+// result.valid === true and signatureValid + withinValidityWindow are surfaced separately
+
+const toolCheck = canCallTool(token, 'customer.read', {
+  input: { name: 'Ana', email: 'a@x.com' },
+  dataClasses: ['internal'],
+})
+// toolCheck.allowed === true; matchedCapability points at the granting entry
+
+const llmCheck = canCallLLM(token, {
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  estimatedCost: 0.30,
+})
+// rejects with reason: 'budget-exceeded' if estimatedCost > maxCost
+```
+
+Refusals come back as a typed `CapabilityCheckResult` with a `reason` you can branch on (`no-matching-capability`, `denied-field`, `allowed-fields-violation`, `denied-data-class`, `budget-exceeded`, `expired`, `not-yet-valid`, `bad-signature`, `unknown-key`, `malformed`).
+
+For tool execution, the wrapper lives in `@elsium-ai/tools`:
+
+```ts
+import { withCapability } from '@elsium-ai/tools'
+
+const guarded = withCapability(myTool, {
+  token,
+  verifier,
+  onDeny: (event) => audit.log('capability_denied', event),
+})
+
+await guarded.execute({ name: 'Ana' })
+// Failures return ToolExecutionResult with success: false and error: "capability denied: <reason>"
+```
 
 ---
 

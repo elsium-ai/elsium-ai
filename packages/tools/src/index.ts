@@ -18,3 +18,7 @@ export { httpFetchTool, calculatorTool, jsonParseTool, currentTimeTool } from '.
 // Retrieval tool
 export { createRetrievalTool } from './retrieval'
 export type { RetrievalToolConfig, RetrievalResult, RetrieveFn } from './retrieval'
+
+// Capability guard — opt-in wrapper that gates tool execution on a CapabilityToken
+export { withCapability } from './capability-guard'
+export type { CapabilityGuardOptions, CapabilityDenialEvent } from './capability-guard'

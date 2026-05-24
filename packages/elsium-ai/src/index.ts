@@ -75,6 +75,16 @@ export {
 	createInMemoryWriteOnceStore,
 	createFileWriteOnceStore,
 	WriteOnceConflictError,
+	// Capability tokens (β-1)
+	createCapabilityIssuer,
+	createCapabilityVerifier,
+	tokenSigningPayload,
+	canCallTool,
+	canCallLLM,
+	canQueryRag,
+	canUseMcp,
+	checkDataClass,
+	CAPABILITY_TOKEN_VERSION,
 } from '@elsium-ai/core'
 
 export type {
@@ -174,6 +184,33 @@ export type {
 	WriteOnceStore,
 	WriteReceipt,
 	FileWriteOnceStoreConfig,
+	// Capability tokens (β-1) types
+	CapabilityIssuer,
+	CapabilityIssuerConfig,
+	MintOptions,
+	CapabilityVerifier,
+	CapabilityVerifierConfig,
+	TokenVerificationResult,
+	CallToolOptions,
+	CallLLMOptions,
+	QueryRagOptions,
+	UseMcpOptions,
+	AgentCapability,
+	CapabilityBudget,
+	CapabilityCheckReason,
+	CapabilityCheckResult,
+	CapabilityDataClasses,
+	CapabilityIssuerRef,
+	CapabilitySubject,
+	CapabilityToken,
+	CapabilityTokenVersion,
+	CapabilityValidity,
+	DataClass,
+	LLMCapability,
+	McpCapability,
+	RagCapability,
+	ToolCapability,
+	WorkflowCapability,
 } from '@elsium-ai/core'
 
 // ─── Gateway ────────────────────────────────────────────────────
@@ -469,6 +506,8 @@ export {
 	formatToolResult,
 	formatToolResultAsText,
 	createRetrievalTool,
+	// Capability guard (β-1)
+	withCapability,
 } from '@elsium-ai/tools'
 
 export type {
@@ -484,6 +523,9 @@ export type {
 	Capability,
 	SandboxConfig,
 	SandboxRunner,
+	// Capability guard types (β-1)
+	CapabilityGuardOptions,
+	CapabilityDenialEvent,
 } from '@elsium-ai/tools'
 
 // ─── RAG ────────────────────────────────────────────────────────
