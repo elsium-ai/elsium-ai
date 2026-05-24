@@ -397,6 +397,14 @@ export {
 	regexValidator,
 	semanticAdapter,
 	externalValidator,
+	// CAG — Confidence-Augmented Generation
+	selfConsistency,
+	judgeEnsemble,
+	logprobScore,
+	createMajorityVoter,
+	createSimilarityVoter,
+	requireConfidence,
+	ConfidenceTooLowError,
 } from '@elsium-ai/agents'
 
 export type {
@@ -529,6 +537,23 @@ export type {
 	SemanticAdapterOptions,
 	ExternalValidatorOptions,
 	ExternalCheck,
+	// CAG types
+	ConfidenceStrategy,
+	ConfidenceSample,
+	CalibratedScore,
+	GenerateSample,
+	Voter,
+	Judge,
+	SimilarityVoterOptions,
+	SelfConsistencyOptions,
+	EnsembleAggregator,
+	JudgeEnsembleOptions,
+	LogprobAggregator,
+	LogprobScoreOptions,
+	BelowThresholdAction,
+	RequireConfidenceOptions,
+	RequireConfidenceResult,
+	RequireConfidenceStatus,
 } from '@elsium-ai/agents'
 
 // ─── Tools ──────────────────────────────────────────────────────

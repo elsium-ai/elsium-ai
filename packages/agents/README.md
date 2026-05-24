@@ -25,6 +25,7 @@ npm install @elsium-ai/agents @elsium-ai/core
 | **State Machine** | `executeStateMachine` | Run an agent through a finite state machine of states and transitions |
 | **Approval Gates** | `createApprovalGate`, `shouldRequireApproval`, `ApprovalRequest`, `ApprovalDecision`, `ApprovalCallback`, `ApprovalGateConfig`, `ApprovalGate` | Human-in-the-loop approval for high-stakes operations |
 | **Verification (VAG)** | `runWithVerification`, `composeValidators`, `zodValidator`, `regexValidator`, `semanticAdapter`, `externalValidator`, `Validator`, `VerificationConfig`, `VerificationOutcome`, `RepairContext` | `generate → validate → repair-or-abort` pipeline. Validators (Zod schema, regex, semantic LLM-as-judge, external check) compose; failures are formatted as a repair prompt re-injected into the next generation. Returns `{ status: 'ok' \| 'repaired' \| 'aborted', value, attempts, history }`. |
+| **Confidence Strategies (CAG)** | `selfConsistency`, `judgeEnsemble`, `logprobScore`, `createMajorityVoter`, `createSimilarityVoter`, `requireConfidence`, `ConfidenceTooLowError`, `ConfidenceStrategy`, `CalibratedScore` | Pluggable confidence strategies — self-consistency (N samples + voting), judge ensemble (M judges, mean/median/min), logprob (geometric-mean / mean / min over token logprobs). `requireConfidence(generate, { min, below: 'abort' \| 'escalate' \| callback })` is the threshold gate. Composes with VAG. |
 
 ---
 
@@ -1163,6 +1164,98 @@ type VerificationOutcome<T> =
 ```
 
 The `history` array lets you inspect every attempt (value + validator outcomes + duration) for audit and offline analysis. Hook `onAttempt` to stream attempts as they happen, or `onAbort` to escalate to human review.
+
+---
+
+## Confidence-Augmented Generation (CAG)
+
+VAG tells you the output is *wrong*. CAG tells you the output is *uncertain* — even when nothing failed validation. Three pluggable strategies, all returning a `CalibratedScore<T>` you can branch on, plus a threshold gate that aborts or escalates below the line you set.
+
+### Strategies
+
+```ts
+import {
+  selfConsistency,
+  judgeEnsemble,
+  logprobScore,
+  requireConfidence,
+} from 'elsium-ai'
+
+// Self-consistency: sample N times, vote with majority (default) or a custom voter.
+const sc = selfConsistency<{ answer: string }>({ samples: 5 })
+
+// Judge ensemble: M judges score the same output; aggregate mean | median | min.
+const je = judgeEnsemble<string>({
+  judges: [factCheckJudge, toneJudge, brevityJudge],
+  aggregator: 'min', // pessimistic — overall confidence = weakest judge
+})
+
+// Logprob: aggregate token-level logprobs (geometric-mean default).
+// Works with providers that expose logprobs via message.metadata.logprobs.
+const lp = logprobScore<string>({ aggregator: 'geometric-mean' })
+```
+
+Each strategy implements the same `ConfidenceStrategy<T>` contract:
+
+```ts
+interface ConfidenceStrategy<T> {
+  name: string
+  score(generate: () => Promise<{ value: T; raw?: LLMResponse }>): Promise<CalibratedScore<T>>
+}
+
+interface CalibratedScore<T> {
+  value: T
+  confidence: number      // 0..1, calibrated to the strategy's semantics
+  strategy: string
+  samples?: ConfidenceSample<T>[]
+  details?: Record<string, unknown>
+}
+```
+
+### Threshold gate — `requireConfidence`
+
+```ts
+import { requireConfidence, selfConsistency, ConfidenceTooLowError } from 'elsium-ai'
+
+const result = await requireConfidence(
+  async () => {
+    const r = await agent.run(question)
+    return { value: r.message.content as string }
+  },
+  {
+    strategy: selfConsistency({ samples: 5 }),
+    min: 0.8,
+    below: 'escalate',  // 'abort' throws ConfidenceTooLowError; callback runs custom escalation
+  },
+)
+// result.status ∈ 'ok' | 'escalated' | 'aborted'
+// result.value is the chosen output, result.confidence is the strategy's score
+```
+
+Custom escalation — typically "call a stronger model" or "open a human-review ticket":
+
+```ts
+const result = await requireConfidence(
+  () => weakModel.run(prompt),
+  {
+    strategy: selfConsistency({ samples: 3 }),
+    min: 0.7,
+    below: async ({ value, confidence }) => {
+      const upgraded = await strongModel.run(prompt)
+      return {
+        value: upgraded.text,
+        confidence: 0.95,
+        strategy: 'human-or-upgraded-model',
+        samples: [{ value: upgraded.text }],
+      }
+    },
+  },
+)
+```
+
+### Composing CAG with VAG
+
+The N samples produced by `selfConsistency` are reusable as VAG validator inputs (one judge per sample, agreement count as a confidence judgment). The two layers stack cleanly: VAG enforces correctness, CAG measures certainty, and `requireConfidence` is the runtime decision point that routes low-confidence outputs to escalation — directly into the CARG router (next).
 
 ---
 

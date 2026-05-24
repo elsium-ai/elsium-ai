@@ -186,6 +186,35 @@ export {
 	semanticAdapter,
 	externalValidator,
 } from './verification/index'
+
+// CAG — Confidence-Augmented Generation
+export {
+	selfConsistency,
+	judgeEnsemble,
+	logprobScore,
+	createMajorityVoter,
+	createSimilarityVoter,
+	requireConfidence,
+	ConfidenceTooLowError,
+} from './confidence-strategies/index'
+export type {
+	ConfidenceStrategy,
+	ConfidenceSample,
+	CalibratedScore,
+	GenerateSample,
+	Voter,
+	Judge,
+	SimilarityVoterOptions,
+	SelfConsistencyOptions,
+	EnsembleAggregator,
+	JudgeEnsembleOptions,
+	LogprobAggregator,
+	LogprobScoreOptions,
+	BelowThresholdAction,
+	RequireConfidenceOptions,
+	RequireConfidenceResult,
+	RequireConfidenceStatus,
+} from './confidence-strategies/index'
 export type {
 	Validator,
 	ValidationContext,
