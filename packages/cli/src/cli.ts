@@ -7,8 +7,10 @@ import { evalCommand } from './commands/eval'
 import { initCommand } from './commands/init'
 import { promptCommand } from './commands/prompt'
 import { proxyCommand } from './commands/proxy'
+import { replayCommand } from './commands/replay'
 import { studioCommand } from './commands/studio'
 import { traceCommand } from './commands/trace'
+import { verifyCommand } from './commands/verify'
 import { xrayCommand } from './commands/xray'
 
 const _require = createRequire(import.meta.url)
@@ -30,6 +32,8 @@ const HELP = `
     xray              Inspect LLM calls (X-Ray mode)
     prompt            Manage prompt versions
     proxy             Start AI proxy server
+    verify <proof>    Verify a signed ExecutionProof offline
+    replay <a> <b>    Compare two ExecutionProofs
 
   Options:
     --help, -h        Show this help message
@@ -45,6 +49,8 @@ const HELP = `
     elsium xray --last 5
     elsium prompt list
     elsium proxy --port 4000 --audit --cache
+    elsium verify ./proofs/proof_abc.json --public-key ./org-aperion.pub
+    elsium replay ./proofs/run-1.json ./proofs/run-2.json --strategy structural
 `
 
 async function main() {
@@ -88,6 +94,12 @@ async function main() {
 			break
 		case 'proxy':
 			await proxyCommand(args.slice(1), VERSION)
+			break
+		case 'verify':
+			await verifyCommand(args.slice(1))
+			break
+		case 'replay':
+			await replayCommand(args.slice(1))
 			break
 		default:
 			console.error(`Unknown command: ${command}`)

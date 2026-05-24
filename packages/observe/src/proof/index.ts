@@ -4,6 +4,8 @@ export {
 	PROOF_SESSION_METADATA_KEY,
 	PROOF_VERSION,
 } from './recorder'
+export { compareProofs } from './compare'
+export type { ReplayStrategy, ReplayDiff, EventDelta, EventDeltaKind } from './compare'
 export type {
 	ProofRecorder,
 	ProofRecorderConfig,

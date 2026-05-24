@@ -143,6 +143,7 @@ export type {
 export {
 	createProofRecorder,
 	verifyProof,
+	compareProofs,
 	PROOF_SESSION_METADATA_KEY,
 	PROOF_VERSION,
 } from './proof'
@@ -163,6 +164,10 @@ export type {
 	RagRetrieveSummary,
 	PolicyDecisionSummary,
 	ProofInputDocRef,
+	ReplayStrategy,
+	ReplayDiff,
+	EventDelta,
+	EventDeltaKind,
 } from './proof'
 
 // OpenTelemetry GenAI Semantic Conventions (in Development per OTel spec).
