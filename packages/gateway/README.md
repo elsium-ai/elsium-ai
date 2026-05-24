@@ -20,6 +20,7 @@ npm install @elsium-ai/gateway @elsium-ai/core
 | **Middleware** | `composeMiddleware`, `loggingMiddleware`, `costTrackingMiddleware`, `xrayMiddleware`, `XRayStore` |
 | **Security** | `securityMiddleware`, `detectPromptInjection`, `detectJailbreak`, `redactSecrets`, `checkBlockedPatterns`, `classifyContent`, `SecurityMiddlewareConfig`, `SecurityViolation`, `SecurityResult`, `DataClassification`, `ClassificationResult` |
 | **Bulkhead** | `createBulkhead`, `bulkheadMiddleware`, `BulkheadConfig`, `Bulkhead` |
+| **CARG (Cost-Aware Routed Generation)** | `createCascadeRouter`, `createHeuristicClassifier`, `createLLMClassifier`, `CascadeRouter`, `CascadeRouterConfig`, `Tier`, `LLMClassifier`, `RequestClassification`, `EscalateOnFailureConfig`, `CascadeResult`, `CascadeAttempt`, `CascadeAuditEvent`, `CascadeExhaustedError` |
 | **Pricing** | `calculateCost`, `registerPricing` |
 | **Router** | `createProviderMesh`, `ProviderMeshConfig`, `ProviderEntry`, `RoutingStrategy`, `ProviderMesh` |
 
@@ -1202,6 +1203,105 @@ const breakerEvents = await audit.query({ type: ['circuit_breaker_state_change']
 ```
 
 The `MeshAuditLogger` interface is intentionally minimal — any object with a `log(type, data, options?)` method works, so you can use `AuditTrail` from `@elsium-ai/observe` or your own logger.
+
+---
+
+## Cost-Aware Routed Generation (CARG)
+
+`createCascadeRouter` is an opt-in router that routes a request to the cheapest tier first and escalates to the next tier when something goes wrong. "Wrong" is configurable: provider error, validator failure (VAG plug), low confidence (CAG plug), or a difficulty cap that skips tiers a classifier deems too weak. Every escalation is audited; the result returns the full attempt history plus accumulated cost and latency.
+
+### Tiers
+
+```ts
+import { createCascadeRouter } from '@elsium-ai/gateway'
+
+const router = createCascadeRouter(
+  {
+    tiers: [
+      { name: 'haiku',  provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxDifficulty: 0.4 },
+      { name: 'sonnet', provider: 'anthropic', model: 'claude-sonnet-4-6',         maxDifficulty: 0.8 },
+      { name: 'opus',   provider: 'anthropic', model: 'claude-opus-4-7' },
+    ],
+    escalateOnFailure: true,
+  },
+  { apiKeys: { anthropic: process.env.ANTHROPIC_API_KEY! } },
+)
+
+const result = await router.complete({ messages: [...] })
+// result.tier — which tier ultimately served
+// result.totalCost / totalLatencyMs — accumulated across attempts
+// result.attempts — per-tier audit trail
+// result.classification — { difficulty, domain, reason } when a classifier is configured
+```
+
+### Classifier
+
+Two built-in classifiers, or roll your own implementing `LLMClassifier`:
+
+```ts
+import { createHeuristicClassifier, createLLMClassifier, gateway } from '@elsium-ai/gateway'
+
+// Heuristic (zero-cost, no network) — keyword + size scoring
+const heuristic = createHeuristicClassifier()
+
+// LLM-based — asks a cheap model to classify difficulty + domain
+const classifier = createLLMClassifier({
+  complete: (req) => routerLLM.complete(req),
+  model: 'claude-haiku-4-5-20251001',
+})
+
+const router = createCascadeRouter(
+  { tiers: [...], classifier, escalateOnFailure: true },
+  { apiKeys: { anthropic: process.env.ANTHROPIC_API_KEY! } },
+)
+```
+
+When a classifier is configured and a tier declares `maxDifficulty`, the router **skips that tier** if the classified difficulty exceeds the cap (audited as `status: 'skipped-by-classifier'`). This is how you route trivia past Haiku straight to Sonnet without paying the failover overhead.
+
+### Escalation on VAG + CAG signals
+
+The cascade is the natural runtime decision point for VAG (correctness) and CAG (confidence) failures. Pass any function that produces the right shape — no dependency on `@elsium-ai/agents`:
+
+```ts
+import { createCascadeRouter } from '@elsium-ai/gateway'
+
+const router = createCascadeRouter({
+  tiers: [...],
+  escalateOnFailure: {
+    onProviderError: true,
+    validator: async (response) => {
+      // wrap your VAG runWithVerification, or any custom check
+      const parsed = MySchema.safeParse(JSON.parse(extractText(response.message.content)))
+      return parsed.success ? { valid: true } : { valid: false, reason: parsed.error.message }
+    },
+    confidence: async (response) => {
+      // wrap your CAG strategy, or compute confidence inline
+      const score = await myConfidenceStrategy.score(async () => ({ value: response.message.content, raw: response }))
+      return { ok: score.confidence >= 0.8, confidence: score.confidence }
+    },
+    maxEscalations: 2,
+  },
+})
+```
+
+A tier attempt that triggers the validator/confidence guard returns the LLM response **but is marked failed**, and the router escalates to the next tier (or aborts with `CascadeExhaustedError` if `maxEscalations` is reached).
+
+### Auditing
+
+Pass `onAudit` to stream the cascade's decisions:
+
+```ts
+const router = createCascadeRouter({
+  tiers: [...],
+  onAudit: (event) => {
+    // event.type ∈ 'tier-attempt' | 'tier-escalation' | 'cascade-success' | 'cascade-exhausted'
+    // event.reason ∈ 'provider-error' | 'validator-failed' | 'low-confidence' | 'difficulty-cap-exceeded'
+    audit.log('cascade', event)
+  },
+})
+```
+
+Pair with `createCostEngine` from `@elsium-ai/observe` (attributing cost by tier / escalation_step) to see exactly where money goes when a request escalates from Haiku → Sonnet → Opus.
 
 ---
 

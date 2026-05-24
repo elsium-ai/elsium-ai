@@ -124,3 +124,30 @@ export type {
 	CapabilityMiddlewareOptions,
 	CapabilityDenialEvent as CapabilityLLMDenialEvent,
 } from './capability-middleware'
+
+// CARG — Cost-Aware Routed Generation
+export {
+	createCascadeRouter,
+	createHeuristicClassifier,
+	createLLMClassifier,
+	CascadeExhaustedError,
+} from './carg/index'
+export type {
+	Tier,
+	RequestClassification,
+	LLMClassifier,
+	LLMClassifierOptions,
+	CascadeReason,
+	ValidatorCheckResult,
+	ConfidenceCheckResult,
+	CascadeValidator,
+	CascadeConfidenceCheck,
+	EscalateOnFailureConfig,
+	CascadeAuditEvent,
+	CascadeRouterConfig,
+	CascadeAttempt,
+	CascadeResult,
+	CascadeRouter,
+	CascadeRouterFactoryOptions,
+	CascadeRouterDependencies,
+} from './carg/index'

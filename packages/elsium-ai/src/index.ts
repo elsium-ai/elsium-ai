@@ -267,6 +267,11 @@ export {
 	bulkheadMiddleware,
 	// Capability middleware (β-2)
 	capabilityMiddleware,
+	// CARG — Cost-Aware Routed Generation
+	createCascadeRouter,
+	createHeuristicClassifier,
+	createLLMClassifier,
+	CascadeExhaustedError,
 } from '@elsium-ai/gateway'
 
 export type {
@@ -331,6 +336,24 @@ export type {
 	// Capability middleware types (β-2)
 	CapabilityMiddlewareOptions,
 	CapabilityLLMDenialEvent,
+	// CARG types
+	Tier,
+	RequestClassification,
+	LLMClassifier,
+	LLMClassifierOptions,
+	CascadeReason,
+	ValidatorCheckResult,
+	ConfidenceCheckResult,
+	CascadeValidator,
+	CascadeConfidenceCheck,
+	EscalateOnFailureConfig,
+	CascadeAuditEvent,
+	CascadeRouterConfig,
+	CascadeAttempt,
+	CascadeResult,
+	CascadeRouter,
+	CascadeRouterFactoryOptions,
+	CascadeRouterDependencies,
 } from '@elsium-ai/gateway'
 
 // ─── Agents ─────────────────────────────────────────────────────
