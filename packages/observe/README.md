@@ -22,6 +22,7 @@ npm install @elsium-ai/observe @elsium-ai/core
 | **Audit Trail** | `createAuditTrail`, `auditMiddleware`, `auditStreamMiddleware`, `AuditEventType`, `AuditEvent`, `AuditStorageAdapter`, `AuditQueryFilter`, `AuditIntegrityResult`, `AuditTrailConfig`, `AuditTrail` | SHA-256 hash-chained audit events with tamper detection, middleware for both completion and streaming calls |
 | **Audit Sinks** | `createSinkManager`, `createWebhookSink`, `createSplunkSink`, `createDatadogSink`, `AuditSink`, `AuditSinkRetryConfig`, `SinkManagerConfig`, `SinkManager`, `WebhookSinkConfig`, `SplunkSinkConfig`, `DatadogSinkConfig` | Export audit events to external systems (webhooks, Splunk, Datadog) with batching, retry, per-sink filtering, and dead letter queue |
 | **Provenance** | `createProvenanceTracker`, `ProvenanceRecord`, `ProvenanceTracker` | Full lineage tracking per output: prompt, model, config, input, output |
+| **Verifiable Agent Execution** | `createProofRecorder`, `ProofRecorder`, `ProofSession`, `ExecutionProof`, `ProofEvent`, `VerifyProofResult` | Signed per-run execution proofs with hash-chained events. Build on `@elsium-ai/core` Ed25519 + `WriteOnceStore`. Third parties verify proofs offline with just the public key. |
 | **Studio Exporter** | `createStudioExporter`, `StudioExporter`, `StudioExporterConfig` | Write traces, X-Ray, and costs to `.elsium/` for the `elsium studio` dashboard |
 | **OpenTelemetry** | `toOTelSpan`, `toOTelExportRequest`, `toTraceparent`, `parseTraceparent`, `injectTraceContext`, `extractTraceContext`, `createOTLPExporter`, `OTelSpan`, `OTelSpanKind`, `OTelStatusCode`, `OTelAttribute`, `OTelAttributeValue`, `OTelEvent`, `OTelResource`, `OTelExportRequest`, `TraceContext`, `OTLPExporterConfig` | W3C Trace Context propagation, OTel span conversion, and OTLP JSON export |
 
@@ -1663,6 +1664,91 @@ const tracedAgent = instrumentAgent(agent, tracer)
 // Every run/chat call now creates an 'agent' span automatically
 const result = await tracedAgent.run('Hello')
 ```
+
+---
+
+## Verifiable Agent Execution
+
+`createProofRecorder` produces signed `ExecutionProof` documents for each agent run. A third party with just the public key can verify offline that the recorded sequence of LLM calls, tool calls, RAG retrievals, and policy decisions actually occurred — and that no event was tampered with after the fact.
+
+### How it works
+
+- Every event is hashed (SHA-256 of canonical JSON) and chained to the previous event's hash.
+- On `finalize()`, the recorder signs the `chainHead` with Ed25519 and produces an `ExecutionProof`.
+- Optional persistence to a `WriteOnceStore` (in-memory or file-system with O_EXCL) makes the artifact tamper-evident at rest.
+- `recorder.verify(proof, keyRegistry)` recomputes the entire chain and validates the signature.
+
+### End-to-end example
+
+```ts
+import {
+  generateEd25519KeyPair,
+  createEd25519Signer,
+  createKeyRegistry,
+  createFileWriteOnceStore,
+} from '@elsium-ai/core'
+import { createProofRecorder, PROOF_SESSION_METADATA_KEY } from '@elsium-ai/observe'
+import { gateway } from '@elsium-ai/gateway'
+
+const pair = generateEd25519KeyPair()
+const signer = createEd25519Signer({ privateKey: pair.privateKey, keyId: 'org-aperion-k7' })
+const recorder = createProofRecorder({ signer })
+
+const llm = gateway({
+  provider: 'anthropic',
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  middleware: [recorder.middleware()],
+})
+
+const session = recorder.startSession({
+  agentId: 'invoice-extractor',
+  agentVersion: '1.2.3',
+  inputs: { messages: [{ role: 'user', content: 'Extract this invoice…' }] },
+})
+
+const response = await llm.complete({
+  messages: [{ role: 'user', content: 'Extract this invoice…' }],
+  metadata: { [PROOF_SESSION_METADATA_KEY]: session.proofId },
+})
+
+session.recordToolCall({ tool: 'parse_invoice', inputHash: 'h1', outputHash: 'h2' })
+session.recordPolicyDecision({ rule: 'pii-allowed', result: 'allow' })
+
+const store = createFileWriteOnceStore({ dir: './proofs' })
+const proof = await session.finalize({ finalOutput: { invoiceTotal: 1234 }, store })
+// → ./proofs/proof_<id>.json, signed with org-aperion-k7
+```
+
+### Verifying on another machine
+
+The verifier needs only the public key and the proof file — no signer, no API keys:
+
+```ts
+import { createKeyRegistry } from '@elsium-ai/core'
+import { verifyProof } from '@elsium-ai/observe'
+import { readFileSync } from 'node:fs'
+
+const registry = createKeyRegistry({
+  trustRoots: [{ keyId: 'org-aperion-k7', publicKey: ORG_PUBLIC_KEY_PEM }],
+})
+
+const proof = JSON.parse(readFileSync('./proofs/proof_abc.json', 'utf8'))
+const result = verifyProof(proof, registry)
+// result.valid === true   if signature and full hash chain check out
+// result.chainBrokenAt    when an event was mutated after signing
+```
+
+### When to record what
+
+| Method | Use for |
+|---|---|
+| `recordLLMCall(summary)` | Manually capture an LLM call. Auto-recorded by the middleware when `metadata.proofSessionId` is set. |
+| `recordToolCall(summary)` | Every tool invocation. Hash inputs/outputs to keep proof size bounded. |
+| `recordRagRetrieve(summary)` | Documents retrieved from a vector store. Captures `id` + score for each. |
+| `recordPolicyDecision(summary)` | Allow/deny outcome from a policy evaluator. |
+| `recordCustom(data)` | Anything domain-specific (e.g. external API call hashes). |
+
+The proof shape is `version: 'elsium-proof/v1'` and the signing payload is `${version}\n${proofId}\n${chainHead}` — both pinned constants so verifiers can rely on stable framing.
 
 ---
 
