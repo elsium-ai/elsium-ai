@@ -156,7 +156,7 @@ export type {
 	FileWriteOnceStoreConfig,
 } from './crypto'
 
-// Capability tokens (β-1) — OAuth-style scoped tokens for AI agents
+// Capability tokens (β-1, β-2) — OAuth-style scoped tokens for AI agents
 export {
 	createCapabilityIssuer,
 	createCapabilityVerifier,
@@ -166,6 +166,8 @@ export {
 	canQueryRag,
 	canUseMcp,
 	checkDataClass,
+	delegateToken,
+	createInMemoryRevocationStore,
 	CAPABILITY_TOKEN_VERSION,
 } from './capability'
 export type {
@@ -195,4 +197,8 @@ export type {
 	RagCapability,
 	ToolCapability,
 	WorkflowCapability,
+	DelegateOptions,
+	RevocationStore,
+	RevocationEntry,
+	InMemoryRevocationStoreConfig,
 } from './capability'

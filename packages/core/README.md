@@ -27,7 +27,7 @@ npm install @elsium-ai/core
 | **Policy Engine** | `createPolicySet()`, `policyMiddleware()`, `modelAccessPolicy()`, `tokenLimitPolicy()`, `costLimitPolicy()`, `contentPolicy()`, `PolicyDecision`, `PolicyResult`, `PolicyContext`, `PolicyRule`, `PolicyConfig`, `PolicySet` |
 | **Shutdown** | `createShutdownManager()`, `ShutdownConfig`, `ShutdownManager` |
 | **Crypto foundation** | `generateEd25519KeyPair()`, `createEd25519Signer()`, `createEd25519Verifier()`, `createKeyRegistry()`, `createInMemoryWriteOnceStore()`, `createFileWriteOnceStore()`, `Signature`, `VerifyResult`, `Signer`, `Verifier`, `KeyRegistry`, `WriteOnceStore` |
-| **Capability tokens** | `createCapabilityIssuer()`, `createCapabilityVerifier()`, `canCallTool()`, `canCallLLM()`, `canQueryRag()`, `canUseMcp()`, `checkDataClass()`, `CapabilityToken`, `AgentCapability`, `CapabilityCheckResult` |
+| **Capability tokens** | `createCapabilityIssuer()`, `createCapabilityVerifier()`, `canCallTool()`, `canCallLLM()`, `canQueryRag()`, `canUseMcp()`, `checkDataClass()`, `delegateToken()`, `createInMemoryRevocationStore()`, `CapabilityToken`, `AgentCapability`, `CapabilityCheckResult`, `RevocationStore` |
 
 ---
 
@@ -1296,6 +1296,48 @@ const guarded = withCapability(myTool, {
 await guarded.execute({ name: 'Ana' })
 // Failures return ToolExecutionResult with success: false and error: "capability denied: <reason>"
 ```
+
+### Delegation (parent → child)
+
+A token holder can delegate a *strict subset* of its capabilities to a child token. Subset enforcement is checked at mint time: capabilities must be present on the parent, tool `deniedFields` must be inherited, LLM `maxCost`/`maxTokens` must be defined and ≤ parent, MCP tool allowlists must be subsets, budgets must shrink, denied data classes must propagate, and `expiresAt` cannot exceed the parent's.
+
+```ts
+const child = issuer.delegate(parent, {
+  subject: { agent: 'support-bot:translator-sub' },
+  capabilities: [
+    { kind: 'llm', provider: 'anthropic', maxCost: 0.10 },  // ⊂ parent's 0.50
+  ],
+})
+// child.subject.parentToken === parent.tokenId
+```
+
+### Revocation
+
+Revocation uses a `RevocationStore` port — in-memory adapter ships; users can implement durable backends. Pass the store to the verifier and call `verifyTokenAsync` to consult it:
+
+```ts
+import { createInMemoryRevocationStore } from '@elsium-ai/core'
+
+const revocationStore = createInMemoryRevocationStore()
+const verifier = createCapabilityVerifier({ resolver: registry, revocationStore })
+
+await revocationStore.revoke(token.tokenId, { reason: 'key compromised', revokedBy: 'admin' })
+const result = await verifier.verifyTokenAsync(token)
+// result.reason === 'revoked'
+```
+
+Revocation is **eventually consistent**: in-flight calls that already passed verification continue. There is no synchronous "kill" guarantee — document this in your runbook.
+
+### Guards across the stack
+
+| Surface | Wrapper | Package |
+|---|---|---|
+| Tools | `withCapability(tool, opts)` | `@elsium-ai/tools` |
+| LLM calls | `capabilityMiddleware(opts)` (gateway `Middleware`) | `@elsium-ai/gateway` |
+| MCP calls | `createCapabilityGuardedMCPClient(client, opts)` | `@elsium-ai/mcp` |
+| RAG queries | `withRagCapability(pipeline, opts)` | `@elsium-ai/rag` |
+
+Each wrapper accepts the same shape: `{ token, verifier?, onDeny? }`. Denials surface as typed events through `onDeny` (for audit) and either throw `ElsiumError` (LLM/MCP/RAG) or return a typed `ToolExecutionResult { success: false }` (tools) — depending on what the host API expects.
 
 ---
 

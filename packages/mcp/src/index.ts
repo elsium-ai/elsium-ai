@@ -42,3 +42,10 @@ export type {
 	MCPToolManifestEntry,
 	TrustedMCPClient,
 } from './trust'
+
+// Capability guard (β-2) — gates callTool on a CapabilityToken
+export { createCapabilityGuardedMCPClient } from './capability-guard'
+export type {
+	CapabilityGuardedMCPOptions,
+	MCPCapabilityDenialEvent,
+} from './capability-guard'

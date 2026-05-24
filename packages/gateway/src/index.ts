@@ -117,3 +117,10 @@ export type {
 	PiiClassifier,
 	PiiMatch,
 } from './pii-routing'
+
+// Capability middleware (β-2) — gates LLM calls on a CapabilityToken
+export { capabilityMiddleware } from './capability-middleware'
+export type {
+	CapabilityMiddlewareOptions,
+	CapabilityDenialEvent as CapabilityLLMDenialEvent,
+} from './capability-middleware'
