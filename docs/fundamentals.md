@@ -782,17 +782,30 @@ const SentimentSchema = z.object({
   reasoning: z.string(),
 })
 
-const { data, response } = await llm.generate({
+const { object, response } = await llm.generateObject({
   messages: [
     { role: 'user', content: [{ type: 'text', text: 'Analyze: "This product is absolutely terrible and a waste of money."' }] },
   ],
   schema: SentimentSchema,
 })
 
-console.log(data.sentiment)    // 'negative'
-console.log(data.confidence)   // 0.95
-console.log(data.reasoning)    // 'The text uses strongly negative language...'
-// data is fully typed as { sentiment: 'positive' | 'negative' | 'neutral'; confidence: number; reasoning: string }
+console.log(object.sentiment)    // 'negative'
+console.log(object.confidence)   // 0.95
+console.log(object.reasoning)    // 'The text uses strongly negative language...'
+// object is fully typed as { sentiment: 'positive' | 'negative' | 'neutral'; confidence: number; reasoning: string }
+```
+
+For one-shot calls, use the standalone `generateObject` function — accepts `prompt` shorthand instead of full `messages`:
+
+```typescript
+import { generateObject } from 'elsium-ai'
+
+const { object } = await generateObject({
+  provider: 'openai',
+  apiKey: process.env.OPENAI_API_KEY!,
+  schema: SentimentSchema,
+  prompt: 'Analyze: "This product is absolutely terrible and a waste of money."',
+})
 ```
 
 **Real-world example — extracting structured data from invoices:**
@@ -812,21 +825,23 @@ const InvoiceSchema = z.object({
   currency: z.string(),
 })
 
-const { data } = await llm.generate({
+const { object } = await llm.generateObject({
   messages: [
     { role: 'user', content: [{ type: 'text', text: `Extract invoice data:\n\n${invoiceText}` }] },
   ],
   schema: InvoiceSchema,
 })
 
-// data is typed — use it directly
+// object is typed — use it directly
 await db.invoices.insert({
-  vendor: data.vendor,
-  number: data.invoiceNumber,
-  total: data.totalAmount,
-  items: data.lineItems,
+  vendor: object.vendor,
+  number: object.invoiceNumber,
+  total: object.totalAmount,
+  items: object.lineItems,
 })
 ```
+
+> Migrating from `llm.generate()`? It still works as a deprecated alias and returns `{ data, response }`. New code should prefer `llm.generateObject()` which returns `{ object, response }` to align with the rest of the AI ecosystem.
 
 **Native JSON mode per provider:**
 

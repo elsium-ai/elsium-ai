@@ -2,6 +2,10 @@
 export { gateway, registerProviderFactory } from './gateway'
 export type { GatewayConfig, Gateway, ExtractOptions } from './gateway'
 
+// Standalone structured generation
+export { generateObject } from './generate-object'
+export type { GenerateObjectOptions } from './generate-object'
+
 // Provider
 export type {
 	LLMProvider,
