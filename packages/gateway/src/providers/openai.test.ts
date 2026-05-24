@@ -131,4 +131,71 @@ describe('OpenAI Provider', () => {
 
 		vi.unstubAllGlobals()
 	})
+
+	it('forwards reasoning_effort when thinking.effort is set', async () => {
+		let capturedBody: Record<string, unknown> | undefined
+		const mockFetch = vi.fn().mockImplementation(async (_url, init) => {
+			capturedBody = JSON.parse((init?.body as string) ?? '{}')
+			return {
+				ok: true,
+				json: async () => ({
+					id: 'r',
+					object: 'chat.completion',
+					model: 'o3-mini',
+					choices: [
+						{ index: 0, message: { role: 'assistant', content: 'done' }, finish_reason: 'stop' },
+					],
+					usage: {
+						prompt_tokens: 10,
+						completion_tokens: 5,
+						total_tokens: 15,
+						completion_tokens_details: { reasoning_tokens: 42 },
+					},
+				}),
+			}
+		})
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createOpenAIProvider({ apiKey: 'test-key' })
+		const result = await provider.complete({
+			messages: [{ role: 'user', content: 'Reason about this.' }],
+			model: 'o3-mini',
+			thinking: { enabled: true, effort: 'medium' },
+		})
+
+		expect(capturedBody?.reasoning_effort).toBe('medium')
+		expect(result.usage.reasoningTokens).toBe(42)
+
+		vi.unstubAllGlobals()
+	})
+
+	it('captures reasoning_tokens from completion_tokens_details even without thinking config', async () => {
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				id: 'r',
+				object: 'chat.completion',
+				model: 'o3-mini',
+				choices: [
+					{ index: 0, message: { role: 'assistant', content: 'x' }, finish_reason: 'stop' },
+				],
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					total_tokens: 2,
+					completion_tokens_details: { reasoning_tokens: 7 },
+				},
+			}),
+		})
+		vi.stubGlobal('fetch', mockFetch)
+
+		const provider = createOpenAIProvider({ apiKey: 'test-key' })
+		const result = await provider.complete({
+			messages: [{ role: 'user', content: 'x' }],
+			model: 'o3-mini',
+		})
+		expect(result.usage.reasoningTokens).toBe(7)
+
+		vi.unstubAllGlobals()
+	})
 })

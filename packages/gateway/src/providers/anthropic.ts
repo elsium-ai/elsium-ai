@@ -28,7 +28,7 @@ interface AnthropicMessage {
 }
 
 interface AnthropicContentBlock {
-	type: 'text' | 'image' | 'tool_use' | 'tool_result'
+	type: 'text' | 'image' | 'tool_use' | 'tool_result' | 'thinking'
 	text?: string
 	id?: string
 	name?: string
@@ -36,6 +36,8 @@ interface AnthropicContentBlock {
 	tool_use_id?: string
 	content?: string
 	source?: { type: string; media_type: string; data: string }
+	thinking?: string
+	signature?: string
 }
 
 interface AnthropicTool {
@@ -260,6 +262,14 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		body.tool_choice = { type: 'tool', name: '_structured_output' }
 	}
 
+	function applyThinking(body: Record<string, unknown>, req: CompletionRequest): void {
+		if (!req.thinking?.enabled) return
+		const budget =
+			req.thinking.budgetTokens ??
+			(req.thinking.effort === 'high' ? 16000 : req.thinking.effort === 'low' ? 1024 : 4096)
+		body.thinking = { type: 'enabled', budget_tokens: budget }
+	}
+
 	function buildRequestBody(req: CompletionRequest): Record<string, unknown> {
 		const { system, messages } = formatMessages(req.messages)
 		const model = req.model ?? 'claude-sonnet-4-6'
@@ -276,6 +286,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 		const tools = formatTools(req.tools)
 		if (tools) body.tools = tools
 		applyStructuredOutput(body, req, tools)
+		applyThinking(body, req)
 
 		return body
 	}
@@ -463,13 +474,32 @@ function mapSSEEventContentBlockStart(event: Record<string, unknown>): StreamEve
 			toolCall: { id: block.id ?? '', name: block.name ?? '' },
 		}
 	}
+	if (block?.type === 'thinking') {
+		return { type: 'thinking_start', thinking: { id: block.id } }
+	}
+	return null
+}
+
+function mapSSEEventContentBlockStop(event: Record<string, unknown>): StreamEvent | null {
+	const blockType = (event.content_block as { type?: string } | undefined)?.type
+	if (blockType === 'thinking') {
+		return { type: 'thinking_end' }
+	}
 	return null
 }
 
 function mapSSEEventContentBlockDelta(event: Record<string, unknown>): StreamEvent | null {
-	const delta = event.delta as { type: string; text?: string; partial_json?: string }
+	const delta = event.delta as {
+		type: string
+		text?: string
+		partial_json?: string
+		thinking?: string
+	}
 	if (delta?.type === 'text_delta' && delta.text) {
 		return { type: 'text_delta', text: delta.text }
+	}
+	if (delta?.type === 'thinking_delta' && delta.thinking) {
+		return { type: 'thinking_delta', text: delta.thinking }
 	}
 	if (delta?.type === 'input_json_delta' && delta.partial_json) {
 		return {
@@ -515,7 +545,7 @@ function mapSSEEvent(event: Record<string, unknown>, model: string): StreamEvent
 		case 'content_block_delta':
 			return mapSSEEventContentBlockDelta(event)
 		case 'content_block_stop':
-			return null
+			return mapSSEEventContentBlockStop(event)
 		case 'message_delta':
 			return mapSSEEventMessageDelta(event)
 		default:
