@@ -651,9 +651,10 @@ export {
 	createGenAIConventionRegistry,
 	getDefaultRegistry,
 	parseSemconvOptIn,
-	// Verifiable Agent Execution (α-1) — signed per-run execution proofs
+	// Verifiable Agent Execution (α-1, α-2) — signed per-run execution proofs
 	createProofRecorder,
 	verifyProof,
+	compareProofs,
 	PROOF_SESSION_METADATA_KEY,
 	PROOF_VERSION,
 } from '@elsium-ai/observe'
@@ -783,6 +784,10 @@ export type {
 	RagRetrieveSummary,
 	PolicyDecisionSummary,
 	ProofInputDocRef,
+	ReplayStrategy,
+	ReplayDiff,
+	EventDelta,
+	EventDeltaKind,
 } from '@elsium-ai/observe'
 
 // ─── App ────────────────────────────────────────────────────────

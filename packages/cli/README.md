@@ -28,6 +28,8 @@ npx @elsium-ai/cli init my-ai-app
 | `elsium trace [id]` | List recent traces or inspect a specific trace |
 | `elsium xray` | Inspect raw LLM request/response details (X-Ray mode) |
 | `elsium prompt <subcommand>` | Manage versioned prompts (list, show, diff, history) |
+| `elsium verify <proof.json>` | Verify a signed `ExecutionProof` offline (Ed25519 + hash chain) |
+| `elsium replay <a.json> <b.json>` | Compare two `ExecutionProof`s for reproducibility (bit-exact or structural) |
 
 Global options:
 
@@ -446,6 +448,56 @@ await traceCommand([])
 // Inspect a specific trace
 await traceCommand(['trc_abc123'])
 ```
+
+### `elsium verify`
+
+Offline verification of a signed `ExecutionProof` (Verifiable Agent Execution). Recomputes the full event hash chain and validates the Ed25519 signature using a public key you supply. No API keys, no network calls — runs anywhere with just the proof file and the trusted public key.
+
+**Usage**
+
+```
+elsium verify <proof.json> --public-key <pem-or-path>
+elsium verify <proof.json> --trust-roots <path>
+```
+
+**Options**
+
+| Flag | Description |
+| --- | --- |
+| `--public-key <pem-or-path>` | Inline SPKI PEM string, or path to a `.pub` file containing the public key |
+| `--trust-roots <path>` | JSON file: `[{ keyId, publicKey, label?, notBefore?, notAfter? }]` (multi-key) |
+| `--quiet` | Exit code only, no human output |
+| `--json` | Machine-readable JSON result |
+
+Exit code is `0` if the proof verifies and `1` otherwise. Sample output:
+
+```
+✓ Signature valid (Ed25519, key=org-aperion-k7)
+✓ Hash chain intact (47 events, head=a3f9b22c8e1f…)
+  Events: 1 agent.input, 28 llm.call, 12 tool.call, 6 policy.evaluated
+  Agent: invoice-extractor@1.2.3
+  Span:  2026-05-24T18:00:00.000Z → 2026-05-24T18:00:04.221Z
+```
+
+### `elsium replay`
+
+Compares two `ExecutionProof`s to assess reproducibility. Useful for post-mortem investigations and CI assertions ("the same agent run produces the same shape of execution").
+
+**Usage**
+
+```
+elsium replay <proof-a.json> <proof-b.json> [--strategy <bit-exact|structural>]
+```
+
+**Options**
+
+| Flag | Description |
+| --- | --- |
+| `--strategy bit-exact` | Every event's `hashSelf` must match. Requires `temperature: 0` + `seed`. |
+| `--strategy structural` (default) | Same event order and types. `tool.call`/`rag.retrieve`/`policy.evaluated` data must match exactly; `llm.call` compared by `model`+`provider` only. |
+| `--json` | Machine-readable JSON result |
+
+Exit code is `0` when the proofs match under the chosen strategy and `1` otherwise.
 
 ---
 
