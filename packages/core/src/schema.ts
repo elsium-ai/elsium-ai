@@ -1,15 +1,12 @@
 import type { z } from 'zod'
 import { zodToJsonSchema as libZodToJsonSchema } from 'zod-to-json-schema'
-import { createLogger } from './logger'
-
-const log = createLogger()
 
 /**
  * Converts a Zod schema to JSON Schema.
  * Uses the zod-to-json-schema library instead of accessing internal _def.
  */
 export function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
-	if (!('_def' in schema)) return { type: 'object' }
+	if (typeof (schema as { parse?: unknown }).parse !== 'function') return { type: 'object' }
 
 	const result = libZodToJsonSchema(schema) as Record<string, unknown>
 
