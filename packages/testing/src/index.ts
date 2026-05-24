@@ -147,3 +147,17 @@ export type {
 	AgentEvalCaseResult,
 	AgentEvalResult,
 } from './agent-eval'
+
+// replayFrom — time-travel replay with overrides
+export { createTraceRecorder, replayFrom } from './replay-from'
+export type {
+	TraceStep,
+	AgentTrace,
+	TraceRecorder,
+	TraceRecorderConfig,
+	StepExecutor,
+	StepOverride,
+	ReplayFromOptions,
+	ReplayedStep,
+	ReplayResult,
+} from './replay-from'

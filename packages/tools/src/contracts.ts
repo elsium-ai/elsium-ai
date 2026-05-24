@@ -41,10 +41,10 @@ export function createInMemoryIdempotencyStore(
 	const composeKey = (toolName: string, key: string): string => `${toolName}::${key}`
 
 	return {
-		async get<T>(toolName, key) {
+		async get<T>(toolName: string, key: string) {
 			return entries.get(composeKey(toolName, key)) as IdempotencyEntry<T> | undefined
 		},
-		async put<T>(toolName, key, output) {
+		async put<T>(toolName: string, key: string, output: T) {
 			const entry: IdempotencyEntry<T> = {
 				key,
 				toolName,
@@ -54,7 +54,7 @@ export function createInMemoryIdempotencyStore(
 			entries.set(composeKey(toolName, key), entry as IdempotencyEntry<unknown>)
 			return entry
 		},
-		async delete(toolName, key) {
+		async delete(toolName: string, key: string) {
 			return entries.delete(composeKey(toolName, key))
 		},
 	}
