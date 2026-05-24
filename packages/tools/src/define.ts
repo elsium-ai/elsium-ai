@@ -1,6 +1,12 @@
 import type { ToolDefinition } from '@elsium-ai/core'
 import { ElsiumError, createLogger, generateId, zodToJsonSchema } from '@elsium-ai/core'
 import type { z } from 'zod'
+import type {
+	IdempotencyStore,
+	PreconditionFailure,
+	PreconditionFn,
+	SideEffectLevel,
+} from './contracts'
 import { createSandboxRunner } from './sandbox/runner'
 import type { SandboxConfig, SandboxRunner } from './sandbox/types'
 
@@ -30,12 +36,18 @@ export interface ToolConfig<TInput = unknown, TOutput = unknown> {
 	handler?: (input: TInput, context: ToolContext) => Promise<TOutput>
 	timeoutMs?: number
 	sandbox?: SandboxConfig
+	sideEffectLevel?: SideEffectLevel
+	idempotencyKey?: (input: TInput) => string
+	idempotencyStore?: IdempotencyStore
+	preconditions?: Array<{ name: string; check: PreconditionFn<TInput> }>
+	dryRunHandler?: (input: TInput, context: ToolContext) => Promise<TOutput> | TOutput
 }
 
 export interface ToolContext {
 	toolCallId: string
 	traceId?: string
 	signal?: AbortSignal
+	dryRun?: boolean
 }
 
 export interface Tool<TInput = unknown, TOutput = unknown> {
@@ -46,6 +58,7 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
 	readonly rawSchema?: Record<string, unknown>
 	readonly timeoutMs: number
 	readonly sandbox?: SandboxConfig
+	readonly sideEffectLevel?: SideEffectLevel
 
 	execute(input: unknown, context?: Partial<ToolContext>): Promise<ToolExecutionResult<TOutput>>
 	toDefinition(): ToolDefinition
@@ -58,6 +71,9 @@ export interface ToolExecutionResult<T = unknown> {
 	error?: string
 	toolCallId: string
 	durationMs: number
+	dryRun?: boolean
+	idempotent?: boolean
+	preconditionFailures?: PreconditionFailure[]
 }
 
 function formatZodErrors(error: z.ZodError): string {
@@ -153,7 +169,18 @@ export function defineTool<TInput, TOutput>(
 		}
 	}
 
-	const { name, description, output, sandbox, timeoutMs = 30_000 } = config
+	const {
+		name,
+		description,
+		output,
+		sandbox,
+		timeoutMs = 30_000,
+		sideEffectLevel,
+		idempotencyKey,
+		idempotencyStore,
+		preconditions,
+		dryRunHandler,
+	} = config
 	const handler = config.handler
 
 	let sandboxRunner: SandboxRunner | null = null
@@ -178,6 +205,90 @@ export function defineTool<TInput, TOutput>(
 		return handler(parsedInput, context)
 	}
 
+	async function runPreconditions(
+		parsedInput: TInput,
+		context: ToolContext,
+	): Promise<PreconditionFailure[]> {
+		if (!preconditions?.length) return []
+		const failures: PreconditionFailure[] = []
+		for (const { name: ruleName, check } of preconditions) {
+			const result = await check(parsedInput, {
+				toolCallId: context.toolCallId,
+				traceId: context.traceId,
+			})
+			if (!result.ok)
+				failures.push({ name: ruleName, reason: result.reason ?? 'precondition failed' })
+		}
+		return failures
+	}
+
+	function shouldDryRun(context: ToolContext): boolean {
+		if (!context.dryRun) return false
+		if (!sideEffectLevel) return true
+		return sideEffectLevel !== 'read'
+	}
+
+	async function runPreGates(
+		parsedInput: TInput,
+		context: ToolContext,
+		toolCallId: string,
+		startTime: number,
+	): Promise<ToolExecutionResult<TOutput> | null> {
+		const preFailures = await runPreconditions(parsedInput, context)
+		if (preFailures.length > 0) {
+			const message = preFailures.map((f) => `${f.name}: ${f.reason}`).join('; ')
+			return {
+				...buildExecutionFailure<TOutput>(toolCallId, startTime, `precondition denied: ${message}`),
+				preconditionFailures: preFailures,
+			}
+		}
+
+		if (shouldDryRun(context)) {
+			const preview = dryRunHandler
+				? await dryRunHandler(parsedInput, context)
+				: (undefined as unknown as TOutput)
+			return { ...buildExecutionSuccess(toolCallId, startTime, preview), dryRun: true }
+		}
+
+		const idemKey = idempotencyKey ? idempotencyKey(parsedInput) : undefined
+		if (idemKey && idempotencyStore) {
+			const cached = await idempotencyStore.get<TOutput>(name, idemKey)
+			if (cached) {
+				return {
+					...buildExecutionSuccess(toolCallId, startTime, cached.output),
+					idempotent: true,
+				}
+			}
+		}
+
+		return null
+	}
+
+	async function validateAndPersist(
+		parsedInput: TInput,
+		result: TOutput,
+		toolCallId: string,
+		startTime: number,
+	): Promise<ToolExecutionResult<TOutput>> {
+		if (output) {
+			const validated = output.safeParse(result)
+			if (!validated.success) {
+				return buildExecutionFailure(
+					toolCallId,
+					startTime,
+					`Invalid output: ${formatZodErrors(validated.error)}`,
+				)
+			}
+		}
+
+		const idemKey = idempotencyKey ? idempotencyKey(parsedInput) : undefined
+		if (idemKey && idempotencyStore) {
+			await idempotencyStore.put(name, idemKey, result)
+		}
+
+		return buildExecutionSuccess(toolCallId, startTime, result)
+	}
+
 	const tool: Tool<TInput, TOutput> = {
 		name,
 		description,
@@ -185,6 +296,7 @@ export function defineTool<TInput, TOutput>(
 		outputSchema: output,
 		timeoutMs,
 		sandbox,
+		sideEffectLevel,
 
 		async execute(
 			rawInput: unknown,
@@ -215,26 +327,21 @@ export function defineTool<TInput, TOutput>(
 				toolCallId,
 				traceId: partialCtx?.traceId,
 				signal: controller.signal,
+				dryRun: partialCtx?.dryRun,
 			}
 
 			try {
+				const preGate = await runPreGates(parsed.data, context, toolCallId, startTime)
+				if (preGate) return preGate
+
 				const result = await Promise.race([
 					runHandler(parsed.data, context),
 					createAbortRejection(controller.signal, () => timedOut, name, timeoutMs),
 				])
 
-				if (output) {
-					const validated = output.safeParse(result)
-					if (!validated.success) {
-						return buildExecutionFailure(
-							toolCallId,
-							startTime,
-							`Invalid output: ${formatZodErrors(validated.error)}`,
-						)
-					}
-				}
-
-				return buildExecutionSuccess(toolCallId, startTime, result)
+				const outputFailure = validateAndPersist(parsed.data, result, toolCallId, startTime)
+				const resolved = await outputFailure
+				return resolved
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				return buildExecutionFailure(toolCallId, startTime, message)
