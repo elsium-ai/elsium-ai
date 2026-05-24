@@ -81,6 +81,19 @@ export type {
 	JsonFileTaskStoreConfig,
 } from './stores/index'
 
+// askHuman — durable human-in-the-loop wrapper
+export { askHuman, createInMemoryAskHumanStore, resolveAskHuman } from './ask-human'
+export type {
+	AskHumanStatus,
+	AskHumanDecision,
+	AskHumanRequest,
+	AskHumanRecord,
+	AskHumanStore,
+	AskHumanResponder,
+	AskHumanOptions,
+	InMemoryAskHumanStoreConfig,
+} from './ask-human'
+
 // Approval Gates (legacy single-callback)
 export { createApprovalGate, shouldRequireApproval } from './approval'
 export type {
