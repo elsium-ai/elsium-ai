@@ -4,6 +4,16 @@ export {
 } from './issuer'
 export type { CapabilityIssuer, CapabilityIssuerConfig, MintOptions } from './issuer'
 
+export { delegateToken } from './delegation'
+export type { DelegateOptions } from './delegation'
+
+export { createInMemoryRevocationStore } from './revocation'
+export type {
+	RevocationStore,
+	RevocationEntry,
+	InMemoryRevocationStoreConfig,
+} from './revocation'
+
 export { createCapabilityVerifier } from './verifier'
 export type {
 	CapabilityVerifier,

@@ -1,6 +1,7 @@
 import { createEd25519Verifier } from '../crypto/signer'
 import type { PublicKeyResolver } from '../crypto/signer'
 import { tokenSigningPayload } from './issuer'
+import type { RevocationStore } from './revocation'
 import type { CapabilityCheckReason, CapabilityToken } from './types'
 import { CAPABILITY_TOKEN_VERSION } from './types'
 
@@ -15,10 +16,12 @@ export interface TokenVerificationResult {
 export interface CapabilityVerifierConfig {
 	resolver: PublicKeyResolver
 	clock?: () => number
+	revocationStore?: RevocationStore
 }
 
 export interface CapabilityVerifier {
 	verifyToken(token: CapabilityToken): TokenVerificationResult
+	verifyTokenAsync(token: CapabilityToken): Promise<TokenVerificationResult>
 }
 
 function fail(
@@ -61,37 +64,56 @@ export function createCapabilityVerifier(config: CapabilityVerifierConfig): Capa
 	const clock = config.clock ?? (() => Date.now())
 	const cryptoVerifier = createEd25519Verifier({ resolver: config.resolver })
 
-	return {
-		verifyToken(token) {
-			const shape = checkShape(token)
-			if (shape) return shape
+	const verifyToken = (token: CapabilityToken): TokenVerificationResult => {
+		const shape = checkShape(token)
+		if (shape) return shape
 
-			const now = clock()
-			const within = isWithinWindow(token, now)
+		const now = clock()
+		const within = isWithinWindow(token, now)
 
-			const { signature, ...unsigned } = token
-			const sigResult = cryptoVerifier.verify(tokenSigningPayload(unsigned), signature)
-			if (!sigResult.valid) {
-				return {
-					valid: false,
-					signatureValid: false,
-					withinValidityWindow: within,
-					reason: sigResult.reason?.includes('Unknown keyId') ? 'unknown-key' : 'bad-signature',
-					detail: sigResult.reason,
-				}
+		const { signature, ...unsigned } = token
+		const sigResult = cryptoVerifier.verify(tokenSigningPayload(unsigned), signature)
+		if (!sigResult.valid) {
+			return {
+				valid: false,
+				signatureValid: false,
+				withinValidityWindow: within,
+				reason: sigResult.reason?.includes('Unknown keyId') ? 'unknown-key' : 'bad-signature',
+				detail: sigResult.reason,
 			}
+		}
 
-			if (!within) {
-				return {
-					valid: false,
-					signatureValid: true,
-					withinValidityWindow: false,
-					reason: expiryReason(token, now),
-					detail: `now=${now} notBefore=${token.validity.notBefore} expiresAt=${token.validity.expiresAt}`,
-				}
+		if (!within) {
+			return {
+				valid: false,
+				signatureValid: true,
+				withinValidityWindow: false,
+				reason: expiryReason(token, now),
+				detail: `now=${now} notBefore=${token.validity.notBefore} expiresAt=${token.validity.expiresAt}`,
 			}
+		}
 
-			return { valid: true, signatureValid: true, withinValidityWindow: true }
-		},
+		return { valid: true, signatureValid: true, withinValidityWindow: true }
 	}
+
+	const verifyTokenAsync = async (token: CapabilityToken): Promise<TokenVerificationResult> => {
+		const result = verifyToken(token)
+		if (!result.valid) return result
+		if (!config.revocationStore) return result
+
+		const revoked = await config.revocationStore.isRevoked(token.tokenId)
+		if (revoked) {
+			const entry = await config.revocationStore.getEntry(token.tokenId)
+			return {
+				valid: false,
+				signatureValid: true,
+				withinValidityWindow: true,
+				reason: 'revoked',
+				detail: entry?.reason ?? `tokenId ${token.tokenId} is revoked`,
+			}
+		}
+		return result
+	}
+
+	return { verifyToken, verifyTokenAsync }
 }

@@ -75,7 +75,7 @@ export {
 	createInMemoryWriteOnceStore,
 	createFileWriteOnceStore,
 	WriteOnceConflictError,
-	// Capability tokens (β-1)
+	// Capability tokens (β-1, β-2)
 	createCapabilityIssuer,
 	createCapabilityVerifier,
 	tokenSigningPayload,
@@ -84,6 +84,8 @@ export {
 	canQueryRag,
 	canUseMcp,
 	checkDataClass,
+	delegateToken,
+	createInMemoryRevocationStore,
 	CAPABILITY_TOKEN_VERSION,
 } from '@elsium-ai/core'
 
@@ -211,6 +213,10 @@ export type {
 	RagCapability,
 	ToolCapability,
 	WorkflowCapability,
+	DelegateOptions,
+	RevocationStore,
+	RevocationEntry,
+	InMemoryRevocationStoreConfig,
 } from '@elsium-ai/core'
 
 // ─── Gateway ────────────────────────────────────────────────────
@@ -259,6 +265,8 @@ export {
 	// Bulkhead
 	createBulkhead,
 	bulkheadMiddleware,
+	// Capability middleware (β-2)
+	capabilityMiddleware,
 } from '@elsium-ai/gateway'
 
 export type {
@@ -320,6 +328,9 @@ export type {
 	// Bulkhead types
 	BulkheadConfig,
 	Bulkhead,
+	// Capability middleware types (β-2)
+	CapabilityMiddlewareOptions,
+	CapabilityLLMDenialEvent,
 } from '@elsium-ai/gateway'
 
 // ─── Agents ─────────────────────────────────────────────────────
@@ -564,6 +575,8 @@ export {
 	createBM25Index,
 	// Hybrid Search
 	createHybridSearch,
+	// Capability guard (β-2)
+	withRagCapability,
 } from '@elsium-ai/rag'
 
 export type {
@@ -599,6 +612,9 @@ export type {
 	BM25Index,
 	HybridSearch,
 	HybridSearchConfig,
+	// Capability guard types (β-2)
+	CapabilityGuardedRagOptions,
+	RagCapabilityDenialEvent,
 } from '@elsium-ai/rag'
 
 // ─── Workflows ──────────────────────────────────────────────────
@@ -861,6 +877,8 @@ export {
 	createMCPServer,
 	createMCPHttpHandler,
 	createTrustedMCPClient,
+	// Capability guard (β-2)
+	createCapabilityGuardedMCPClient,
 } from '@elsium-ai/mcp'
 
 export type {
@@ -892,6 +910,9 @@ export type {
 	MCPToolManifest,
 	MCPToolManifestEntry,
 	TrustedMCPClient,
+	// Capability guard types (β-2)
+	CapabilityGuardedMCPOptions,
+	MCPCapabilityDenialEvent,
 } from '@elsium-ai/mcp'
 
 // ─── Client ─────────────────────────────────────────────────────

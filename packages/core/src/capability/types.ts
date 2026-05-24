@@ -92,6 +92,7 @@ export type CapabilityCheckReason =
 	| 'bad-signature'
 	| 'unknown-key'
 	| 'malformed'
+	| 'revoked'
 	| 'no-matching-capability'
 	| 'denied-data-class'
 	| 'denied-field'

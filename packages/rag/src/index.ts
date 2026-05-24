@@ -81,3 +81,10 @@ export type { BM25Index } from './bm25'
 // Hybrid Search
 export { createHybridSearch } from './hybrid'
 export type { HybridSearch, HybridSearchConfig } from './hybrid'
+
+// Capability guard (β-2) — gates RAG queries on a CapabilityToken
+export { withRagCapability } from './capability-guard'
+export type {
+	CapabilityGuardedRagOptions,
+	RagCapabilityDenialEvent,
+} from './capability-guard'

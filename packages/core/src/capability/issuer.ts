@@ -1,6 +1,7 @@
 import type { Signer } from '../crypto/signer'
 import { ElsiumError } from '../errors'
 import { generateId } from '../utils'
+import { type DelegateOptions, delegateToken } from './delegation'
 import type {
 	AgentCapability,
 	CapabilityBudget,
@@ -22,6 +23,7 @@ export interface CapabilityIssuer {
 	readonly orgId: string
 	readonly keyId: string
 	mint(options: MintOptions): CapabilityToken
+	delegate(parent: CapabilityToken, options: Omit<DelegateOptions, 'signer'>): CapabilityToken
 }
 
 export interface MintOptions {
@@ -135,6 +137,10 @@ export function createCapabilityIssuer(config: CapabilityIssuerConfig): Capabili
 
 			const signature = config.signer.sign(tokenSigningPayload(unsigned))
 			return { ...unsigned, signature }
+		},
+
+		delegate(parent, options) {
+			return delegateToken(parent, { ...options, signer: config.signer }, clock)
 		},
 	}
 }
