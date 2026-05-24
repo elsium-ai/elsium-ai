@@ -76,11 +76,11 @@ describe('zodToJsonSchema', () => {
 		})
 	})
 
-	it('converts ZodDefault — unwraps inner type', () => {
+	it('converts ZodDefault — includes default value', () => {
 		const schema = z.string().default('hello')
 		const result = zodToJsonSchema(schema)
 
-		expect(result).toEqual({ type: 'string' })
+		expect(result).toEqual({ type: 'string', default: 'hello' })
 	})
 
 	it('excludes default fields from required in ZodObject', () => {

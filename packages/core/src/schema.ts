@@ -1,113 +1,115 @@
 import type { z } from 'zod'
-import { createLogger } from './logger'
-
-const log = createLogger()
-
-function zodDefKind(def: Record<string, unknown>): string | undefined {
-	return typeof def.type === 'string' ? (def.type as string) : (def.typeName as string | undefined)
-}
-
-function zodObjectToJsonSchema(
-	schema: Record<string, unknown>,
-	convert: (s: z.ZodType) => Record<string, unknown>,
-): Record<string, unknown> {
-	const shape =
-		typeof schema.shape === 'function'
-			? (schema.shape as () => Record<string, unknown>)()
-			: (schema.shape as Record<string, unknown>)
-	const properties: Record<string, unknown> = {}
-	const required: string[] = []
-
-	for (const [key, value] of Object.entries(shape)) {
-		const fieldSchema = value as z.ZodType
-		properties[key] = convert(fieldSchema)
-		const fieldDef = fieldSchema._def as Record<string, unknown>
-		const fieldKind = zodDefKind(fieldDef)
-		if (
-			fieldKind !== 'optional' &&
-			fieldKind !== 'ZodOptional' &&
-			fieldKind !== 'default' &&
-			fieldKind !== 'ZodDefault'
-		) {
-			required.push(key)
-		}
-		if (fieldDef.description) {
-			;(properties[key] as Record<string, unknown>).description = fieldDef.description
-		}
-	}
-
-	return { type: 'object', properties, required }
-}
+import { zodToJsonSchema as libZodToJsonSchema } from 'zod-to-json-schema'
 
 /**
  * Converts a Zod schema to JSON Schema.
- * Uses Zod's internal `_def` property — the standard community pattern
- * since Zod does not expose a public schema introspection API.
+ * Uses the zod-to-json-schema library instead of accessing internal _def.
  */
 export function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
-	if (!('_def' in schema)) return { type: 'object' }
+	if (typeof (schema as { parse?: unknown }).parse !== 'function') return { type: 'object' }
 
-	const def = schema._def as Record<string, unknown>
-	const kind = zodDefKind(def)
+	const result = libZodToJsonSchema(schema) as Record<string, unknown>
 
-	switch (kind) {
-		case 'object':
-		case 'ZodObject':
-			return zodObjectToJsonSchema(def, zodToJsonSchema)
-		case 'string':
-		case 'ZodString':
-			return { type: 'string' }
-		case 'number':
-		case 'ZodNumber':
-			return { type: 'number' }
-		case 'boolean':
-		case 'ZodBoolean':
-			return { type: 'boolean' }
-		case 'array':
-		case 'ZodArray':
-			return {
-				type: 'array',
-				items: zodToJsonSchema((def.element ?? def.type) as z.ZodType),
-			}
-		case 'enum':
-		case 'ZodEnum': {
-			const values =
-				(def.values as string[]) ??
-				(def.entries ? Object.values(def.entries as Record<string, string>) : [])
-			return { type: 'string', enum: values }
+	return postProcess(result)
+}
+
+/** Build a clean copy without $schema. */
+function cleanResult(result: Record<string, unknown>): Record<string, unknown> {
+	const clean: Record<string, unknown> = {}
+	for (const [key, value] of Object.entries(result)) {
+		if (key !== '$schema' && value !== undefined) {
+			clean[key] = value
 		}
-		case 'optional':
-		case 'ZodOptional':
-			return zodToJsonSchema(def.innerType as z.ZodType)
-		case 'default':
-		case 'ZodDefault':
-			return zodToJsonSchema(def.innerType as z.ZodType)
-		case 'nullable':
-		case 'ZodNullable': {
-			const inner = zodToJsonSchema(def.innerType as z.ZodType)
-			return { ...inner, nullable: true }
-		}
-		case 'ZodLiteral':
-			return { type: typeof def.value, const: def.value }
-		case 'ZodUnion': {
-			const options = (def.options as z.ZodType[]).map(zodToJsonSchema)
-			return { anyOf: options }
-		}
-		case 'ZodRecord':
-			return {
-				type: 'object',
-				additionalProperties: def.valueType
-					? zodToJsonSchema(def.valueType as z.ZodType)
-					: { type: 'string' },
-			}
-		case 'ZodTuple': {
-			const items = ((def.items as z.ZodType[]) ?? []).map(zodToJsonSchema)
-			return { type: 'array', prefixItems: items, minItems: items.length, maxItems: items.length }
-		}
-		case 'ZodDate':
-			return { type: 'string', format: 'date-time' }
-		default:
-			log.warn(`zodToJsonSchema: unsupported type ${kind}, defaulting to string`)
-			return { type: 'string' }
 	}
+	return clean
+}
+
+/** Convert type arrays to our preferred format. */
+function normalizeType(result: Record<string, unknown>): void {
+	// Remove additionalProperties: false (added by library for objects)
+	// but keep additionalProperties: { type: ... } for ZodRecord
+	if (result.additionalProperties === false) {
+		result.additionalProperties = undefined
+	}
+
+	if (!Array.isArray(result.type)) return
+
+	const types = result.type as string[]
+	const hasNull = types.includes('null')
+	const nonNull = types.filter((t) => t !== 'null')
+
+	if (hasNull && nonNull.length === 1) {
+		result.type = nonNull[0]
+		result.nullable = true
+	} else if (hasNull && nonNull.length > 1) {
+		result.type = nonNull
+		result.nullable = true
+	} else if (!hasNull && nonNull.length > 1) {
+		result.anyOf = nonNull.map((t) => ({ type: t }))
+		result.type = undefined
+	}
+}
+
+/** Unwrap optional pattern and post-process anyOf entries. */
+function normalizeAnyOf(
+	result: Record<string, unknown>,
+	processor: (s: Record<string, unknown>) => Record<string, unknown>,
+): Record<string, unknown> | null {
+	if (!result.anyOf || !Array.isArray(result.anyOf)) return null
+
+	const anyOf = result.anyOf as Record<string, unknown>[]
+	const nonNotEntries = anyOf.filter((e) => !e.not)
+
+	// Detect optional pattern: [{ not: {} }, { type: ... }]
+	if (nonNotEntries.length === 1 && anyOf.some((e) => e.not)) {
+		return processor(nonNotEntries[0])
+	}
+
+	result.anyOf = anyOf.map(processor)
+	return null
+}
+
+/** Process nested schema structures recursively. */
+function processNested(
+	result: Record<string, unknown>,
+	processor: (s: Record<string, unknown>) => Record<string, unknown>,
+): void {
+	if (result.properties && typeof result.properties === 'object') {
+		const props = result.properties as Record<string, unknown>
+		for (const key of Object.keys(props)) {
+			props[key] = processor(props[key] as Record<string, unknown>)
+		}
+	}
+
+	if (result.items && typeof result.items === 'object') {
+		if (Array.isArray(result.items)) {
+			result.prefixItems = result.items.map((item) => processor(item as Record<string, unknown>))
+			result.items = undefined
+		} else {
+			result.items = processor(result.items as Record<string, unknown>)
+		}
+	}
+
+	if (result.additionalProperties && typeof result.additionalProperties === 'object') {
+		result.additionalProperties = processor(result.additionalProperties as Record<string, unknown>)
+	}
+}
+
+/**
+ * Post-process library output to match the format expected by LLM providers
+ * in this codebase (remove $schema, convert nullable format, etc.).
+ */
+function postProcess(schema: Record<string, unknown>): Record<string, unknown> {
+	if (typeof schema !== 'object' || schema === null) return schema
+
+	const result = { ...schema }
+
+	normalizeType(result)
+
+	const unwrapped = normalizeAnyOf(result, postProcess)
+	if (unwrapped) return unwrapped
+
+	processNested(result, postProcess)
+
+	return cleanResult(result)
 }
