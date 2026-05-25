@@ -1048,6 +1048,32 @@ for await (const event of stream) {
 
 Validation failures (bad JSON or schema mismatch) surface as `UnknownToolCallComplete` with `parseError.{ reason, raw }`. Original `tool_call_start/delta/end` events still pass through. See [`examples/typed-tool-stream/`](../examples/typed-tool-stream/).
 
+### Agent stream — simple aliases + granular events
+
+`agent.stream(input)` exposes an `AgentStreamEvent` discriminated union with **both** granular events and simpler aliases that match the public spec. Use whichever pairs better with your UI; both fire and carry the same data:
+
+| Simple alias | Granular variants | Payload |
+|---|---|---|
+| `token` | `text_delta` | `{ text }` |
+| `thinking` | `thinking_start`, `thinking_delta`, `thinking_end` | `{ text }` (full accumulated reasoning at thinking_end) |
+| `tool_call` | `tool_call_start`, `tool_call_delta`, `tool_call_end` | `{ toolCall: { id, name, arguments } }` with parsed JSON |
+| `tool_result` | — (was already a single event) | `{ toolCallId, name, result }` |
+| `final` | `agent_end` | `{ result, message, usage, toolCalls, stopReason }` |
+
+```typescript
+for await (const event of agent.stream('Plan a 3-day trip to Lisbon')) {
+  switch (event.type) {
+    case 'thinking':    sidebar.write(event.text); break
+    case 'token':       stdout.write(event.text); break
+    case 'tool_call':   console.log('→', event.toolCall.name, event.toolCall.arguments); break
+    case 'tool_result': console.log('←', event.result.data); break
+    case 'final':       saveAgentResult(event.result); break
+  }
+}
+```
+
+The granular variants are still emitted — prefer them when you need partial state during streaming (e.g. progressive UI rendering as the assistant types). The simple aliases are emitted once per logical event boundary and are easier for "render once, display result" UIs.
+
 ---
 
 ## Response Caching
@@ -1372,11 +1398,36 @@ await transferTool.execute({ txId: 'tx-1', amount: 50, to: 'acct-X' })
 Semantics:
 
 - `sideEffectLevel: 'read' | 'write' | 'destructive'` — `dryRun: true` skips the handler for `write`/`destructive` (calls `dryRunHandler` if provided, otherwise returns `success: true, data: undefined`). `read` tools always run.
-- `preconditions` — all checks run before the handler. Any failure aggregates into `result.preconditionFailures` and the handler is skipped.
+- `preconditions` — all checks run before the handler. Any failure aggregates into `result.preconditionFailures` and the handler is skipped. Accepts both `{ name, check }` objects **and bare `PreconditionFn` functions** (auto-named from `fn.name`, falling back to `precondition_N`). Mix freely in the same array.
 - `idempotencyKey + idempotencyStore` — on a key match, the cached output is returned with `result.idempotent: true`. Critical for safe retries (no double-charge on flaky network).
 - `tool.sideEffectLevel` is exposed on the public `Tool` shape so upstream policy code (auto-approval gates, capability tokens) can branch on it.
 
 See [`examples/tool-contracts/`](../examples/tool-contracts/).
+
+### Auto-approval gate for destructive tools
+
+`ToolConfig.requireApproval: 'auto' | 'always' | 'never'` (default `'auto'`) controls whether the tool calls `context.requestApproval` before invoking the handler. With `'auto'`, the gate fires only when `sideEffectLevel === 'destructive'` and `dryRun !== true`. Denials short-circuit the handler and return `{ success: false, approvalDenied: true, approvalReason }`.
+
+```typescript
+import { defineTool } from '@elsium-ai/tools'
+
+const transfer = defineTool({
+  name: 'transferFunds',
+  input: TransferSchema,
+  sideEffectLevel: 'destructive',
+  // requireApproval defaults to 'auto'
+  handler: async (i) => bank.transfer(i),
+})
+
+await transfer.execute(input, {
+  requestApproval: async (req) => ({
+    status: req.input.amount > 1_000 ? 'rejected' : 'approved',
+    reason: 'amount cap exceeded',
+  }),
+})
+```
+
+`requireApproval: 'always'` forces the gate regardless of `sideEffectLevel` (good for PII reads). `'never'` opts out entirely (good for test-only tools). When no `requestApproval` handler is provided on the context but the gate is required, the tool logs a warning and proceeds — wire it explicitly to enforce.
 
 ---
 
@@ -1762,6 +1813,80 @@ console.log(result.toolCalls)
 | `error` | An error occurred during execution |
 
 When using an `LLMProvider` object as the `provider` config, streaming is automatically available — no extra setup needed.
+
+### Pause + resume mid-run
+
+Any agent can pause itself mid-execution and be resumed later — across process restarts, days apart. The pattern: a tool handler throws `pauseAgent(reason, context)`, the runtime catches the signal, snapshots the agent's conversation state to a `StateStore`, and returns `{ status: 'paused', resumeToken }`. The token round-trips through your own queue/DB/Slack and feeds back into `agent.resume(token)`.
+
+```typescript
+import { createInMemoryStateStore, pauseAgent } from '@elsium-ai/core'
+import { defineAgent } from '@elsium-ai/agents'
+import { defineTool } from '@elsium-ai/tools'
+
+const reviewTool = defineTool({
+  name: 'request_human_review',
+  input: z.object({ amount: z.number() }),
+  sideEffectLevel: 'destructive',
+  handler: async (i) => {
+    pauseAgent('reviewer approval needed', { amount: i.amount })
+    return { /* unreachable — pauseAgent throws */ }
+  },
+})
+
+const store = createInMemoryStateStore()
+const agent = defineAgent({ name: 'ops', system: '...', tools: [reviewTool] }, deps)
+
+const outcome = await agent.runResumable('approve refund of $1,200', {}, { stateStore: store })
+if (outcome.status === 'paused') {
+  // persist outcome.resumeToken in your queue
+  // later — once a human approves:
+  const final = await agent.resume(outcome.resumeToken, {
+    stateStore: store,
+    followUpMessage: { role: 'user', content: 'approved by reviewer@example.com' },
+  })
+}
+```
+
+`createInMemoryStateStore` ships for prototyping. For production, supply a durable adapter implementing `save / load / delete / list`. **MVP scope:** snapshots are captured at explicit `pauseAgent()` boundaries only — full crash recovery on every iteration is a planned follow-up.
+
+### `agent.askHuman({...})` as an agent method
+
+The standalone `askHuman` works from anywhere. For ergonomics, every agent also exposes `askHuman` as a method that accepts the same options plus `timeout` as a duration string:
+
+```typescript
+const decision = await agent.askHuman({
+  question: 'Approve transfer of $50,000?',
+  options: ['approve', 'reject', 'modify'] as const,
+  context: { trade, riskScore },
+  timeout: '24h',                 // '5s' | '2m' | '1h' | '7d' | number(ms)
+})
+
+if (decision.status === 'approved') { /* … */ }
+```
+
+Internally delegates to the standalone function — both APIs are interchangeable.
+
+### Auto-record + replay
+
+Every `agent.run()` automatically attaches a `TraceRecorder` and records each LLM iteration as a step (`llm:iter_N`). Traces stay in an in-memory ring buffer on the agent (default cap 100).
+
+```typescript
+const result = await agent.run('Summarize Q1 earnings call')
+const trace = agent.getTrace(result.traceId)
+console.log('steps:', trace?.steps.map((s) => s.key))
+
+// Time-travel — re-run from any step with selective overrides
+const replay = await agent.replayFrom(result.traceId, {
+  fromStep: 'llm:iter_1',
+  overrides: {
+    'llm:iter_1': { prompt: 'You are a tougher summarizer. Cut filler.' },
+  },
+})
+```
+
+`{ prompt: '...' }` is a shorthand that translates to a `{ kind: 'transform', input: (req) => ({ ...req, system: '...' }) }` override against the `system` field — most common case made concise. The verbose form still works for arbitrary request transforms.
+
+`agent.listTraces()` returns recent traces. Steps before `fromStep` are served from the recording; from `fromStep` onwards they re-execute live via the agent's LLM dependency, with overrides applied. **MVP scope:** records only LLM steps, not tool calls; in-memory store only.
 
 ### Conversation Threads
 
@@ -3536,11 +3661,34 @@ const outcome = await runWithVerification(
 | Validator | Use for |
 |---|---|
 | `zodValidator(schema)` | Structured output with a Zod shape. Per-path repair hint. |
+| `schemaValidator(schema)` | Alias of `zodValidator` — matches the public spec naming for `agent.withVerifier(schemaValidator(MySchema))`. |
 | `regexValidator(pattern, { mode })` | Cheap surface checks: format, forbidden tokens. |
 | `semanticAdapter(semanticValidator, { input })` | Wraps the existing `SemanticValidator` (LLM-as-judge) into the `Validator` contract. |
+| `judgeValidator({ rubric, judge, threshold? })` | Provider-agnostic LLM-as-judge against a free-text rubric. You supply the judge function; the framework formats the failure with score + rubric. |
 | `externalValidator(fn, { name, repairHint })` | Async business rules, API/DB lookups. |
 
 Compose them with `composeValidators(validators, { mode: 'all' | 'short-circuit' })`. See [`examples/verification-pipeline/`](../examples/verification-pipeline/).
+
+### Fluent verification on the agent
+
+`agent.withVerifier(v)` and `agent.withRetryPolicy({ maxAttempts, semantic })` chain on top of any agent returned by `defineAgent` and return a **new** agent — the base is never mutated. Internally the wrapped agent's `run()` and `generate()` loop via `runWithVerification`. Calls without verifiers attached are zero-overhead pass-through.
+
+```ts
+import { defineAgent, schemaValidator, judgeValidator } from '@elsium-ai/agents'
+
+const guarded = defineAgent({ name: 'extract', system: '...', model: 'claude-sonnet-4-6' }, deps)
+  .withVerifier(schemaValidator(InvoiceSchema))
+  .withVerifier(judgeValidator({
+    rubric: 'Output must cite at least one source from the input.',
+    judge: async (rubric, value) => callJudgeLLM(rubric, value),
+    threshold: 0.7,
+  }))
+  .withRetryPolicy({ maxAttempts: 3, semantic: true })
+
+await guarded.run('Extract the invoice from <attachment>')
+```
+
+Validators operate on `AgentResult` (the agent's full return shape — message + usage + toolCalls + traceId), so they can inspect any aspect of the run, not just the text output.
 
 ---
 
