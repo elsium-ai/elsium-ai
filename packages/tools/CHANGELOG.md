@@ -1,5 +1,32 @@
 # @elsium-ai/tools
 
+## 0.15.0
+
+### Minor Changes
+
+- 0bfee9e: Add Capability Tokens for Agents (β-1) — Ed25519-signed, scoped, time-bound tokens that gate what an agent run is allowed to do. `createCapabilityIssuer({ signer, orgId })` mints `CapabilityToken`s with capabilities for tools (allow/deny field constraints), LLMs (provider+model whitelist, maxCost/maxTokens), MCP servers (server+tool allowlist), RAG stores (store whitelist, maxResults), and workflows; plus data class allow/deny lists and TTL. `createCapabilityVerifier({ resolver })` validates signature, validity window, and version offline using a `KeyRegistry`. Pure scope checks ship as `canCallTool`, `canCallLLM`, `canQueryRag`, `canUseMcp`, `checkDataClass`, all returning a typed `CapabilityCheckResult` with `reason` codes (`no-matching-capability`, `denied-field`, `allowed-fields-violation`, `denied-data-class`, `budget-exceeded`, `expired`, `not-yet-valid`, `bad-signature`, `unknown-key`, `malformed`). New `withCapability(tool, { token, verifier?, dataClasses?, onDeny? })` in `@elsium-ai/tools` wraps any `Tool` so execution refuses (with a typed denial result + optional `onDeny` callback) when the token does not authorize the call. The token's `Capability` union is exported as `AgentCapability` to avoid colliding with the existing sandbox `Capability` type in tools.
+- dcad45e: Close the operational triad (tool contracts → askHuman → replayFrom) as MVP primitives — three independent additions, shipped together because they share the same goal: make agent execution safe to retry, pause, and rewind.
+
+  **Tool contracts (`@elsium-ai/tools`)** — `ToolConfig` now accepts `sideEffectLevel: 'read' | 'write' | 'destructive'`, `idempotencyKey + idempotencyStore` (with `createInMemoryIdempotencyStore` adapter), `preconditions: Array<{ name, check }>`, and `dryRunHandler`. `execute()` honors `ctx.dryRun` (skips write/destructive handlers, returns the dry-run preview with `dryRun: true`), runs all preconditions and aborts with `preconditionFailures` if any fail, and dedupes calls by `idempotencyKey` against the store (cache hit returns `idempotent: true`). `tool.sideEffectLevel` is exposed on the `Tool` for upstream policy code.
+
+  **`askHuman` (`@elsium-ai/agents`)** — standalone `askHuman({ question, options, context?, timeoutMs?, responder? | store?, requestId? })` consolidates the human-in-the-loop pattern. Two modes: a responder callback (Slack/web UI) raced against a setTimeout deadline, or a store-backed durable mode that polls every 250 ms and is completed out-of-band via `resolveAskHuman(store, id, decision)` — when paired with an AsyncAgent task store, the agent state survives a server restart. `timeoutMs` accepts a number or a string ('5s' / '2m' / '1h' / '7d'); bad suffix throws `CONFIG_ERROR`. `onTimeout: 'reject' | 'timeout'` controls the resulting status. Ships with `createInMemoryAskHumanStore` adapter and typed `AskHumanStore` port.
+
+  **`replayFrom` (`@elsium-ai/testing`)** — `createTraceRecorder` captures every agent step (input/output keyed by name, with timing + metadata). `replayFrom(trace, { fromStep, executor, overrides })` re-feeds steps before `fromStep` from the recording and runs `executor` live for the rest. `overrides` accept `{ kind: 'replace', output }` (skip executor entirely) or `{ kind: 'transform', input?, output? }` (rewrite input or post-process output). Each `ReplayedStep` reports `source: 'replay' | 'live'` and `overridden: boolean` so Studio / xray can render a diff.
+
+  Trade-off note: each of the three was scoped to 1–3 weeks individually. Combined into one PR they ship as production-MVP primitives — happy path + obvious edge cases tested, but not battle-hardened the way α/β were. Follow-up PRs should deepen each (richer idempotency cache eviction policies, askHuman over Slack/Discord adapters, replayFrom integration with `defineAgent` so it captures steps automatically).
+
+### Patch Changes
+
+- 409ab6f: Docs round 2 — close documentation gaps for the six MVP features shipped in 0.12.x. Adds full sections to `docs/fundamentals.md` and `docs/getting-started.md` for thinking/reasoning stream events, `withToolTypes` typed tool-call streams, CARG cost-aware routed generation, tool contracts (`sideEffectLevel` + idempotency + preconditions + `dryRunHandler`), `askHuman` durable human-in-the-loop, and `replayFrom` time-travel replay. Extends the relevant package READMEs (`packages/tools`, `packages/agents`, `packages/testing`) with What's-Inside table rows and standalone sections. Adds runnable examples — `examples/carg-cascade/`, `examples/thinking-stream/`, `examples/typed-tool-stream/`, `examples/tool-contracts/`, `examples/ask-human/`, `examples/replay-from/` — and refreshes `examples/README.md` to index them. Docs/examples only; no runtime behavior change.
+- Updated dependencies [35bad42]
+- Updated dependencies [6a9adac]
+- Updated dependencies [409ab6f]
+- Updated dependencies [0bfee9e]
+- Updated dependencies [11126a4]
+- Updated dependencies [ea71268]
+- Updated dependencies [09ae00a]
+  - @elsium-ai/core@0.15.0
+
 ## 0.14.0
 
 ### Minor Changes
