@@ -983,6 +983,26 @@ const result = await verified.run('Extract the invoice from <attachment>')
 
 `withVerifier` and `withRetryPolicy` return a **new** agent — they don't mutate the base. The verifier list and policy are immutable per agent reference, so you can fork the same base agent into multiple verification configurations safely.
 
+### `schemaValidator` and `judgeValidator`
+
+Two validator factories that pair with `agent.withVerifier(...)` and match the public spec naming:
+
+```typescript
+import { schemaValidator, judgeValidator } from '@elsium-ai/agents'
+
+agent
+  .withVerifier(schemaValidator(InvoiceSchema))        // alias of zodValidator
+  .withVerifier(
+    judgeValidator({
+      rubric: 'Summary must cite at least one source from the input.',
+      judge: async (rubric, value) => callJudgeLLM(rubric, value), // { passed, score, reason? }
+      threshold: 0.7,
+    }),
+  )
+```
+
+`schemaValidator` is an alias of `zodValidator` — both work, `schemaValidator` reads better in the fluent chain. `judgeValidator({ rubric, judge })` is provider-agnostic: you supply the judge function (typically an LLM call against a calibrated prompt) and the framework formats the failure with the score + rubric as the repair hint.
+
 ## Pause + resume (durable human-in-the-loop)
 
 `agent.runResumable()` lets a tool pause the entire agent mid-execution and snapshot the conversation to a `StateStore`. Later, `agent.resume(resumeToken)` reloads the snapshot and continues — across process restarts, days apart, anywhere.
@@ -1043,6 +1063,21 @@ for (const step of replay.steps) {
 ```
 
 Steps **before** `fromStep` are served from the recording; steps **at and after** are re-executed live by the agent's LLM dependency, with overrides applied. **MVP scope:** only LLM iterations are recorded, not individual tool calls; in-memory only.
+
+### `{ prompt }` shorthand for prompt swaps
+
+The most common override is "rerun this step with a different system prompt". The shorthand `{ prompt: '...' }` is translated internally to a transform that swaps `request.system`:
+
+```typescript
+await agent.replayFrom(result.traceId, {
+  fromStep: 'llm:iter_1',
+  overrides: {
+    'llm:iter_1': { prompt: 'You are a tougher summarizer. Cut filler.' },
+  },
+})
+```
+
+Equivalent to the verbose `{ kind: 'transform', input: (req) => ({ ...req, system: '...' }) }`. Use whichever reads cleaner.
 
 ## Automatic approval gates for destructive tools
 
@@ -1135,6 +1170,34 @@ for await (const event of withToolTypes(llm.stream({ ... }), schemas)) {
 
 Full example at [`examples/typed-tool-stream/`](../examples/typed-tool-stream/).
 
+## Agent stream events — discriminated union
+
+`agent.stream(input)` yields an `AgentStreamEvent` discriminated union you can switch on with full type narrowing. The framework emits both **granular** events (`text_delta`, `thinking_delta`, `tool_call_start/delta/end`) and **simple aliases** that match the public spec (`token`, `thinking`, `tool_call`, `final`). Pick the style that fits your UI:
+
+```typescript
+for await (const event of agent.stream('Plan a trip to Lisbon')) {
+  switch (event.type) {
+    case 'thinking':       // reasoning text after the model finishes its thinking block
+      sidebar.append(event.text)
+      break
+    case 'token':          // every output token — easiest for "typewriter" UIs
+      stdout.write(event.text)
+      break
+    case 'tool_call':      // parsed final tool call, after deltas are accumulated
+      console.log('calling', event.toolCall.name, event.toolCall.arguments)
+      break
+    case 'tool_result':    // result of executing the tool
+      console.log('returned', event.result.data)
+      break
+    case 'final':          // wrap-up: message + usage + toolCalls + stopReason
+      saveResult(event.result)
+      break
+  }
+}
+```
+
+The granular variants (`text_delta`, `thinking_start/delta/end`, `tool_call_start/delta/end`, `agent_end`) still fire — they're better when you need partial state during streaming (e.g. progressive UI). Both styles coexist; no breaking changes.
+
 ## Tool contracts (sideEffectLevel + idempotency + preconditions + dry-run)
 
 Declare safety properties on every tool so the framework can prevent double-charges, block preconditions, and preview destructive actions:
@@ -1161,6 +1224,24 @@ await transferTool.execute(input)                    // second call returns cach
 ```
 
 Full example at [`examples/tool-contracts/`](../examples/tool-contracts/).
+
+### Bare-function preconditions
+
+`preconditions` also accepts plain functions — useful when you have named functions in scope and don't want the wrapper boilerplate. The framework auto-names them from `fn.name`, falling back to `precondition_N`:
+
+```typescript
+const hasBeenAuthenticated = async (i: Input) => ({ ok: i.userToken !== undefined })
+const balanceCheck = async (i: Input) => ({ ok: balanceOf(i.from) >= i.amount, reason: 'insufficient' })
+
+const tool = defineTool({
+  name: 'transferFunds',
+  input: TransferSchema,
+  preconditions: [hasBeenAuthenticated, balanceCheck], // auto-named from fn.name
+  handler: async (i) => doTransfer(i),
+})
+```
+
+Mix both forms freely — bare functions and `{ name, check }` objects can coexist in the same array.
 
 ## Human-in-the-loop (`askHuman`)
 
@@ -1189,6 +1270,23 @@ await resolveAskHuman(store, 'req-42', {
 ```
 
 Full example at [`examples/ask-human/`](../examples/ask-human/).
+
+### `agent.askHuman({...})` as a method
+
+Every agent returned by `defineAgent` exposes `askHuman` as a method — same options as the standalone function, with `timeout` accepted as a duration string for ergonomics:
+
+```typescript
+const decision = await agent.askHuman({
+  question: 'Approve transfer of $50,000?',
+  options: ['approve', 'reject', 'modify'] as const,
+  context: { trade, riskScore },
+  timeout: '24h',           // string suffix or number in ms
+})
+
+if (decision.status === 'approved') { /* … */ }
+```
+
+`timeout` accepts `'5s' | '2m' | '1h' | '7d'` shorthand or a numeric millisecond value. Internally delegates to the standalone `askHuman`; both APIs are interchangeable.
 
 ## Time-travel replay (`replayFrom`)
 

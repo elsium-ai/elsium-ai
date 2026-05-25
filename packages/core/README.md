@@ -28,6 +28,9 @@ npm install @elsium-ai/core
 | **Shutdown** | `createShutdownManager()`, `ShutdownConfig`, `ShutdownManager` |
 | **Crypto foundation** | `generateEd25519KeyPair()`, `createEd25519Signer()`, `createEd25519Verifier()`, `createKeyRegistry()`, `createInMemoryWriteOnceStore()`, `createFileWriteOnceStore()`, `Signature`, `VerifyResult`, `Signer`, `Verifier`, `KeyRegistry`, `WriteOnceStore` |
 | **Capability tokens** | `createCapabilityIssuer()`, `createCapabilityVerifier()`, `canCallTool()`, `canCallLLM()`, `canQueryRag()`, `canUseMcp()`, `checkDataClass()`, `delegateToken()`, `createInMemoryRevocationStore()`, `CapabilityToken`, `AgentCapability`, `CapabilityCheckResult`, `RevocationStore` |
+| **State store** | `createInMemoryStateStore()`, `StateStore`, `InMemoryStateStoreConfig` | Durable key/value store interface for opaque snapshots — used by the agent runtime to pause and resume mid-execution. Adapters: in-memory ships, production users plug Redis/Postgres/SQLite/S3 by implementing the interface. |
+| **Pause signal** | `AgentPauseSignal`, `isAgentPauseSignal()`, `pauseAgent(reason?, context?)` | Error class thrown from a tool handler (via `pauseAgent`) to signal the agent runtime to snapshot and pause. `agent.runResumable()` catches it and returns `{ status: 'paused', resumeToken }`; plain `agent.run()` re-throws it so misuse fails loudly. |
+| **Replay primitives** | `createTraceRecorder()`, `replayFrom()`, `TraceStep`, `AgentTrace`, `TraceRecorder`, `TraceRecorderConfig`, `StepExecutor`, `StepOverride`, `ReplayFromOptions`, `ReplayedStep`, `ReplayResult` | Record any sequence of steps as an `AgentTrace`, then replay from any midpoint with `replace` / `transform` overrides. Used by `agent.replayFrom(traceId, { fromStep, overrides })` and exposed standalone for arbitrary step pipelines. Re-exported from `@elsium-ai/testing` for back-compat. |
 
 ---
 
