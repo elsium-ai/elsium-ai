@@ -1,5 +1,22 @@
 # @elsium-ai/integration-test
 
+## 0.16.0
+
+### Patch Changes
+
+- Updated dependencies [6c7de04]
+- Updated dependencies [d7dd4f7]
+  - @elsium-ai/core@0.16.0
+  - @elsium-ai/tools@0.16.0
+  - @elsium-ai/agents@0.16.0
+  - @elsium-ai/testing@0.16.0
+  - @elsium-ai/app@0.16.0
+  - @elsium-ai/gateway@0.16.0
+  - @elsium-ai/mcp@0.16.0
+  - @elsium-ai/observe@0.16.0
+  - @elsium-ai/rag@0.16.0
+  - @elsium-ai/workflows@0.16.0
+
 ## 0.15.0
 
 ### Patch Changes
