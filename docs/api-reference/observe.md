@@ -3,7 +3,7 @@
 Observability module providing tracing, cost tracking, metrics, audit logging, provenance tracking, experimentation, and OpenTelemetry integration.
 
 ```ts
-import { createSpan, observe, createCostEngine, createMetrics } from 'elsium-ai/observe'
+import { createSpan, observe, createCostEngine, createMetrics } from '@elsium-ai/observe'
 ```
 
 ---
@@ -27,7 +27,7 @@ Creates a trace span for tracking execution of a unit of work.
 | `attributes` | `Record<string, unknown>` | Key-value metadata |
 
 ```ts
-import { createSpan } from 'elsium-ai/observe'
+import { createSpan } from '@elsium-ai/observe'
 
 const span = createSpan('llm-request', {
   kind: 'llm',
@@ -54,7 +54,7 @@ observe(config: ObserveConfig): Tracer
 Creates a tracer with sampling, exporters, and cost tracking.
 
 ```ts
-import { observe } from 'elsium-ai/observe'
+import { observe } from '@elsium-ai/observe'
 
 const tracer = observe({
   serviceName: 'my-ai-app',
@@ -113,7 +113,7 @@ createCostEngine(config: CostEngineConfig): CostEngine
 Creates a cost engine for budget enforcement, loop detection, and model cost suggestions.
 
 ```ts
-import { createCostEngine } from 'elsium-ai/observe'
+import { createCostEngine } from '@elsium-ai/observe'
 
 const costEngine = createCostEngine({
   budget: { maxTotalCost: 10.0, currency: 'USD' },
@@ -169,7 +169,7 @@ registerModelTier(model: string, tier: ModelTier): void
 Registers a model's pricing tier for cost engine calculations.
 
 ```ts
-import { registerModelTier } from 'elsium-ai/observe'
+import { registerModelTier } from '@elsium-ai/observe'
 
 registerModelTier('custom-model-v1', {
   inputPer1kTokens: 0.005,
@@ -199,7 +199,7 @@ Creates a metrics collector for tracking counters, gauges, and histograms.
 | `histogram` | `histogram(name: string, value: number, tags?: Tags): void` | Record a histogram value |
 
 ```ts
-import { createMetrics } from 'elsium-ai/observe'
+import { createMetrics } from '@elsium-ai/observe'
 
 const metrics = createMetrics()
 
@@ -221,7 +221,7 @@ createAuditTrail(config: AuditTrailConfig): AuditTrail
 Creates a SHA-256 hash-chained audit log for tamper-evident recording of LLM interactions.
 
 ```ts
-import { createAuditTrail } from 'elsium-ai/observe'
+import { createAuditTrail } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({
   storage: 'file',
@@ -247,7 +247,7 @@ auditMiddleware(trail: AuditTrail): Middleware
 Middleware that automatically records all requests and responses to the audit trail.
 
 ```ts
-import { createAuditTrail, auditMiddleware } from 'elsium-ai/observe'
+import { createAuditTrail, auditMiddleware } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({ storage: 'file', path: './audit.log' })
 
@@ -269,7 +269,7 @@ createProvenanceTracker(): ProvenanceTracker
 Tracks data lineage through a pipeline, recording transformations applied to data.
 
 ```ts
-import { createProvenanceTracker } from 'elsium-ai/observe'
+import { createProvenanceTracker } from '@elsium-ai/observe'
 
 const provenance = createProvenanceTracker()
 
@@ -311,7 +311,7 @@ createFileExperimentStore(dir: string): ExperimentStore
 Creates a file-based experiment store for persisting experiment results.
 
 ```ts
-import { createExperiment, createFileExperimentStore } from 'elsium-ai/observe'
+import { createExperiment, createFileExperimentStore } from '@elsium-ai/observe'
 
 const store = createFileExperimentStore('./experiments')
 
@@ -353,8 +353,8 @@ instrumentAgent(agent: Agent, tracer: Tracer): Agent
 Wraps an agent with automatic tracing, creating spans for each run and tool invocation.
 
 ```ts
-import { observe, instrumentComplete, instrumentAgent } from 'elsium-ai/observe'
-import { defineAgent } from 'elsium-ai/agents'
+import { observe, instrumentComplete, instrumentAgent } from '@elsium-ai/observe'
+import { defineAgent } from '@elsium-ai/agents'
 
 const tracer = observe({ serviceName: 'my-app' })
 
@@ -406,7 +406,7 @@ import {
   observe,
   toTraceparent,
   injectTraceContext,
-} from 'elsium-ai/observe'
+} from '@elsium-ai/observe'
 
 // Set up OTLP export
 const exporter = createOTLPExporter({
@@ -469,7 +469,7 @@ Generates a compliance report by evaluating audit trail events against a set of 
 | `customChecks` | `ComplianceCheck[]?` | Custom checks for `custom` framework |
 
 ```ts
-import { createAuditTrail, generateComplianceReport, formatComplianceReport } from 'elsium-ai/observe'
+import { createAuditTrail, generateComplianceReport, formatComplianceReport } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({ hashChain: true })
 
@@ -525,7 +525,7 @@ createEmissionPolicy(config?: EmissionPolicyConfig): EmissionPolicy
 Resolves the emission policy from `OTEL_SEMCONV_STABILITY_OPT_IN` or from an explicit opt-in array.
 
 ```ts
-import { createEmissionPolicy } from 'elsium-ai/observe'
+import { createEmissionPolicy } from '@elsium-ai/observe'
 
 // From env (default)
 const fromEnv = createEmissionPolicy()
@@ -553,7 +553,7 @@ Parses the CSV value of `OTEL_SEMCONV_STABILITY_OPT_IN` into a flag set. Empty/m
 | `getDefaultRegistry()` | Singleton with built-in mappers for `llm`, `tool`, `agent` spans on spec `v1.36` |
 
 ```ts
-import { createGenAIConventionRegistry, type GenAIMapper } from 'elsium-ai/observe'
+import { createGenAIConventionRegistry, type GenAIMapper } from '@elsium-ai/observe'
 
 const reg = createGenAIConventionRegistry('v1.37')
 const customMapper: GenAIMapper<'llm'> = {
@@ -570,7 +570,7 @@ reg.register(customMapper)
 ### OTLP exporter with GenAI emission
 
 ```ts
-import { createOTLPExporter } from 'elsium-ai/observe'
+import { createOTLPExporter } from '@elsium-ai/observe'
 
 const exporter = createOTLPExporter({
   endpoint: 'http://localhost:4318/v1/traces',

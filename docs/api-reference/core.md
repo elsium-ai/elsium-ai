@@ -3,7 +3,7 @@
 Foundation module providing types, error handling, streaming, logging, configuration utilities, and common patterns used across the ElsiumAI framework.
 
 ```ts
-import { ElsiumError, createLogger, ok, err, createStream } from 'elsium-ai/core'
+import { ElsiumError, createLogger, ok, err, createStream } from '@elsium-ai/core'
 ```
 
 ---
@@ -49,7 +49,7 @@ Core types for messages, content, provider configuration, and middleware.
 Custom error class with structured error codes, retryability, and metadata.
 
 ```ts
-import { ElsiumError } from 'elsium-ai/core'
+import { ElsiumError } from '@elsium-ai/core'
 ```
 
 **Error Codes:**
@@ -116,7 +116,7 @@ Functional error handling for operations where exceptions are not appropriate.
 | `tryCatchSync` | `tryCatchSync<T>(fn: () => T): Result<T, Error>` | Wrap sync function in Result |
 
 ```ts
-import { ok, err, tryCatch, unwrapOr, isOk } from 'elsium-ai/core'
+import { ok, err, tryCatch, unwrapOr, isOk } from '@elsium-ai/core'
 
 const result = await tryCatch(() => fetchData())
 
@@ -144,7 +144,7 @@ createStream(source: AsyncIterable<StreamEvent>): ElsiumStream
 Creates a managed stream from an async iterable source. Supports iteration, checkpointing, and event handling.
 
 ```ts
-import { createStream } from 'elsium-ai/core'
+import { createStream } from '@elsium-ai/core'
 
 const stream = createStream(provider.stream(request))
 
@@ -168,7 +168,7 @@ createLogger(options?: { level?: 'debug' | 'info' | 'warn' | 'error'; context?: 
 Creates a structured logger. All library code must use this instead of `console.*`.
 
 ```ts
-import { createLogger } from 'elsium-ai/core'
+import { createLogger } from '@elsium-ai/core'
 
 const log = createLogger({ level: 'info' })
 
@@ -193,7 +193,7 @@ Typed environment variable access with fallback values.
 | `envBool` | `envBool(key: string, fallback?: boolean): boolean` | Read boolean env var |
 
 ```ts
-import { env, envNumber, envBool } from 'elsium-ai/core'
+import { env, envNumber, envBool } from '@elsium-ai/core'
 
 const apiKey = env('ANTHROPIC_API_KEY')
 const timeout = envNumber('REQUEST_TIMEOUT_MS', 30000)
@@ -213,7 +213,7 @@ const debug = envBool('DEBUG', false)
 | `retry` | `retry<T>(fn: () => Promise<T>, opts?: RetryOptions): Promise<T>` | Retry with exponential backoff and jitter |
 
 ```ts
-import { retry, generateTraceId } from 'elsium-ai/core'
+import { retry, generateTraceId } from '@elsium-ai/core'
 
 const traceId = generateTraceId()
 
@@ -237,7 +237,7 @@ zodToJsonSchema(schema: ZodType): JsonSchema
 Converts a Zod schema to JSON Schema format, used for defining tool parameters.
 
 ```ts
-import { zodToJsonSchema } from 'elsium-ai/core'
+import { zodToJsonSchema } from '@elsium-ai/core'
 import { z } from 'zod'
 
 const paramSchema = z.object({
@@ -261,7 +261,7 @@ createRegistry<T>(name: string): Registry<T>
 Creates a typed plugin registry for registering and retrieving named components.
 
 ```ts
-import { createRegistry } from 'elsium-ai/core'
+import { createRegistry } from '@elsium-ai/core'
 
 const providers = createRegistry<ProviderFactory>('providers')
 
@@ -280,7 +280,7 @@ const all = providers.list() // string[]
 | `createContextManager` | `createContextManager(maxTokens: number): ContextManager` | Manage context window budget |
 
 ```ts
-import { countTokens, createContextManager } from 'elsium-ai/core'
+import { countTokens, createContextManager } from '@elsium-ai/core'
 
 const tokens = countTokens('Hello, world!')
 
@@ -302,7 +302,7 @@ createCircuitBreaker(opts: CircuitBreakerOptions): CircuitBreaker
 Implements the circuit breaker pattern for fault tolerance.
 
 ```ts
-import { createCircuitBreaker } from 'elsium-ai/core'
+import { createCircuitBreaker } from '@elsium-ai/core'
 
 const breaker = createCircuitBreaker({
   failureThreshold: 5,
@@ -324,7 +324,7 @@ Request deduplication to prevent duplicate concurrent requests.
 | `dedupMiddleware` | `Middleware` | Middleware that deduplicates identical in-flight requests |
 
 ```ts
-import { dedupMiddleware } from 'elsium-ai/core'
+import { dedupMiddleware } from '@elsium-ai/core'
 
 const gw = gateway({
   middleware: [dedupMiddleware],
@@ -347,7 +347,7 @@ Policy-based access control for requests.
 | `contentPolicy` | `contentPolicy(patterns: RegExp[]): PolicyRule` | Block content matching patterns |
 
 ```ts
-import { createPolicySet, policyMiddleware, modelAccessPolicy, tokenLimitPolicy } from 'elsium-ai/core'
+import { createPolicySet, policyMiddleware, modelAccessPolicy, tokenLimitPolicy } from '@elsium-ai/core'
 
 const policies = createPolicySet([
   modelAccessPolicy(['claude-sonnet-4-20250514', 'gpt-4o']),
@@ -372,7 +372,7 @@ createShutdownManager(): ShutdownManager
 Manages graceful shutdown with registered cleanup handlers.
 
 ```ts
-import { createShutdownManager } from 'elsium-ai/core'
+import { createShutdownManager } from '@elsium-ai/core'
 
 const shutdown = createShutdownManager()
 

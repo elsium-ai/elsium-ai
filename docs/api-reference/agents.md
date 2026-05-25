@@ -3,7 +3,7 @@
 Agent orchestration with tool use, memory, guardrails, multi-agent patterns, and state machines.
 
 ```ts
-import { defineAgent, createMemory, runSequential } from 'elsium-ai/agents'
+import { defineAgent, createMemory, runSequential } from '@elsium-ai/agents'
 ```
 
 ---
@@ -33,7 +33,7 @@ Creates an agent that can reason, use tools, and maintain memory across turns.
 **Returns** an `Agent` with `run(input, opts?)`, `stream(input, opts?)`, and `generate(input, schema, opts?)` methods.
 
 ```ts
-import { defineAgent, createMemory } from 'elsium-ai/agents'
+import { defineAgent, createMemory } from '@elsium-ai/agents'
 
 const agent = defineAgent({
   name: 'researcher',
@@ -100,7 +100,7 @@ Creates a memory instance with the specified retention strategy.
 | `unlimited` | Retains all messages (use with caution) |
 
 ```ts
-import { createMemory, createSummarizeFn } from 'elsium-ai/agents'
+import { createMemory, createSummarizeFn } from '@elsium-ai/agents'
 
 const memory = createMemory({ strategy: 'sliding-window', maxMessages: 100 })
 const tokenMemory = createMemory({ strategy: 'token-limited', maxTokens: 8192 })
@@ -129,7 +129,7 @@ createSqliteMemoryStore(path: string): MemoryStore
 Creates a SQLite-backed persistent message store. Messages survive process restarts.
 
 ```ts
-import { createMemory, createSqliteMemoryStore } from 'elsium-ai/agents'
+import { createMemory, createSqliteMemoryStore } from '@elsium-ai/agents'
 
 const store = createSqliteMemoryStore('./data/memory.db')
 const memory = createMemory('sliding-window', {
@@ -156,7 +156,7 @@ Creates a shared key-value memory for cross-agent data sharing in multi-agent wo
 | `clear` | `clear(): void` | Remove all data |
 
 ```ts
-import { createSharedMemory } from 'elsium-ai/agents'
+import { createSharedMemory } from '@elsium-ai/agents'
 
 const shared = createSharedMemory()
 shared.set('findings', ['result1', 'result2'])
@@ -194,7 +194,7 @@ A supervisor agent delegates tasks to worker agents, coordinating their executio
 All multi-agent functions accept optional `sharedMemory` in their options for cross-agent data sharing.
 
 ```ts
-import { defineAgent, runSequential, runParallel, runSupervisor, createSharedMemory } from 'elsium-ai/agents'
+import { defineAgent, runSequential, runParallel, runSupervisor, createSharedMemory } from '@elsium-ai/agents'
 
 const researcher = defineAgent({ name: 'researcher', /* ... */ })
 const writer = defineAgent({ name: 'writer', /* ... */ })
@@ -390,7 +390,7 @@ createConfidenceScorer(config: ConfidenceScorerConfig): Guardrail
 Scores confidence of agent outputs based on configurable criteria.
 
 ```ts
-import { defineAgent, createSemanticValidator, createAgentSecurity } from 'elsium-ai/agents'
+import { defineAgent, createSemanticValidator, createAgentSecurity } from '@elsium-ai/agents'
 
 const agent = defineAgent({
   name: 'assistant',
@@ -420,7 +420,7 @@ shouldRequireApproval(action: AgentAction, gate: ApprovalGate): boolean
 Human-in-the-loop approval for sensitive agent actions.
 
 ```ts
-import { createApprovalGate, shouldRequireApproval } from 'elsium-ai/agents'
+import { createApprovalGate, shouldRequireApproval } from '@elsium-ai/agents'
 
 const gate = createApprovalGate({
   requireApprovalFor: ['delete', 'send-email', 'execute-code'],
@@ -455,7 +455,7 @@ Runs an agent through a defined state machine. Each state defines transitions th
 - `{ next: string; context?: Record<string, unknown> }` -- next state with updated context
 
 ```ts
-import { defineAgent, executeStateMachine } from 'elsium-ai/agents'
+import { defineAgent, executeStateMachine } from '@elsium-ai/agents'
 
 const agent = defineAgent({ name: 'support', model: 'claude-sonnet-4-20250514', /* ... */ })
 
@@ -556,7 +556,7 @@ Connects channel adapters to agents via a session router. Incoming messages are 
 import {
   createWebhookChannel, createChannelGateway,
   createSessionRouter, defineAgent,
-} from 'elsium-ai/agents'
+} from '@elsium-ai/agents'
 
 const webhook = createWebhookChannel({
   name: 'api',
@@ -614,7 +614,7 @@ Maps (channel, userId) pairs to persistent conversation threads with concurrency
 **Serial concurrency** (default) ensures only one agent turn runs at a time per session — subsequent messages wait for the current turn to complete. This prevents race conditions in conversation history.
 
 ```ts
-import { createSessionRouter, defineAgent, createInMemoryThreadStore } from 'elsium-ai/agents'
+import { createSessionRouter, defineAgent, createInMemoryThreadStore } from '@elsium-ai/agents'
 
 const agent = defineAgent({ name: 'support', system: 'You help users.' })
 const store = createInMemoryThreadStore()
@@ -688,7 +688,7 @@ getNextCronDate(fields: CronFields, after: Date): Date
 Cron utilities. Standard 5-field cron syntax: `minute hour dayOfMonth month dayOfWeek`. Supports `*`, ranges (`1-5`), steps (`*/15`), and comma-separated values (`0,30`).
 
 ```ts
-import { createScheduler, defineAgent } from 'elsium-ai/agents'
+import { createScheduler, defineAgent } from '@elsium-ai/agents'
 
 const agent = defineAgent({ name: 'reporter', system: 'Generate a daily summary.' })
 
@@ -738,7 +738,7 @@ Creates a cryptographic identity for an agent. Each identity has a unique keypai
 | `replayWindowMs` | `number?` | Replay protection window (default: 5 min) |
 
 ```ts
-import { createAgentIdentity } from 'elsium-ai/agents'
+import { createAgentIdentity } from '@elsium-ai/agents'
 
 const identity = createAgentIdentity({ agentId: 'researcher' })
 
@@ -757,7 +757,7 @@ createIdentityRegistry(): IdentityRegistry
 Central registry for managing and verifying agent identities across a multi-agent system.
 
 ```ts
-import { createAgentIdentity, createIdentityRegistry } from 'elsium-ai/agents'
+import { createAgentIdentity, createIdentityRegistry } from '@elsium-ai/agents'
 
 const registry = createIdentityRegistry()
 
@@ -797,8 +797,8 @@ Creates a policy enforcer that checks RBAC, tool access, and custom policies bef
 | `deniedTools` | `string[]?` | Blacklist of denied tool names |
 
 ```ts
-import { createPolicySet, tokenLimitPolicy } from 'elsium-ai/core'
-import { defineAgent, createRuntimePolicyEnforcer, toolAccessPolicy } from 'elsium-ai/agents'
+import { createPolicySet, tokenLimitPolicy } from '@elsium-ai/core'
+import { defineAgent, createRuntimePolicyEnforcer, toolAccessPolicy } from '@elsium-ai/agents'
 
 const policies = createPolicySet([
   tokenLimitPolicy(10_000),
@@ -842,7 +842,7 @@ createSecureMemoryStore(inner: MemoryStore): SecureMemoryStore
 Wraps any `MemoryStore` with a SHA-256 hash chain. Every message gets a hash binding it to the previous message, forming a tamper-evident chain (same pattern as `createAuditTrail`).
 
 ```ts
-import { createInMemoryMemoryStore, createSecureMemoryStore } from 'elsium-ai/agents'
+import { createInMemoryMemoryStore, createSecureMemoryStore } from '@elsium-ai/agents'
 
 const inner = createInMemoryMemoryStore()
 const secure = createSecureMemoryStore(inner)

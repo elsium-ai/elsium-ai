@@ -443,7 +443,7 @@ interface MultiAgentConfig {
 Agents in a multi-agent orchestration can share data through a `SharedMemory` instance. Each agent's output is automatically stored in shared memory keyed by agent name, and agents can read data written by previous agents.
 
 ```ts
-import { createSharedMemory, runSequential } from 'elsium-ai/agents'
+import { createSharedMemory, runSequential } from '@elsium-ai/agents'
 
 const memory = createSharedMemory()
 

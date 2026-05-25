@@ -282,6 +282,39 @@ describe('rateLimitMiddleware', () => {
 		expect(r1.status).toBe(200)
 		expect(r2.status).toBe(200)
 	})
+
+	it('does NOT trust X-Real-IP by default (would allow bypass)', async () => {
+		const app = new Hono()
+		app.use('*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 1 }))
+		app.get('/test', (c) => c.text('ok'))
+
+		// Two requests forging different X-Real-IP must share the anonymous bucket;
+		// the second one must be limited.
+		const r1 = await app.fetch(getReq('/test', { 'X-Real-IP': '1.2.3.4' }))
+		const r2 = await app.fetch(getReq('/test', { 'X-Real-IP': '5.6.7.8' }))
+
+		expect(r1.status).toBe(200)
+		expect(r2.status).toBe(429)
+	})
+
+	it('honors trustedProxyHeaders to opt into other proxies', async () => {
+		const app = new Hono()
+		app.use(
+			'*',
+			rateLimitMiddleware({
+				windowMs: 60_000,
+				maxRequests: 1,
+				trustedProxyHeaders: ['True-Client-IP'],
+			}),
+		)
+		app.get('/test', (c) => c.text('ok'))
+
+		const r1 = await app.fetch(getReq('/test', { 'True-Client-IP': '1.2.3.4' }))
+		const r2 = await app.fetch(getReq('/test', { 'True-Client-IP': '5.6.7.8' }))
+
+		expect(r1.status).toBe(200)
+		expect(r2.status).toBe(200)
+	})
 })
 
 // ─── requestIdMiddleware ──────────────────────────────────────────

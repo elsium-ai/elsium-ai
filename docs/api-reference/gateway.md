@@ -3,7 +3,7 @@
 Multi-provider LLM gateway with middleware, security, caching, cost tracking, and intelligent routing.
 
 ```ts
-import { gateway, createAnthropicProvider, composeMiddleware } from 'elsium-ai/gateway'
+import { gateway, createAnthropicProvider, composeMiddleware } from '@elsium-ai/gateway'
 ```
 
 ---
@@ -37,7 +37,7 @@ Creates a multi-provider LLM gateway. The gateway is the primary entry point for
 | `completeWithStructuredOutput` | `completeWithStructuredOutput<T>(request, schema): Promise<T>` | Get structured output validated against a Zod schema |
 
 ```ts
-import { gateway, createAnthropicProvider, createOpenAIProvider } from 'elsium-ai/gateway'
+import { gateway, createAnthropicProvider, createOpenAIProvider } from '@elsium-ai/gateway'
 
 const gw = gateway({
   providers: {
@@ -93,7 +93,7 @@ const result = await gw.completeWithStructuredOutput(
 | `getProviderMetadata` | `getProviderMetadata(name: string): ProviderMetadata \| undefined` | Retrieve provider metadata |
 
 ```ts
-import { registerProviderFactory, listProviders } from 'elsium-ai/gateway'
+import { registerProviderFactory, listProviders } from '@elsium-ai/gateway'
 
 registerProviderFactory('custom', (config) => ({
   complete: async (request) => { /* ... */ },
@@ -136,7 +136,7 @@ import {
   createAnthropicProvider,
   createOpenAIProvider,
   createGoogleProvider,
-} from 'elsium-ai/gateway'
+} from '@elsium-ai/gateway'
 
 const anthropic = createAnthropicProvider({
   apiKey: env('ANTHROPIC_API_KEY'),
@@ -197,7 +197,7 @@ import {
   bulkheadMiddleware,
   cacheMiddleware,
   createInMemoryCache,
-} from 'elsium-ai/gateway'
+} from '@elsium-ai/gateway'
 
 const gw = gateway({
   providers: { /* ... */ },
@@ -215,7 +215,7 @@ const gw = gateway({
 ### Custom Middleware
 
 ```ts
-import type { Middleware } from 'elsium-ai/core'
+import type { Middleware } from '@elsium-ai/core'
 
 const timingMiddleware: Middleware = async (ctx, next) => {
   const start = performance.now()
@@ -239,7 +239,7 @@ createInMemoryCache(opts?: { ttlMs?: number; maxSize?: number }): Cache
 Creates an in-memory response cache with TTL expiration and bounded size (FIFO eviction).
 
 ```ts
-import { createInMemoryCache, cacheMiddleware } from 'elsium-ai/gateway'
+import { createInMemoryCache, cacheMiddleware } from '@elsium-ai/gateway'
 
 const cache = createInMemoryCache({ ttlMs: 300000, maxSize: 500 })
 
@@ -263,7 +263,7 @@ Functions for scanning and sanitizing LLM inputs.
 | `classifyContent` | `classifyContent(text: string): ContentClassification` | Classify content for safety |
 
 ```ts
-import { detectPromptInjection, redactSecrets } from 'elsium-ai/gateway'
+import { detectPromptInjection, redactSecrets } from '@elsium-ai/gateway'
 
 const injection = detectPromptInjection(userInput)
 if (injection.detected) {
@@ -285,7 +285,7 @@ const sanitized = redactSecrets('My key is sk-abc123xyz')
 | `estimateCost` | `estimateCost(model: string, tokenCount: number): number` | Estimate cost before a request |
 
 ```ts
-import { calculateCost, registerPricing } from 'elsium-ai/gateway'
+import { calculateCost, registerPricing } from '@elsium-ai/gateway'
 
 registerPricing('custom-model', {
   inputPer1kTokens: 0.003,
@@ -313,7 +313,7 @@ createBatch(gateway: Gateway, requests: CompletionRequest[]): Promise<LLMRespons
 Processes multiple completion requests as a batch, handling concurrency and error collection.
 
 ```ts
-import { createBatch } from 'elsium-ai/gateway'
+import { createBatch } from '@elsium-ai/gateway'
 
 const responses = await createBatch(gw, [
   { messages: [{ role: 'user', content: 'Summarize document A' }] },
@@ -343,7 +343,7 @@ Creates a multi-provider router that distributes requests across providers using
 | `fastest` | Route to the provider with the lowest observed latency |
 
 ```ts
-import { createProviderMesh } from 'elsium-ai/gateway'
+import { createProviderMesh } from '@elsium-ai/gateway'
 
 const mesh = createProviderMesh({
   providers: {

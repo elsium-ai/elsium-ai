@@ -3,7 +3,7 @@
 Model Context Protocol bridge for connecting ElsiumAI with MCP-compatible tool servers and exposing ElsiumAI tools as MCP servers.
 
 ```ts
-import { createMCPClient, createMCPServer } from 'elsium-ai/mcp'
+import { createMCPClient, createMCPServer } from '@elsium-ai/mcp'
 ```
 
 ---
@@ -53,7 +53,7 @@ interface MCPToolInfo {
 ### Example
 
 ```ts
-import { createMCPClient } from 'elsium-ai/mcp'
+import { createMCPClient } from '@elsium-ai/mcp'
 
 const client = createMCPClient({
   name: 'filesystem',
@@ -83,9 +83,9 @@ await client.disconnect()
 `toElsiumTools()` converts MCP tools into ElsiumAI `Tool[]` format, making them compatible with the agent system.
 
 ```ts
-import { createMCPClient } from 'elsium-ai/mcp'
-import { createAgent } from 'elsium-ai/agents'
-import { gateway } from 'elsium-ai/gateway'
+import { createMCPClient } from '@elsium-ai/mcp'
+import { createAgent } from '@elsium-ai/agents'
+import { gateway } from '@elsium-ai/gateway'
 
 const client = createMCPClient({
   name: 'tools-server',
@@ -138,8 +138,8 @@ interface MCPServer {
 ### Example
 
 ```ts
-import { createMCPServer } from 'elsium-ai/mcp'
-import { defineTool } from 'elsium-ai/tools'
+import { createMCPServer } from '@elsium-ai/mcp'
+import { defineTool } from '@elsium-ai/tools'
 import { z } from 'zod'
 
 const calculator = defineTool({
@@ -210,7 +210,7 @@ Wraps a standard MCP client with security controls. Rejects connections to serve
 | `deniedTools` | `string[]?` | Tool blacklist for this server |
 
 ```ts
-import { createTrustedMCPClient } from 'elsium-ai/mcp'
+import { createTrustedMCPClient } from '@elsium-ai/mcp'
 
 const client = createTrustedMCPClient(
   { name: 'data-tools', transport: 'http', url: 'http://localhost:3001/mcp' },

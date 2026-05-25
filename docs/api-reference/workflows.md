@@ -3,7 +3,7 @@
 Workflow orchestration module for defining and executing multi-step pipelines. Supports sequential, parallel, and conditional branching execution patterns.
 
 ```ts
-import { step, defineWorkflow, defineParallelWorkflow, defineBranchWorkflow } from 'elsium-ai/workflows'
+import { step, defineWorkflow, defineParallelWorkflow, defineBranchWorkflow } from '@elsium-ai/workflows'
 ```
 
 ---
@@ -20,7 +20,7 @@ import { step, defineWorkflow, defineParallelWorkflow, defineBranchWorkflow } fr
 Creates a step configuration with a name and handler function.
 
 ```ts
-import { step } from 'elsium-ai/workflows'
+import { step } from '@elsium-ai/workflows'
 
 const fetchData = step('fetch-data', {
   handler: async (input: { url: string }, ctx) => {
@@ -37,7 +37,7 @@ const fetchData = step('fetch-data', {
 Runs a single step outside of a workflow context.
 
 ```ts
-import { step, executeStep } from 'elsium-ai/workflows'
+import { step, executeStep } from '@elsium-ai/workflows'
 
 const result = await executeStep(fetchData, { url: 'https://api.example.com/data' }, {
   workflowName: 'manual',
@@ -58,7 +58,7 @@ const result = await executeStep(fetchData, { url: 'https://api.example.com/data
 Steps execute in order. Each step receives the previous step's output as input.
 
 ```ts
-import { step, defineWorkflow } from 'elsium-ai/workflows'
+import { step, defineWorkflow } from '@elsium-ai/workflows'
 
 const pipeline = defineWorkflow({
   name: 'data-pipeline',
@@ -103,7 +103,7 @@ const result = await pipeline.run({ url: 'https://api.example.com/data' })
 All steps receive the same initial input and execute in parallel.
 
 ```ts
-import { step, defineParallelWorkflow } from 'elsium-ai/workflows'
+import { step, defineParallelWorkflow } from '@elsium-ai/workflows'
 
 const fanOut = defineParallelWorkflow({
   name: 'multi-search',
@@ -138,7 +138,7 @@ const result = await fanOut.run({ text: 'ElsiumAI documentation' })
 Routes input to the first branch whose condition returns `true`. An optional fallback workflow handles unmatched inputs.
 
 ```ts
-import { defineWorkflow, defineBranchWorkflow } from 'elsium-ai/workflows'
+import { defineWorkflow, defineBranchWorkflow } from '@elsium-ai/workflows'
 
 const textPipeline = defineWorkflow({ name: 'text', steps: [/* ... */] })
 const imagePipeline = defineWorkflow({ name: 'image', steps: [/* ... */] })

@@ -3,7 +3,7 @@
 Retrieval Augmented Generation module providing document loading, chunking, embedding, vector storage, search, and a unified RAG pipeline.
 
 ```ts
-import { rag, textLoader, fixedSizeChunker, createOpenAIEmbeddings } from 'elsium-ai/rag'
+import { rag, textLoader, fixedSizeChunker, createOpenAIEmbeddings } from '@elsium-ai/rag'
 ```
 
 ---
@@ -50,7 +50,7 @@ csvLoader({
 ### Example
 
 ```ts
-import { markdownLoader, jsonLoader } from 'elsium-ai/rag'
+import { markdownLoader, jsonLoader } from '@elsium-ai/rag'
 
 const md = markdownLoader()
 const doc = md.load('README.md', '# Title\nSome content...')
@@ -110,7 +110,7 @@ interface ChunkingConfig {
 ### Example
 
 ```ts
-import { recursiveChunker } from 'elsium-ai/rag'
+import { recursiveChunker } from '@elsium-ai/rag'
 
 const chunker = recursiveChunker({ maxChunkSize: 500, overlap: 50 })
 const chunks = chunker.chunk(document)
@@ -156,7 +156,7 @@ interface EmbeddingConfig {
 ### Example
 
 ```ts
-import { createOpenAIEmbeddings, createMockEmbeddings } from 'elsium-ai/rag'
+import { createOpenAIEmbeddings, createMockEmbeddings } from '@elsium-ai/rag'
 
 // Production
 const embeddings = createOpenAIEmbeddings({
@@ -216,7 +216,7 @@ mmrRerank(queryEmbedding, results, {
 ### Example
 
 ```ts
-import { createInMemoryStore, cosineSimilarity } from 'elsium-ai/rag'
+import { createInMemoryStore, cosineSimilarity } from '@elsium-ai/rag'
 
 const store = createInMemoryStore({ maxChunks: 10000 })
 await store.upsert(embeddedChunks)
@@ -288,7 +288,7 @@ interface RetrievalConfig {
 ### Example
 
 ```ts
-import { rag } from 'elsium-ai/rag'
+import { rag } from '@elsium-ai/rag'
 
 const pipeline = rag({
   loader: 'markdown',
