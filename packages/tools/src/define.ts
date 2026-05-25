@@ -1,10 +1,18 @@
 import type { ToolDefinition } from '@elsium-ai/core'
-import { ElsiumError, createLogger, generateId, zodToJsonSchema } from '@elsium-ai/core'
+import {
+	ElsiumError,
+	createLogger,
+	generateId,
+	isAgentPauseSignal,
+	zodToJsonSchema,
+} from '@elsium-ai/core'
 import type { z } from 'zod'
 import type {
+	ApprovalHandler,
 	IdempotencyStore,
 	PreconditionFailure,
 	PreconditionFn,
+	RequireApproval,
 	SideEffectLevel,
 } from './contracts'
 import { createSandboxRunner } from './sandbox/runner'
@@ -39,8 +47,9 @@ export interface ToolConfig<TInput = unknown, TOutput = unknown> {
 	sideEffectLevel?: SideEffectLevel
 	idempotencyKey?: (input: TInput) => string
 	idempotencyStore?: IdempotencyStore
-	preconditions?: Array<{ name: string; check: PreconditionFn<TInput> }>
+	preconditions?: Array<PreconditionFn<TInput> | { name: string; check: PreconditionFn<TInput> }>
 	dryRunHandler?: (input: TInput, context: ToolContext) => Promise<TOutput> | TOutput
+	requireApproval?: RequireApproval
 }
 
 export interface ToolContext {
@@ -48,6 +57,7 @@ export interface ToolContext {
 	traceId?: string
 	signal?: AbortSignal
 	dryRun?: boolean
+	requestApproval?: ApprovalHandler
 }
 
 export interface Tool<TInput = unknown, TOutput = unknown> {
@@ -74,6 +84,8 @@ export interface ToolExecutionResult<T = unknown> {
 	dryRun?: boolean
 	idempotent?: boolean
 	preconditionFailures?: PreconditionFailure[]
+	approvalDenied?: boolean
+	approvalReason?: string
 }
 
 function formatZodErrors(error: z.ZodError): string {
@@ -180,6 +192,7 @@ export function defineTool<TInput, TOutput>(
 		idempotencyStore,
 		preconditions,
 		dryRunHandler,
+		requireApproval = 'auto',
 	} = config
 	const handler = config.handler
 
@@ -205,13 +218,28 @@ export function defineTool<TInput, TOutput>(
 		return handler(parsedInput, context)
 	}
 
+	function normalizePrecondition(
+		entry: PreconditionFn<TInput> | { name: string; check: PreconditionFn<TInput> },
+		index: number,
+	): { name: string; check: PreconditionFn<TInput> } {
+		if (typeof entry === 'function') {
+			const fnName = (entry as { name?: string }).name
+			return {
+				name: fnName && fnName.length > 0 ? fnName : `precondition_${index + 1}`,
+				check: entry,
+			}
+		}
+		return entry
+	}
+
 	async function runPreconditions(
 		parsedInput: TInput,
 		context: ToolContext,
 	): Promise<PreconditionFailure[]> {
 		if (!preconditions?.length) return []
 		const failures: PreconditionFailure[] = []
-		for (const { name: ruleName, check } of preconditions) {
+		for (let i = 0; i < preconditions.length; i++) {
+			const { name: ruleName, check } = normalizePrecondition(preconditions[i], i)
 			const result = await check(parsedInput, {
 				toolCallId: context.toolCallId,
 				traceId: context.traceId,
@@ -228,40 +256,103 @@ export function defineTool<TInput, TOutput>(
 		return sideEffectLevel !== 'read'
 	}
 
-	async function runPreGates(
+	function approvalNeeded(context: ToolContext): boolean {
+		if (context.dryRun) return false
+		if (requireApproval === 'never') return false
+		if (requireApproval === 'always') return true
+		return sideEffectLevel === 'destructive'
+	}
+
+	async function runApprovalGate(
+		parsedInput: TInput,
+		context: ToolContext,
+		toolCallId: string,
+		startTime: number,
+	): Promise<ToolExecutionResult<TOutput> | null> {
+		if (!approvalNeeded(context)) return null
+		const handler = context.requestApproval
+		if (!handler) {
+			if (requireApproval === 'always' || sideEffectLevel === 'destructive') {
+				log.warn(
+					`Tool "${name}" requires approval (sideEffectLevel="${sideEffectLevel ?? 'unset'}", requireApproval="${requireApproval}") but no requestApproval handler was provided on the context. Proceeding without approval — wire context.requestApproval to enforce.`,
+				)
+			}
+			return null
+		}
+		const decision = await handler({
+			toolName: name,
+			toolCallId,
+			traceId: context.traceId,
+			sideEffectLevel,
+			input: parsedInput,
+		})
+		if (decision.status !== 'approved') {
+			return {
+				...buildExecutionFailure<TOutput>(
+					toolCallId,
+					startTime,
+					`approval denied${decision.reason ? `: ${decision.reason}` : ''}`,
+				),
+				approvalDenied: true,
+				approvalReason: decision.reason,
+			}
+		}
+		return null
+	}
+
+	async function checkPreconditionsGate(
 		parsedInput: TInput,
 		context: ToolContext,
 		toolCallId: string,
 		startTime: number,
 	): Promise<ToolExecutionResult<TOutput> | null> {
 		const preFailures = await runPreconditions(parsedInput, context)
-		if (preFailures.length > 0) {
-			const message = preFailures.map((f) => `${f.name}: ${f.reason}`).join('; ')
-			return {
-				...buildExecutionFailure<TOutput>(toolCallId, startTime, `precondition denied: ${message}`),
-				preconditionFailures: preFailures,
-			}
+		if (preFailures.length === 0) return null
+		const message = preFailures.map((f) => `${f.name}: ${f.reason}`).join('; ')
+		return {
+			...buildExecutionFailure<TOutput>(toolCallId, startTime, `precondition denied: ${message}`),
+			preconditionFailures: preFailures,
 		}
+	}
 
-		if (shouldDryRun(context)) {
-			const preview = dryRunHandler
-				? await dryRunHandler(parsedInput, context)
-				: (undefined as unknown as TOutput)
-			return { ...buildExecutionSuccess(toolCallId, startTime, preview), dryRun: true }
-		}
+	async function checkDryRunGate(
+		parsedInput: TInput,
+		context: ToolContext,
+		toolCallId: string,
+		startTime: number,
+	): Promise<ToolExecutionResult<TOutput> | null> {
+		if (!shouldDryRun(context)) return null
+		const preview = dryRunHandler
+			? await dryRunHandler(parsedInput, context)
+			: (undefined as unknown as TOutput)
+		return { ...buildExecutionSuccess(toolCallId, startTime, preview), dryRun: true }
+	}
 
+	async function checkIdempotencyGate(
+		parsedInput: TInput,
+		toolCallId: string,
+		startTime: number,
+	): Promise<ToolExecutionResult<TOutput> | null> {
 		const idemKey = idempotencyKey ? idempotencyKey(parsedInput) : undefined
-		if (idemKey && idempotencyStore) {
-			const cached = await idempotencyStore.get<TOutput>(name, idemKey)
-			if (cached) {
-				return {
-					...buildExecutionSuccess(toolCallId, startTime, cached.output),
-					idempotent: true,
-				}
-			}
-		}
+		if (!idemKey || !idempotencyStore) return null
+		const cached = await idempotencyStore.get<TOutput>(name, idemKey)
+		if (!cached) return null
+		return { ...buildExecutionSuccess(toolCallId, startTime, cached.output), idempotent: true }
+	}
 
-		return null
+	async function runPreGates(
+		parsedInput: TInput,
+		context: ToolContext,
+		toolCallId: string,
+		startTime: number,
+	): Promise<ToolExecutionResult<TOutput> | null> {
+		const pre = await checkPreconditionsGate(parsedInput, context, toolCallId, startTime)
+		if (pre) return pre
+		const approval = await runApprovalGate(parsedInput, context, toolCallId, startTime)
+		if (approval) return approval
+		const dry = await checkDryRunGate(parsedInput, context, toolCallId, startTime)
+		if (dry) return dry
+		return checkIdempotencyGate(parsedInput, toolCallId, startTime)
 	}
 
 	async function validateAndPersist(
@@ -328,6 +419,7 @@ export function defineTool<TInput, TOutput>(
 				traceId: partialCtx?.traceId,
 				signal: controller.signal,
 				dryRun: partialCtx?.dryRun,
+				requestApproval: partialCtx?.requestApproval,
 			}
 
 			try {
@@ -343,6 +435,7 @@ export function defineTool<TInput, TOutput>(
 				const resolved = await outputFailure
 				return resolved
 			} catch (error) {
+				if (isAgentPauseSignal(error)) throw error
 				const message = error instanceof Error ? error.message : String(error)
 				return buildExecutionFailure(toolCallId, startTime, message)
 			} finally {

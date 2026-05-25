@@ -23,7 +23,7 @@ export type { RetrievalToolConfig, RetrievalResult, RetrieveFn } from './retriev
 export { withCapability } from './capability-guard'
 export type { CapabilityGuardOptions, CapabilityDenialEvent } from './capability-guard'
 
-// Tool contracts — sideEffectLevel, preconditions, idempotency, dry-run
+// Tool contracts — sideEffectLevel, preconditions, idempotency, dry-run, approval
 export { createInMemoryIdempotencyStore } from './contracts'
 export type {
 	SideEffectLevel,
@@ -33,4 +33,8 @@ export type {
 	IdempotencyEntry,
 	IdempotencyStore,
 	InMemoryIdempotencyStoreConfig,
+	ApprovalRequest,
+	ApprovalDecision,
+	ApprovalHandler,
+	RequireApproval,
 } from './contracts'

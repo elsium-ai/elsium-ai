@@ -32,6 +32,56 @@ export function zodValidator<T>(
 	}
 }
 
+/**
+ * Alias for `zodValidator` matching the public spec naming for the fluent
+ * `agent.withVerifier(schemaValidator(MySchema))` pattern.
+ */
+export const schemaValidator = zodValidator
+
+export interface JudgeResult {
+	passed: boolean
+	score: number
+	reason?: string
+}
+
+export interface JudgeValidatorOptions {
+	name?: string
+	rubric: string
+	judge: (rubric: string, value: unknown) => Promise<JudgeResult> | JudgeResult
+	threshold?: number
+}
+
+/**
+ * Validator that asks an LLM-as-judge whether `value` satisfies `rubric`.
+ * The caller supplies the actual judge function (typically an LLM call against
+ * a calibrated prompt) so the framework stays provider-agnostic.
+ */
+export function judgeValidator<T = unknown>(options: JudgeValidatorOptions): Validator<T> {
+	const name = options.name ?? 'judge'
+	const threshold = options.threshold ?? 0.5
+
+	return {
+		name,
+		async validate(value): Promise<ValidationOutcome> {
+			const verdict = await options.judge(options.rubric, value)
+			if (verdict.passed && verdict.score >= threshold) {
+				return { valid: true, failures: [] }
+			}
+			return {
+				valid: false,
+				failures: [
+					{
+						validator: name,
+						reason: verdict.reason ?? `judge score ${verdict.score} below threshold ${threshold}`,
+						detail: { score: verdict.score, rubric: options.rubric },
+						repairHint: `Revise the output to satisfy: ${options.rubric}`,
+					},
+				],
+			}
+		},
+	}
+}
+
 export interface RegexValidatorOptions {
 	name?: string
 	mode?: 'must-match' | 'must-not-match'

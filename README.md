@@ -13,14 +13,18 @@
 </p>
 
 <p align="center">
-  See the framework in action — every demo is interactive and runnable: <a href="https://elsiumai.com/#demos"><strong>elsiumai.com/#demos</strong></a>
+  <a href="https://elsiumai.com/#demos"><img src="assets/demo.gif" alt="ElsiumAI demo — agent runtime, governance, replay, capability tokens" width="860" /></a>
+</p>
+
+<p align="center">
+  Every demo is interactive and runnable: <a href="https://elsiumai.com/#demos"><strong>elsiumai.com/#demos</strong></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-2062%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/bundle-412KB%20minified-blue" alt="Bundle Size">
+  <img src="https://img.shields.io/badge/tests-2430%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/bundle-470KB%20minified-blue" alt="Bundle Size">
   <img src="https://img.shields.io/badge/runtime-Node%20%C2%B7%20Bun%20%C2%B7%20Deno%20%C2%B7%20Workers%20%C2%B7%20Edge-blueviolet" alt="Cross-runtime">
 </p>
 

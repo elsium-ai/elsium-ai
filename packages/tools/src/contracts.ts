@@ -1,5 +1,26 @@
 export type SideEffectLevel = 'read' | 'write' | 'destructive'
 
+export type RequireApproval = 'auto' | 'always' | 'never'
+
+export interface ApprovalRequest<TInput = unknown> {
+	toolName: string
+	toolCallId: string
+	traceId?: string
+	sideEffectLevel?: SideEffectLevel
+	input: TInput
+	reason?: string
+}
+
+export interface ApprovalDecision {
+	status: 'approved' | 'rejected'
+	reason?: string
+	decidedBy?: string
+}
+
+export type ApprovalHandler<TInput = unknown> = (
+	request: ApprovalRequest<TInput>,
+) => Promise<ApprovalDecision> | ApprovalDecision
+
 export interface PreconditionResult {
 	ok: boolean
 	reason?: string
