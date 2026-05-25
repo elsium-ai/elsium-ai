@@ -47,7 +47,7 @@ export interface ToolConfig<TInput = unknown, TOutput = unknown> {
 	sideEffectLevel?: SideEffectLevel
 	idempotencyKey?: (input: TInput) => string
 	idempotencyStore?: IdempotencyStore
-	preconditions?: Array<{ name: string; check: PreconditionFn<TInput> }>
+	preconditions?: Array<PreconditionFn<TInput> | { name: string; check: PreconditionFn<TInput> }>
 	dryRunHandler?: (input: TInput, context: ToolContext) => Promise<TOutput> | TOutput
 	requireApproval?: RequireApproval
 }
@@ -218,13 +218,28 @@ export function defineTool<TInput, TOutput>(
 		return handler(parsedInput, context)
 	}
 
+	function normalizePrecondition(
+		entry: PreconditionFn<TInput> | { name: string; check: PreconditionFn<TInput> },
+		index: number,
+	): { name: string; check: PreconditionFn<TInput> } {
+		if (typeof entry === 'function') {
+			const fnName = (entry as { name?: string }).name
+			return {
+				name: fnName && fnName.length > 0 ? fnName : `precondition_${index + 1}`,
+				check: entry,
+			}
+		}
+		return entry
+	}
+
 	async function runPreconditions(
 		parsedInput: TInput,
 		context: ToolContext,
 	): Promise<PreconditionFailure[]> {
 		if (!preconditions?.length) return []
 		const failures: PreconditionFailure[] = []
-		for (const { name: ruleName, check } of preconditions) {
+		for (let i = 0; i < preconditions.length; i++) {
+			const { name: ruleName, check } = normalizePrecondition(preconditions[i], i)
 			const result = await check(parsedInput, {
 				toolCallId: context.toolCallId,
 				traceId: context.traceId,

@@ -3,6 +3,8 @@ export { composeValidators } from './compose'
 export type { ComposeValidatorsOptions } from './compose'
 export {
 	zodValidator,
+	schemaValidator,
+	judgeValidator,
 	regexValidator,
 	semanticAdapter,
 	externalValidator,
@@ -13,6 +15,8 @@ export type {
 	SemanticAdapterOptions,
 	ExternalValidatorOptions,
 	ExternalCheck,
+	JudgeValidatorOptions,
+	JudgeResult,
 } from './adapters'
 export type {
 	Validator,

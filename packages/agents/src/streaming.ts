@@ -8,13 +8,27 @@ import type { AgentConfig, AgentResult, AgentRunOptions } from './types'
 
 export type AgentStreamEvent =
 	| { type: 'text_delta'; text: string }
+	| { type: 'token'; text: string }
+	| { type: 'thinking_start'; thinkingId?: string }
+	| { type: 'thinking_delta'; thinkingId?: string; text: string }
+	| { type: 'thinking_end'; thinkingId?: string }
+	| { type: 'thinking'; text: string }
 	| { type: 'tool_call_start'; toolCall: { id: string; name: string } }
 	| { type: 'tool_call_delta'; toolCallId: string; arguments: string }
 	| { type: 'tool_call_end'; toolCallId: string }
+	| { type: 'tool_call'; toolCall: { id: string; name: string; arguments: unknown } }
 	| { type: 'tool_result'; toolCallId: string; name: string; result: ToolExecutionResult }
 	| { type: 'iteration_start'; iteration: number }
 	| { type: 'iteration_end'; iteration: number }
 	| { type: 'agent_end'; result: AgentResult; stopReason: LLMResponse['stopReason'] }
+	| {
+			type: 'final'
+			result: AgentResult
+			stopReason: LLMResponse['stopReason']
+			message: AgentResult['message']
+			usage: AgentResult['usage']
+			toolCalls: AgentResult['toolCalls']
+	  }
 	| { type: 'error'; error: Error }
 
 export interface StreamingAgentDependencies extends AgentDependencies {
@@ -35,6 +49,87 @@ interface StreamLoopContext {
 	maxTokenBudget: number
 }
 
+interface StreamAccumulator {
+	textContent: string
+	toolCalls: ToolCall[]
+	toolArgBuffers: Record<string, string>
+	thinkingBuffer: string
+}
+
+function handleTextDelta(
+	acc: StreamAccumulator,
+	text: string,
+	emit: (event: AgentStreamEvent) => void,
+): void {
+	acc.textContent += text
+	emit({ type: 'text_delta', text })
+	emit({ type: 'token', text })
+}
+
+function handleThinkingDelta(
+	acc: StreamAccumulator,
+	text: string,
+	thinkingId: string | undefined,
+	emit: (event: AgentStreamEvent) => void,
+): void {
+	acc.thinkingBuffer += text
+	emit({ type: 'thinking_delta', thinkingId, text })
+}
+
+function handleThinkingEnd(
+	acc: StreamAccumulator,
+	thinkingId: string | undefined,
+	emit: (event: AgentStreamEvent) => void,
+): void {
+	emit({ type: 'thinking_end', thinkingId })
+	if (acc.thinkingBuffer) emit({ type: 'thinking', text: acc.thinkingBuffer })
+	acc.thinkingBuffer = ''
+}
+
+function handleToolCallStart(
+	acc: StreamAccumulator,
+	toolCall: { id: string; name: string },
+	emit: (event: AgentStreamEvent) => void,
+): void {
+	acc.toolArgBuffers[toolCall.id] = ''
+	acc.toolCalls.push({ id: toolCall.id, name: toolCall.name, arguments: {} })
+	emit({ type: 'tool_call_start', toolCall })
+}
+
+function handleToolCallDelta(
+	acc: StreamAccumulator,
+	toolCallId: string,
+	args: string,
+	emit: (event: AgentStreamEvent) => void,
+): void {
+	if (acc.toolArgBuffers[toolCallId] !== undefined) {
+		acc.toolArgBuffers[toolCallId] += args
+	}
+	emit({ type: 'tool_call_delta', toolCallId, arguments: args })
+}
+
+function handleToolCallEnd(
+	acc: StreamAccumulator,
+	toolCallId: string,
+	emit: (event: AgentStreamEvent) => void,
+): void {
+	const tc = acc.toolCalls.find((t) => t.id === toolCallId)
+	if (tc && acc.toolArgBuffers[toolCallId]) {
+		try {
+			tc.arguments = JSON.parse(acc.toolArgBuffers[toolCallId])
+		} catch {
+			tc.arguments = {}
+		}
+	}
+	emit({ type: 'tool_call_end', toolCallId })
+	if (tc) {
+		emit({
+			type: 'tool_call',
+			toolCall: { id: tc.id, name: tc.name, arguments: tc.arguments },
+		})
+	}
+}
+
 async function accumulateStreamedResponse(
 	stream: ElsiumStream,
 	emit: (event: AgentStreamEvent) => void,
@@ -43,45 +138,39 @@ async function accumulateStreamedResponse(
 	usage: LLMResponse['usage']
 	stopReason: LLMResponse['stopReason']
 }> {
-	let textContent = ''
-	const toolCalls: ToolCall[] = []
-	const toolArgBuffers: Record<string, string> = {}
+	const acc: StreamAccumulator = {
+		textContent: '',
+		toolCalls: [],
+		toolArgBuffers: {},
+		thinkingBuffer: '',
+	}
 	let usage: LLMResponse['usage'] = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
 	let stopReason: LLMResponse['stopReason'] = 'end_turn'
 
 	for await (const event of stream) {
 		switch (event.type) {
 			case 'text_delta':
-				textContent += event.text
-				emit({ type: 'text_delta', text: event.text })
+				handleTextDelta(acc, event.text, emit)
+				break
+			case 'thinking_start':
+				acc.thinkingBuffer = ''
+				emit({ type: 'thinking_start', thinkingId: event.thinking?.id })
+				break
+			case 'thinking_delta':
+				handleThinkingDelta(acc, event.text, event.thinkingId, emit)
+				break
+			case 'thinking_end':
+				handleThinkingEnd(acc, event.thinkingId, emit)
 				break
 			case 'tool_call_start':
-				toolArgBuffers[event.toolCall.id] = ''
-				toolCalls.push({ id: event.toolCall.id, name: event.toolCall.name, arguments: {} })
-				emit({ type: 'tool_call_start', toolCall: event.toolCall })
+				handleToolCallStart(acc, event.toolCall, emit)
 				break
 			case 'tool_call_delta':
-				if (toolArgBuffers[event.toolCallId] !== undefined) {
-					toolArgBuffers[event.toolCallId] += event.arguments
-				}
-				emit({
-					type: 'tool_call_delta',
-					toolCallId: event.toolCallId,
-					arguments: event.arguments,
-				})
+				handleToolCallDelta(acc, event.toolCallId, event.arguments, emit)
 				break
-			case 'tool_call_end': {
-				const tc = toolCalls.find((t) => t.id === event.toolCallId)
-				if (tc && toolArgBuffers[event.toolCallId]) {
-					try {
-						tc.arguments = JSON.parse(toolArgBuffers[event.toolCallId])
-					} catch {
-						tc.arguments = {}
-					}
-				}
-				emit({ type: 'tool_call_end', toolCallId: event.toolCallId })
+			case 'tool_call_end':
+				handleToolCallEnd(acc, event.toolCallId, emit)
 				break
-			}
 			case 'message_end':
 				usage = event.usage
 				stopReason = event.stopReason
@@ -92,8 +181,8 @@ async function accumulateStreamedResponse(
 	return {
 		message: {
 			role: 'assistant',
-			content: textContent,
-			...(toolCalls.length ? { toolCalls } : {}),
+			content: acc.textContent,
+			...(acc.toolCalls.length ? { toolCalls: acc.toolCalls } : {}),
 		},
 		usage,
 		stopReason,
@@ -277,6 +366,14 @@ async function runStreamLoop(
 			}
 
 			emit({ type: 'agent_end', result: agentResult, stopReason })
+			emit({
+				type: 'final',
+				result: agentResult,
+				stopReason,
+				message: agentResult.message,
+				usage: agentResult.usage,
+				toolCalls: agentResult.toolCalls,
+			})
 			return agentResult
 		}
 

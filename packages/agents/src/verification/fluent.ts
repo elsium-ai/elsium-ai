@@ -125,6 +125,10 @@ export function withVerifiers(
 		replayFrom(traceId, opts) {
 			return base.replayFrom(traceId, opts)
 		},
+
+		askHuman(options) {
+			return base.askHuman(options)
+		},
 	}
 
 	return wrapped

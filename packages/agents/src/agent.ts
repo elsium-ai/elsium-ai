@@ -22,6 +22,7 @@ import type { ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
 import type { z } from 'zod'
 import { type ApprovalGate, createApprovalGate, shouldRequireApproval } from './approval'
+import { type AskHumanOptions, askHuman } from './ask-human'
 import { createConfidenceScorer } from './confidence'
 import { type Memory, createMemory } from './memory'
 import { type RuntimePolicyEnforcer, createRuntimePolicyEnforcer } from './runtime-policy'
@@ -68,9 +69,12 @@ export interface Agent {
 		traceId: string,
 		options: {
 			fromStep: number | string
-			overrides?: Record<string, StepOverride>
+			overrides?: Record<string, StepOverride | { prompt: string }>
 		},
 	): Promise<ReplayResult>
+	askHuman<TOption extends string = string>(
+		options: import('./ask-human').AskHumanOptions<TOption> & { timeout?: string | number },
+	): Promise<import('./ask-human').AskHumanDecision<TOption>>
 }
 
 export interface AgentDependencies {
@@ -584,15 +588,43 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 					`Agent "${config.name}" has no trace recorded for traceId "${traceId}"`,
 				)
 			}
+			const normalizedOverrides: Record<string, StepOverride> = {}
+			for (const [key, ov] of Object.entries(opts.overrides ?? {})) {
+				if ('prompt' in ov && typeof ov.prompt === 'string') {
+					const newPrompt = ov.prompt
+					normalizedOverrides[key] = {
+						kind: 'transform',
+						input: (req: unknown) => ({
+							...(req as CompletionRequest),
+							system: newPrompt,
+						}),
+					}
+				} else {
+					normalizedOverrides[key] = ov as StepOverride
+				}
+			}
 			return replayFrom(trace, {
 				fromStep: opts.fromStep,
-				overrides: opts.overrides,
+				overrides: normalizedOverrides,
 				executor: async ({ key, input, originalStep }) => {
 					if (key.startsWith('llm:')) {
 						return resolvedDeps.complete(input as CompletionRequest)
 					}
 					return originalStep?.output
 				},
+			})
+		},
+
+		askHuman<TOption extends string = string>(
+			options: AskHumanOptions<TOption> & { timeout?: string | number },
+		) {
+			const { timeout, ...rest } = options as AskHumanOptions<TOption> & {
+				timeout?: string | number
+				timeoutMs?: string | number
+			}
+			return askHuman<TOption>({
+				...(rest as AskHumanOptions<TOption>),
+				timeoutMs: (timeout ?? rest.timeoutMs) as number | undefined,
 			})
 		},
 

@@ -195,12 +195,18 @@ export {
 	runWithVerification,
 	composeValidators,
 	zodValidator,
+	schemaValidator,
+	judgeValidator,
 	regexValidator,
 	semanticAdapter,
 	externalValidator,
 	withVerifiers,
 } from './verification/index'
-export type { AgentRetryPolicy } from './verification/index'
+export type {
+	AgentRetryPolicy,
+	JudgeValidatorOptions,
+	JudgeResult,
+} from './verification/index'
 
 // Resumable agent runs — snapshot + resume around askHuman / pauseAgent
 export { runResumable, resumeAgent } from './resumable'
