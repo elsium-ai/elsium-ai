@@ -1,5 +1,15 @@
 # @elsium-ai/testing
 
+## 0.16.1
+
+### Patch Changes
+
+- Updated dependencies [c51a981]
+  - @elsium-ai/agents@0.16.1
+  - @elsium-ai/core@0.16.1
+  - @elsium-ai/gateway@0.16.1
+  - @elsium-ai/tools@0.16.1
+
 ## 0.16.0
 
 ### Patch Changes
