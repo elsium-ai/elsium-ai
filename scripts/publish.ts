@@ -153,8 +153,20 @@ try {
 		} catch (err: unknown) {
 			const stderr =
 				err instanceof Error && 'stderr' in err ? (err as { stderr: Buffer }).stderr.toString() : ''
+			const stdout =
+				err instanceof Error && 'stdout' in err ? (err as { stdout: Buffer }).stdout.toString() : ''
 			console.log(' ✗')
-			console.error(`    ${stderr.split('\n')[0]}`)
+			const errorLines = [...stderr.split('\n'), ...stdout.split('\n')].filter((line) => {
+				const l = line.trim()
+				if (!l) return false
+				if (l.startsWith('npm notice')) return false
+				return true
+			})
+			if (errorLines.length === 0) {
+				console.error('    (no error output captured)')
+			} else {
+				for (const line of errorLines) console.error(`    ${line}`)
+			}
 			failed++
 		}
 	}
