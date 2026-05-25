@@ -27,6 +27,7 @@ npm install zod
 | **Built-in Tools** | `httpFetchTool`, `calculatorTool`, `jsonParseTool`, `currentTimeTool` | Ready-to-use tools for HTTP requests, math evaluation, JSON extraction, and current time |
 | **Capability guard** | `withCapability`, `CapabilityGuardOptions`, `CapabilityDenialEvent` | Wrap any tool with a `CapabilityToken` check (signature + validity window + scope). Refusals return a typed denial result and fire an optional `onDeny` callback for audit. |
 | **Tool contracts** | `sideEffectLevel`, `idempotencyKey`, `idempotencyStore`, `preconditions`, `dryRunHandler`, `IdempotencyStore`, `createInMemoryIdempotencyStore`, `PreconditionFn`, `PreconditionFailure`, `SideEffectLevel` | Extend `ToolConfig` with `'read' \| 'write' \| 'destructive'` classification, async preconditions, idempotency-keyed cache to make retries safe, and a `dryRunHandler` so the framework can preview destructive operations when `ctx.dryRun: true`. |
+| **Auto-approval gate** | `requireApproval`, `ApprovalHandler`, `ApprovalRequest`, `ApprovalDecision`, `RequireApproval` | When `sideEffectLevel: 'destructive'` and `requireApproval` is `'auto'` (default), the tool calls `context.requestApproval` before the handler runs. Denials return `{ success: false, approvalDenied: true, approvalReason }`. Skipped automatically in `dryRun` mode. Override with `'always'` to gate every call or `'never'` to opt out. |
 
 ---
 

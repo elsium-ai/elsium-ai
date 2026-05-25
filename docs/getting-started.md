@@ -958,6 +958,118 @@ const gated = await requireConfidence(
 
 Demos: [`examples/verification-pipeline/`](../examples/verification-pipeline/) and [`examples/confidence-strategies/`](../examples/confidence-strategies/).
 
+## Fluent verification on the agent
+
+`runWithVerification` is also available as a fluent API on any agent returned by `defineAgent`. Chain `withVerifier(...)` and `withRetryPolicy(...)` and every `agent.run()` / `agent.generate()` call internally loops generate → validate → repair-or-abort. Calls without verifiers attached behave identically to before — zero overhead unless you opt in.
+
+```typescript
+import { defineAgent, zodValidator } from '@elsium-ai/agents'
+
+const verified = defineAgent({ name: 'extract', system: '...', model: 'claude-sonnet-4-6' }, deps)
+  .withVerifier(zodValidator(InvoiceSchema))
+  .withVerifier({
+    name: 'amount-cap',
+    validate: (r) => {
+      const text = typeof r.message.content === 'string' ? r.message.content : ''
+      return text.includes('"amount":') && JSON.parse(text).amount > 1_000_000
+        ? { valid: false, failures: [{ validator: 'amount-cap', reason: 'amount exceeds 1M cap' }] }
+        : { valid: true, failures: [] }
+    },
+  })
+  .withRetryPolicy({ maxAttempts: 3 })
+
+const result = await verified.run('Extract the invoice from <attachment>')
+```
+
+`withVerifier` and `withRetryPolicy` return a **new** agent — they don't mutate the base. The verifier list and policy are immutable per agent reference, so you can fork the same base agent into multiple verification configurations safely.
+
+## Pause + resume (durable human-in-the-loop)
+
+`agent.runResumable()` lets a tool pause the entire agent mid-execution and snapshot the conversation to a `StateStore`. Later, `agent.resume(resumeToken)` reloads the snapshot and continues — across process restarts, days apart, anywhere.
+
+```typescript
+import { createInMemoryStateStore, pauseAgent } from '@elsium-ai/core'
+import { defineAgent } from '@elsium-ai/agents'
+import { defineTool } from '@elsium-ai/tools'
+
+const reviewTool = defineTool({
+  name: 'request_approval',
+  description: 'Ask a human reviewer before continuing',
+  input: z.object({ amount: z.number() }),
+  sideEffectLevel: 'destructive',
+  handler: async (input) => {
+    pauseAgent('reviewer approval needed', { amount: input.amount })
+    return { /* unreachable — pauseAgent throws */ }
+  },
+})
+
+const store = createInMemoryStateStore()
+const agent = defineAgent({ name: 'ops', system: '...', model: '...', tools: [reviewTool] }, deps)
+
+const outcome = await agent.runResumable('Approve refund of $1,200 for cust 42', {}, { stateStore: store })
+if (outcome.status === 'paused') {
+  // Persist outcome.resumeToken in your queue / DB / Slack thread.
+  // Hours or days later, after a human approves:
+  const final = await agent.resume(outcome.resumeToken, {
+    stateStore: store,
+    followUpMessage: { role: 'user', content: 'Approved by reviewer@example.com' },
+  })
+  console.log(final)
+}
+```
+
+The framework ships `createInMemoryStateStore` for prototyping. For production, supply a durable adapter (Redis, Postgres, SQLite, S3) by implementing the `StateStore` interface — `save / load / delete / list`. **MVP scope:** snapshots are taken only at explicit `pauseAgent()` boundaries (not on every iteration). Full crash recovery across restarts is a planned follow-up.
+
+## Replay and time-travel from a recorded trace
+
+Every `agent.run()` automatically attaches a `TraceRecorder` and records each LLM iteration as a step. The trace stays in an in-memory ring buffer on the agent (default cap 100). `agent.replayFrom(traceId, { fromStep, overrides })` re-executes the run with selective overrides — perfect for "agent failed in prod → swap a prompt → see the downstream change":
+
+```typescript
+const result = await agent.run('Summarize Q1 earnings call')
+
+const replay = await agent.replayFrom(result.traceId, {
+  fromStep: 0,
+  overrides: {
+    'llm:iter_1': {
+      kind: 'transform',
+      input: (req) => ({ ...req, system: 'You are a tougher summarizer. Cut filler.' }),
+    },
+  },
+})
+
+for (const step of replay.steps) {
+  console.log(step.key, step.source, step.overridden)
+}
+```
+
+Steps **before** `fromStep` are served from the recording; steps **at and after** are re-executed live by the agent's LLM dependency, with overrides applied. **MVP scope:** only LLM iterations are recorded, not individual tool calls; in-memory only.
+
+## Automatic approval gates for destructive tools
+
+Tools declared `sideEffectLevel: 'destructive'` now block execution behind an approval gate by default (`requireApproval: 'auto'`). Provide a `requestApproval` handler on the tool context — typically wired from the agent runtime — and the framework calls it before invoking the handler. Rejections return `{ success: false, approvalDenied: true }` without ever running the handler.
+
+```typescript
+import { defineTool } from '@elsium-ai/tools'
+
+const transferTool = defineTool({
+  name: 'transferFunds',
+  description: 'Move money between accounts',
+  input: TransferSchema,
+  sideEffectLevel: 'destructive',
+  // requireApproval defaults to 'auto' → destructive tools auto-gate
+  handler: async (input) => bank.transfer(input),
+})
+
+const result = await transferTool.execute(input, {
+  requestApproval: async (req) => ({
+    status: req.input.amount > 1000 ? 'rejected' : 'approved',
+    reason: 'auto-rejected over $1000',
+  }),
+})
+```
+
+Approval is skipped automatically when `dryRun: true`. Set `requireApproval: 'always'` to gate every call regardless of side-effect level (good for PII reads), or `'never'` to opt out entirely (good for test-only tools).
+
 ## Cost-Aware Routed Generation (CARG)
 
 Route requests through a cascade of model tiers — start cheap, escalate only when the cheap tier fails or a classifier predicts it will:

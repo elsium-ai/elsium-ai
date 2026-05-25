@@ -14,7 +14,7 @@ export type AgentStreamEvent =
 	| { type: 'tool_result'; toolCallId: string; name: string; result: ToolExecutionResult }
 	| { type: 'iteration_start'; iteration: number }
 	| { type: 'iteration_end'; iteration: number }
-	| { type: 'agent_end'; result: AgentResult }
+	| { type: 'agent_end'; result: AgentResult; stopReason: LLMResponse['stopReason'] }
 	| { type: 'error'; error: Error }
 
 export interface StreamingAgentDependencies extends AgentDependencies {
@@ -276,7 +276,7 @@ async function runStreamLoop(
 				traceId,
 			}
 
-			emit({ type: 'agent_end', result: agentResult })
+			emit({ type: 'agent_end', result: agentResult, stopReason })
 			return agentResult
 		}
 

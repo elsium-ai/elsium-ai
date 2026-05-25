@@ -198,7 +198,18 @@ export {
 	regexValidator,
 	semanticAdapter,
 	externalValidator,
+	withVerifiers,
 } from './verification/index'
+export type { AgentRetryPolicy } from './verification/index'
+
+// Resumable agent runs — snapshot + resume around askHuman / pauseAgent
+export { runResumable, resumeAgent } from './resumable'
+export type {
+	AgentSnapshot,
+	AgentRunOutcome,
+	ResumableRunConfig,
+	ResumeOptions,
+} from './resumable'
 
 // CAG — Confidence-Augmented Generation
 export {

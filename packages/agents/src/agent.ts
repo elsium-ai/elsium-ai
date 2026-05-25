@@ -1,5 +1,21 @@
-import type { CompletionRequest, LLMResponse, Message, ToolCall } from '@elsium-ai/core'
-import { ElsiumError, type ElsiumStream, extractText, generateTraceId } from '@elsium-ai/core'
+import type {
+	AgentTrace,
+	CompletionRequest,
+	LLMResponse,
+	Message,
+	ReplayResult,
+	StepOverride,
+	ToolCall,
+	TraceRecorder,
+} from '@elsium-ai/core'
+import {
+	ElsiumError,
+	type ElsiumStream,
+	createTraceRecorder,
+	extractText,
+	generateTraceId,
+	replayFrom,
+} from '@elsium-ai/core'
 import { zodToJsonSchema } from '@elsium-ai/core'
 import { gateway } from '@elsium-ai/gateway'
 import type { ToolExecutionResult } from '@elsium-ai/tools'
@@ -16,6 +32,7 @@ import { executeStateMachine } from './state-machine'
 import type { AgentStream, StreamingAgentDependencies } from './streaming'
 import { createAgentStream } from './streaming'
 import type { AgentConfig, AgentResult, AgentRunOptions, GuardrailConfig } from './types'
+import { withVerifiers } from './verification/fluent'
 
 export interface AgentGenerateResult<T> {
 	data: T
@@ -34,6 +51,26 @@ export interface Agent {
 	stream(input: string, options?: AgentRunOptions): AgentStream
 	chat(messages: Message[], options?: AgentRunOptions): Promise<AgentResult>
 	resetMemory(): void
+	withVerifier(verifier: import('./verification/types').Validator<AgentResult>): Agent
+	withRetryPolicy(policy: import('./verification/fluent').AgentRetryPolicy): Agent
+	runResumable(
+		input: string | Message[],
+		options?: AgentRunOptions,
+		config?: import('./resumable').ResumableRunConfig,
+	): Promise<import('./resumable').AgentRunOutcome>
+	resume(
+		resumeToken: string,
+		options?: import('./resumable').ResumeOptions,
+	): Promise<import('./resumable').AgentRunOutcome>
+	getTrace(traceId: string): AgentTrace | undefined
+	listTraces(): AgentTrace[]
+	replayFrom(
+		traceId: string,
+		options: {
+			fromStep: number | string
+			overrides?: Record<string, StepOverride>
+		},
+	): Promise<ReplayResult>
 }
 
 export interface AgentDependencies {
@@ -103,6 +140,8 @@ function resolveGuardrails(config: AgentConfig): ResolvedGuardrails {
 	}
 }
 
+const MAX_TRACES_PER_AGENT = 100
+
 export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agent {
 	const resolvedDeps = resolveDependencies(config, deps)
 	const memory: Memory = createMemory(
@@ -111,6 +150,16 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 	const toolMap = new Map((config.tools ?? []).map((t) => [t.name, t]))
 	const guardrails = resolveGuardrails(config)
+	const traces = new Map<string, AgentTrace>()
+
+	function rememberTrace(trace: AgentTrace): void {
+		traces.set(trace.id, trace)
+		while (traces.size > MAX_TRACES_PER_AGENT) {
+			const oldest = traces.keys().next().value
+			if (oldest === undefined) break
+			traces.delete(oldest)
+		}
+	}
 
 	const semanticValidator = guardrails.semantic
 		? createSemanticValidator(guardrails.semantic, resolvedDeps.complete)
@@ -352,6 +401,10 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 	async function executeLoop(messages: Message[], options: AgentRunOptions): Promise<AgentResult> {
 		const traceId = options.traceId ?? generateTraceId()
+		const recorder: TraceRecorder = createTraceRecorder({
+			agentId: config.name,
+			traceId,
+		})
 		let totalInputTokens = 0
 		let totalOutputTokens = 0
 		let totalCost = 0
@@ -371,7 +424,14 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 			checkDuration(loopStartTime)
 
 			const request = buildCompletionRequest(conversationMessages)
+			const llmStart = performance.now()
 			const response = await resolvedDeps.complete(request)
+			recorder.recordStep({
+				key: `llm:iter_${iterations}`,
+				input: request,
+				output: response,
+				durationMs: performance.now() - llmStart,
+			})
 
 			totalInputTokens += response.usage.inputTokens
 			totalOutputTokens += response.usage.outputTokens
@@ -396,6 +456,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 				if (result) {
 					commitToMemory(conversationMessages, scopedMessages.length, memory)
+					rememberTrace(recorder.finish())
 					return result
 				}
 				continue
@@ -498,9 +559,42 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		return results
 	}
 
-	return {
+	const baseAgent: Agent = {
 		name: config.name,
 		config,
+
+		// Placeholders — overridden by withVerifiers wrapper below
+		withVerifier: undefined as unknown as Agent['withVerifier'],
+		withRetryPolicy: undefined as unknown as Agent['withRetryPolicy'],
+		runResumable: undefined as unknown as Agent['runResumable'],
+		resume: undefined as unknown as Agent['resume'],
+
+		getTrace(traceId: string) {
+			return traces.get(traceId)
+		},
+
+		listTraces() {
+			return Array.from(traces.values())
+		},
+
+		async replayFrom(traceId: string, opts) {
+			const trace = traces.get(traceId)
+			if (!trace) {
+				throw ElsiumError.validation(
+					`Agent "${config.name}" has no trace recorded for traceId "${traceId}"`,
+				)
+			}
+			return replayFrom(trace, {
+				fromStep: opts.fromStep,
+				overrides: opts.overrides,
+				executor: async ({ key, input, originalStep }) => {
+					if (key.startsWith('llm:')) {
+						return resolvedDeps.complete(input as CompletionRequest)
+					}
+					return originalStep?.output
+				},
+			})
+		},
 
 		async run(input: string, options: AgentRunOptions = {}): Promise<AgentResult> {
 			validateInputText(input)
@@ -606,4 +700,6 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 			memory.clear()
 		},
 	}
+
+	return withVerifiers(baseAgent, [], {})
 }

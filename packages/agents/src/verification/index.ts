@@ -27,3 +27,5 @@ export type {
 	VerificationAbort,
 	VerificationAttempt,
 } from './types'
+export { withVerifiers } from './fluent'
+export type { AgentRetryPolicy } from './fluent'

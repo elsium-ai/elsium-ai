@@ -70,6 +70,27 @@ export type { ContextStrategy, ContextManagerConfig, ContextManager } from './to
 // Utils
 export { generateId, generateTraceId, extractText, sleep, retry } from './utils'
 
+// State store — durable snapshots for pause/resume
+export { createInMemoryStateStore } from './state-store'
+export type { StateStore, InMemoryStateStoreConfig } from './state-store'
+
+// Agent pause signal — thrown by tools to request a snapshot/resume
+export { AgentPauseSignal, isAgentPauseSignal, pauseAgent } from './pause'
+
+// Replay / trace recorder — used by agents (B) and testing
+export { createTraceRecorder, replayFrom } from './replay'
+export type {
+	TraceStep,
+	AgentTrace,
+	TraceRecorder,
+	TraceRecorderConfig,
+	StepExecutor,
+	StepOverride,
+	ReplayFromOptions,
+	ReplayedStep,
+	ReplayResult,
+} from './replay'
+
 // Circuit Breaker
 export { createCircuitBreaker } from './circuit-breaker'
 export type { CircuitBreakerConfig, CircuitBreaker, CircuitState } from './circuit-breaker'
