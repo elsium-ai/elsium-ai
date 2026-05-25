@@ -82,11 +82,17 @@ function cleanupExpiredEntries(
 
 export function rateLimitMiddleware(config: RateLimitConfig) {
 	const requests = new Map<string, { count: number; resetTime: number }>()
+	const trustedHeaders = config.trustedProxyHeaders ?? ['CF-Connecting-IP']
 
 	return async (c: Context, next: Next) => {
-		// Use CF-Connecting-IP (from trusted proxy) or fall back to a per-request hash
-		// Do NOT trust X-Forwarded-For as it's client-controlled
-		const clientId = c.req.header('CF-Connecting-IP') ?? c.req.header('X-Real-IP') ?? 'anonymous'
+		let clientId = 'anonymous'
+		for (const header of trustedHeaders) {
+			const value = c.req.header(header)
+			if (value) {
+				clientId = value
+				break
+			}
+		}
 		const now = Date.now()
 
 		// Periodic cleanup: evict expired entries when map grows large

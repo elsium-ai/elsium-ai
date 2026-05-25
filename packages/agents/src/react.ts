@@ -356,9 +356,13 @@ export function defineReActAgent(config: ReActConfig): ReActAgent {
 					tools: config.tools.map((t) => t.toDefinition()),
 				})
 
-				state.totalInputTokens += response.usage.inputTokens
-				state.totalOutputTokens += response.usage.outputTokens
-				state.totalCost += response.cost.totalCost
+				state.totalInputTokens += Number.isFinite(response.usage?.inputTokens)
+					? response.usage.inputTokens
+					: 0
+				state.totalOutputTokens += Number.isFinite(response.usage?.outputTokens)
+					? response.usage.outputTokens
+					: 0
+				state.totalCost += Number.isFinite(response.cost?.totalCost) ? response.cost.totalCost : 0
 
 				const text = extractText(response.message.content)
 				state.messages.push(response.message)

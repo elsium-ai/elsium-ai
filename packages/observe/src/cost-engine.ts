@@ -291,8 +291,10 @@ export function createCostEngine(config: CostEngineConfig = {}): CostEngine {
 	}
 
 	function trackCall(response: LLMResponse, dimensions: CostAttributionDimensions = {}) {
-		const cost = response.cost.totalCost
-		const tokens = response.usage.totalTokens
+		const rawCost = response.cost?.totalCost
+		const rawTokens = response.usage?.totalTokens
+		const cost = Number.isFinite(rawCost) ? (rawCost as number) : 0
+		const tokens = Number.isFinite(rawTokens) ? (rawTokens as number) : 0
 
 		totalSpend += cost
 		totalTokens += tokens

@@ -42,6 +42,17 @@ export interface AuthConfig {
 export interface RateLimitConfig {
 	windowMs: number
 	maxRequests: number
+	/**
+	 * Header names trusted to carry the real client IP, set by a known reverse proxy
+	 * (e.g. `CF-Connecting-IP` for Cloudflare, `True-Client-IP` for Akamai). Headers
+	 * listed here are tried in order; requests without any of them share the
+	 * `anonymous` bucket. Defaults to `['CF-Connecting-IP']`.
+	 *
+	 * Do NOT include `X-Real-IP` or `X-Forwarded-For` unless you have validated that
+	 * your proxy strips client-supplied copies — both are spoofable by default and
+	 * allow an attacker to bypass rate limiting by varying the header per request.
+	 */
+	trustedProxyHeaders?: string[]
 }
 
 // ─── API Types ───────────────────────────────────────────────────

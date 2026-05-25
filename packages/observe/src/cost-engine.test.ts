@@ -28,6 +28,30 @@ describe('createCostEngine', () => {
 		expect(report.totalCalls).toBe(1)
 	})
 
+	it('does not poison totals when a response has no cost/usage', () => {
+		const engine = createCostEngine()
+		engine.trackCall(mockResponse())
+		engine.trackCall(
+			mockResponse({
+				cost: { totalCost: Number.NaN } as LLMResponse['cost'],
+				usage: { totalTokens: Number.NaN } as LLMResponse['usage'],
+			}),
+		)
+		engine.trackCall(
+			mockResponse({
+				cost: undefined as unknown as LLMResponse['cost'],
+				usage: undefined as unknown as LLMResponse['usage'],
+			}),
+		)
+
+		const report = engine.getReport()
+		expect(Number.isFinite(report.totalSpend)).toBe(true)
+		expect(Number.isFinite(report.totalTokens)).toBe(true)
+		expect(report.totalSpend).toBeCloseTo(0.00105)
+		expect(report.totalTokens).toBe(150)
+		expect(report.totalCalls).toBe(3)
+	})
+
 	it('should track by model', () => {
 		const engine = createCostEngine()
 		engine.trackCall(mockResponse({ model: 'claude-sonnet-4-6' }))

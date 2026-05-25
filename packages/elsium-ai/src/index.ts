@@ -88,6 +88,12 @@ export {
 	delegateToken,
 	createInMemoryRevocationStore,
 	CAPABILITY_TOKEN_VERSION,
+	// State store
+	createInMemoryStateStore,
+	// Pause / resume signaling
+	AgentPauseSignal,
+	isAgentPauseSignal,
+	pauseAgent,
 } from '@elsium-ai/core'
 
 export type {
@@ -223,6 +229,9 @@ export type {
 	RevocationStore,
 	RevocationEntry,
 	InMemoryRevocationStoreConfig,
+	// State store types
+	StateStore,
+	InMemoryStateStoreConfig,
 } from '@elsium-ai/core'
 
 // ─── Gateway ────────────────────────────────────────────────────
@@ -419,13 +428,23 @@ export {
 	createSecureMemoryStore,
 	computeMessageHash,
 	verifyMessageChain,
+	// Ask-human (human-in-the-loop)
+	askHuman,
+	createInMemoryAskHumanStore,
+	resolveAskHuman,
+	// Resumable agent runs
+	runResumable,
+	resumeAgent,
 	// VAG — Verification-Augmented Generation
 	runWithVerification,
 	composeValidators,
 	zodValidator,
+	schemaValidator,
+	judgeValidator,
 	regexValidator,
 	semanticAdapter,
 	externalValidator,
+	withVerifiers,
 	// CAG — Confidence-Augmented Generation
 	selfConsistency,
 	judgeEnsemble,
@@ -548,6 +567,20 @@ export type {
 	IntegrityMetadata,
 	VerifiedMessage,
 	MemoryIntegrityResult,
+	// Ask-human types
+	AskHumanStatus,
+	AskHumanDecision,
+	AskHumanRequest,
+	AskHumanRecord,
+	AskHumanStore,
+	AskHumanResponder,
+	AskHumanOptions,
+	InMemoryAskHumanStoreConfig,
+	// Resumable agent types
+	AgentSnapshot,
+	AgentRunOutcome,
+	ResumableRunConfig,
+	ResumeOptions,
 	// VAG types
 	Validator,
 	ValidationContext,
@@ -566,6 +599,9 @@ export type {
 	SemanticAdapterOptions,
 	ExternalValidatorOptions,
 	ExternalCheck,
+	JudgeValidatorOptions,
+	JudgeResult,
+	AgentRetryPolicy,
 	// CAG types
 	ConfidenceStrategy,
 	ConfidenceSample,

@@ -2150,7 +2150,7 @@ Connect agents to messaging platforms. Implement the `ChannelAdapter` interface 
 import {
   createWebhookChannel, createChannelGateway,
   createSessionRouter, defineAgent,
-} from 'elsium-ai/agents'
+} from '@elsium-ai/agents'
 
 // Create a webhook channel (e.g., for your REST API)
 const webhook = createWebhookChannel({
@@ -2194,7 +2194,7 @@ webhook.receive({ userId: 'user-123', text: 'Hello!' })
 Maps (channel, userId) pairs to conversation threads with concurrency control. Serial mode (default) ensures one agent turn at a time per session.
 
 ```ts
-import { createSessionRouter, defineAgent } from 'elsium-ai/agents'
+import { createSessionRouter, defineAgent } from '@elsium-ai/agents'
 
 const router = createSessionRouter({
   defaultAgent: agent,
@@ -2219,7 +2219,7 @@ router.endAllSessions()                     // cleanup
 Run agents on a cron schedule for autonomous tasks — daily reports, periodic monitoring, data syncs.
 
 ```ts
-import { createScheduler, defineAgent } from 'elsium-ai/agents'
+import { createScheduler, defineAgent } from '@elsium-ai/agents'
 
 const reporter = defineAgent({ name: 'reporter', system: 'Generate metric summaries.' })
 
@@ -3258,7 +3258,7 @@ const breakerEvents = await audit.query({ type: ['circuit_breaker_state_change']
 **Audit sinks** — export audit events to external observability and governance systems. Events are dispatched asynchronously after storage — a sink failure never blocks the audit trail.
 
 ```typescript
-import { createAuditTrail, createWebhookSink, createSplunkSink, createDatadogSink } from 'elsium-ai/observe'
+import { createAuditTrail, createWebhookSink, createSplunkSink, createDatadogSink } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({
   sinks: [
@@ -5159,9 +5159,9 @@ The Studio reads this directory and displays it in a web UI. When your app runs 
 The `createStudioExporter()` bridges the observe system to the `.elsium/` directory. Add it to your tracer and middleware:
 
 ```typescript
-import { gateway } from 'elsium-ai/gateway'
-import { observe, createStudioExporter, createCostEngine } from 'elsium-ai/observe'
-import { env } from 'elsium-ai/core'
+import { gateway } from '@elsium-ai/gateway'
+import { observe, createStudioExporter, createCostEngine } from '@elsium-ai/observe'
+import { env } from '@elsium-ai/core'
 
 const studio = createStudioExporter()
 

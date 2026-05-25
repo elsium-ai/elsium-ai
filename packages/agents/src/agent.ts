@@ -437,9 +437,13 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 				durationMs: performance.now() - llmStart,
 			})
 
-			totalInputTokens += response.usage.inputTokens
-			totalOutputTokens += response.usage.outputTokens
-			totalCost += response.cost.totalCost
+			totalInputTokens += Number.isFinite(response.usage?.inputTokens)
+				? response.usage.inputTokens
+				: 0
+			totalOutputTokens += Number.isFinite(response.usage?.outputTokens)
+				? response.usage.outputTokens
+				: 0
+			totalCost += Number.isFinite(response.cost?.totalCost) ? response.cost.totalCost : 0
 
 			await safeHook(() => config.hooks?.onMessage?.(response.message))
 

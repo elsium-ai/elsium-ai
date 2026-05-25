@@ -242,9 +242,13 @@ async function runStateMachine(
 		)
 		let response = await deps.complete(request)
 
-		totalInputTokens += response.usage.inputTokens
-		totalOutputTokens += response.usage.outputTokens
-		totalCost += response.cost.totalCost
+		totalInputTokens += Number.isFinite(response.usage?.inputTokens)
+			? response.usage.inputTokens
+			: 0
+		totalOutputTokens += Number.isFinite(response.usage?.outputTokens)
+			? response.usage.outputTokens
+			: 0
+		totalCost += Number.isFinite(response.cost?.totalCost) ? response.cost.totalCost : 0
 
 		// Token budget check
 		checkTokenBudget(totalInputTokens + totalOutputTokens, maxTokenBudget)

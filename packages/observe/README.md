@@ -885,7 +885,7 @@ interface AuditSinkRetryConfig {
 Pass sinks directly to `createAuditTrail()`:
 
 ```ts
-import { createAuditTrail, createWebhookSink, createSplunkSink } from 'elsium-ai/observe'
+import { createAuditTrail, createWebhookSink, createSplunkSink } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({
   sinks: [
@@ -921,7 +921,7 @@ const audit = createAuditTrail({
 Route different event types to different destinations:
 
 ```ts
-import { createAuditTrail, createSplunkSink, createDatadogSink } from 'elsium-ai/observe'
+import { createAuditTrail, createSplunkSink, createDatadogSink } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({
   sinks: [
@@ -1035,7 +1035,7 @@ createDatadogSink({
 Implement the `AuditSink` interface to send events anywhere:
 
 ```ts
-import type { AuditSink, AuditEvent } from 'elsium-ai/observe'
+import type { AuditSink, AuditEvent } from '@elsium-ai/observe'
 
 const kafkaSink: AuditSink = {
   name: 'kafka',
@@ -1527,7 +1527,7 @@ interface ExperimentStore {
 ```
 
 ```ts
-import { createExperiment, createFileExperimentStore } from 'elsium-ai/observe'
+import { createExperiment, createFileExperimentStore } from '@elsium-ai/observe'
 
 const store = createFileExperimentStore('./experiments')
 
@@ -1617,7 +1617,7 @@ function instrumentComplete(
 **Returns:** A wrapped completion function with the same signature.
 
 ```ts
-import { observe, instrumentComplete } from 'elsium-ai/observe'
+import { observe, instrumentComplete } from '@elsium-ai/observe'
 
 const tracer = observe()
 
@@ -1649,8 +1649,8 @@ function instrumentAgent(
 **Returns:** A new `Agent` with the same interface, where `run` and `chat` are automatically traced.
 
 ```ts
-import { observe, instrumentAgent } from 'elsium-ai/observe'
-import { defineAgent } from 'elsium-ai/agents'
+import { observe, instrumentAgent } from '@elsium-ai/observe'
+import { defineAgent } from '@elsium-ai/agents'
 
 const tracer = observe()
 
