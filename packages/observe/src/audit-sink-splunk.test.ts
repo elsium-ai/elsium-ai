@@ -16,14 +16,15 @@ function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 }
 
 describe('SplunkSink', () => {
-	const mockFetch = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+	const mockFetch = vi.fn<typeof fetch>()
 
 	beforeEach(() => {
 		vi.stubGlobal('fetch', mockFetch)
 	})
 
 	afterEach(() => {
-		vi.restoreAllMocks()
+		vi.unstubAllGlobals()
+		vi.clearAllMocks()
 	})
 
 	it('sends events as newline-delimited Splunk HEC JSON', async () => {

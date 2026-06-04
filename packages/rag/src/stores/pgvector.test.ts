@@ -12,11 +12,13 @@ const { mockQuery, mockConnect, mockEnd, MockPgClientConstructor } = vi.hoisted(
 	const mockQuery = vi.fn()
 	const mockConnect = vi.fn()
 	const mockEnd = vi.fn()
-	const MockPgClientConstructor = vi.fn().mockImplementation(() => ({
-		connect: mockConnect,
-		query: mockQuery,
-		end: mockEnd,
-	}))
+	const MockPgClientConstructor = vi.fn().mockImplementation(
+		class {
+			connect = mockConnect
+			query = mockQuery
+			end = mockEnd
+		},
+	)
 	return { mockQuery, mockConnect, mockEnd, MockPgClientConstructor }
 })
 
@@ -58,18 +60,18 @@ function setupStore(tableName = 'vector_chunks', dimensions = 3) {
 
 // ─── Setup ───────────────────────────────────────────────────────
 
-const mockPgClient = {
-	connect: mockConnect,
-	query: mockQuery,
-	end: mockEnd,
-}
-
 beforeEach(() => {
 	vi.clearAllMocks()
 	mockConnect.mockResolvedValue(undefined)
 	mockEnd.mockResolvedValue(undefined)
 	mockQuery.mockResolvedValue({ rows: [] })
-	MockPgClientConstructor.mockImplementation(() => mockPgClient)
+	MockPgClientConstructor.mockImplementation(
+		class {
+			connect = mockConnect
+			query = mockQuery
+			end = mockEnd
+		},
+	)
 })
 
 // ─── createPgVectorStore — validation ────────────────────────────
