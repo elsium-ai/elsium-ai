@@ -1,5 +1,6 @@
 import { Worker } from 'node:worker_threads'
 import { ElsiumError, generateId } from '@elsium-ai/core'
+import { buildSandboxEnv } from './sandbox-env'
 import type { SandboxConfig, SandboxRunner } from './types'
 
 const WORKER_SCRIPT = `
@@ -112,11 +113,16 @@ function attachWorkerListeners(worker: Worker, state: RunnerState): void {
 	})
 }
 
-function ensureWorker(state: RunnerState, handlerPath: string): Worker {
+function ensureWorker(
+	state: RunnerState,
+	handlerPath: string,
+	env: Record<string, string>,
+): Worker {
 	if (state.worker) return state.worker
 	const w = new Worker(WORKER_SCRIPT, {
 		eval: true,
 		workerData: { handlerPath },
+		env,
 	})
 	attachWorkerListeners(w, state)
 	w.unref()
@@ -199,6 +205,7 @@ export function createWorkerSandboxRunner(
 ): SandboxRunner {
 	const handlerPath = typeof config.handler === 'string' ? config.handler : config.handler.href
 	const timeoutMs = config.timeoutMs ?? defaultTimeoutMs
+	const workerEnv = buildSandboxEnv(config.env)
 
 	const state: RunnerState = {
 		worker: null,
@@ -214,7 +221,7 @@ export function createWorkerSandboxRunner(
 		if (signal?.aborted) {
 			throw new Error('Sandbox invocation aborted')
 		}
-		const worker = ensureWorker(state, handlerPath)
+		const worker = ensureWorker(state, handlerPath, workerEnv)
 		const invocationId = generateId('si')
 		return postInvocation(state, worker, invocationId, input, timeoutMs, handlerPath, signal)
 	}

@@ -13,6 +13,7 @@ export interface SandboxConfig {
 	handler: URL | string
 	timeoutMs?: number
 	capabilities?: Capability[]
+	env?: Record<string, string>
 }
 
 export interface SandboxRunner {

@@ -241,6 +241,38 @@ describe.each(modes)('createSandboxRunner — %s mode', (mode) => {
 		await expect(runner.dispose()).resolves.toBeUndefined()
 	})
 
+	it('does NOT forward host process.env secrets into the sandbox', async () => {
+		process.env.ELSIUM_TEST_SECRET = 'host-secret'
+		try {
+			const runner = track(createSandboxRunner({ mode, handler: handler('env-probe.mjs') }, 5_000))
+			const result = (await runner.invoke({})) as { secret: string | null; hasPath: boolean }
+			expect(result.secret).toBeNull()
+			expect(result.hasPath).toBe(true)
+		} finally {
+			process.env.ELSIUM_TEST_SECRET = undefined
+		}
+	})
+
+	it('forwards only explicitly allow-listed env via sandbox.env', async () => {
+		process.env.ELSIUM_TEST_SECRET = 'host-secret'
+		try {
+			const runner = track(
+				createSandboxRunner(
+					{ mode, handler: handler('env-probe.mjs'), env: { ELSIUM_TEST_PASSTHROUGH: 'allowed' } },
+					5_000,
+				),
+			)
+			const result = (await runner.invoke({})) as {
+				secret: string | null
+				passthrough: string | null
+			}
+			expect(result.secret).toBeNull()
+			expect(result.passthrough).toBe('allowed')
+		} finally {
+			process.env.ELSIUM_TEST_SECRET = undefined
+		}
+	})
+
 	if (mode === 'worker') {
 		it('runs the handler in a different thread', async () => {
 			const runner = track(createSandboxRunner({ mode, handler: handler('identity.mjs') }, 5_000))
