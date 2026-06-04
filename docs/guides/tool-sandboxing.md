@@ -99,6 +99,7 @@ export default async function fetchUrl(input) {
 | `handler` | `URL \| string` | required | URL or string path to the handler module. The default export is invoked. |
 | `timeoutMs` | `number` | inherits `Tool.timeoutMs` | Per-invocation timeout. After this elapses the sandbox is forcibly terminated. |
 | `capabilities` | `Capability[]` | `[]` | Declared capabilities. **Currently typed-only — see "What's enforced" below.** |
+| `env` | `Record<string, string>` | `{}` | Extra environment variables to expose inside the sandbox. By default the sandbox runs with a minimal allow-listed environment (no host secrets); use this to pass through only the variables a handler genuinely needs. |
 
 ### Lifecycle
 
@@ -141,6 +142,7 @@ This is the most important part of the threat model. Be precise about what you c
 | Memory isolation (separate V8 heap) | ✅ enforced | Worker thread or child process |
 | Crash isolation (`process.exit` only kills the sandbox) | ✅ enforced under **Node** for `'worker'`; ✅ enforced under **both runtimes** for `'process'`; ⚠️ under Bun `'worker'` mode `process.exit()` does not terminate (see "Runtime caveat") | Worker thread / child process |
 | Closure-state isolation (host module variables invisible) | ✅ enforced | Handler is loaded as a separate module via `await import()` |
+| Environment isolation (host `process.env` secrets hidden) | ✅ enforced | Sandbox runs with a minimal allow-listed env; opt specific vars in via `sandbox.env` |
 | Timeout enforcement (sandbox terminated after `timeoutMs`) | ✅ enforced | `Worker.terminate()` / `child.kill()` |
 | Network capability allowlist (`capabilities: ['network:host.com']`) | ⚠️ declared, **not enforced in v1** | Will require interceptor over `fetch`/`http`/`https` modules |
 | Filesystem capability declarations (`fs:read`, `fs:write`) | ⚠️ declared, **not enforced in v1** | Real FS isolation needs Node's `--permission` flag at the parent process level |
@@ -156,7 +158,7 @@ If you need real network egress control today, run your sandboxed tools behind a
 
 | Attack | Without sandbox | With sandbox (v1) |
 |--------|-----------------|-------------------|
-| LLM-generated handler exfiltrates `process.env` | Full env exposed | Sandbox has its own env (you control what `workerData` you pass) — **mitigated** |
+| LLM-generated handler exfiltrates `process.env` | Full env exposed | Sandbox runs with a minimal allow-listed env — host secrets are never forwarded; pass only what a handler needs via `sandbox.env` — **mitigated** |
 | Third-party tool from npm calls `process.exit()` | Whole app crashes | Only the sandbox dies; host process continues — **mitigated under `'worker'` on Node and `'process'` on both runtimes**; under Bun `'worker'` mode the call is reported as `success: true` (see "Runtime caveat" above) |
 | Tool with prompt-injected shell command (`child_process.exec`) | Shell runs with host's privileges | Same — *not yet enforced via capabilities* — **partially mitigated** |
 | Tool with `while(true){}` infinite loop | Host event loop blocked | Sandbox is terminated on `timeoutMs` — **mitigated** |

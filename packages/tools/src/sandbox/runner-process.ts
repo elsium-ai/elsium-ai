@@ -1,6 +1,7 @@
 import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { ElsiumError, generateId } from '@elsium-ai/core'
+import { buildSandboxEnv } from './sandbox-env'
 import type { SandboxConfig, SandboxRunner } from './types'
 
 const FORK_ENTRY = fileURLToPath(new URL('./fork-entry.mjs', import.meta.url))
@@ -62,10 +63,10 @@ function attachChildListeners(child: ReturnType<typeof fork>, state: RunnerState
 	})
 }
 
-function ensureChild(state: RunnerState, handlerPath: string): ReturnType<typeof fork> {
+function ensureChild(state: RunnerState, env: Record<string, string>): ReturnType<typeof fork> {
 	if (state.child) return state.child
 	const child = fork(FORK_ENTRY, [], {
-		env: { ...process.env, ELS_HANDLER_PATH: handlerPath },
+		env,
 		stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
 	})
 	attachChildListeners(child, state)
@@ -147,6 +148,7 @@ export function createProcessSandboxRunner(
 ): SandboxRunner {
 	const handlerPath = typeof config.handler === 'string' ? config.handler : config.handler.href
 	const timeoutMs = config.timeoutMs ?? defaultTimeoutMs
+	const childEnv = { ...buildSandboxEnv(config.env), ELS_HANDLER_PATH: handlerPath }
 
 	const state: RunnerState = {
 		child: null,
@@ -162,7 +164,7 @@ export function createProcessSandboxRunner(
 		if (signal?.aborted) {
 			throw new Error('Sandbox invocation aborted')
 		}
-		const child = ensureChild(state, handlerPath)
+		const child = ensureChild(state, childEnv)
 		const invocationId = generateId('si')
 		return postInvocation(state, child, invocationId, input, timeoutMs, handlerPath, signal)
 	}
