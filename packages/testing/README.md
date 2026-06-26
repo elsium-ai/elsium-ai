@@ -18,6 +18,9 @@ npm install @elsium-ai/testing --save-dev
 | **Mock Provider** | `mockProvider`, `MockProvider`, `MockProviderOptions`, `MockResponseConfig` | Zero-latency LLM provider for unit tests |
 | **Fixtures** | `createFixture`, `loadFixture`, `createRecorder`, `Fixture`, `FixtureEntry`, `FixtureRecorder` | Record, save, and replay request/response pairs |
 | **Eval** | `runEvalSuite`, `formatEvalReport`, `EvalCase`, `EvalCriterion`, `EvalResult`, `CriterionResult`, `EvalSuiteConfig`, `EvalSuiteResult`, `LLMJudge` | Evaluation framework with built-in and custom criteria |
+| **Classification Metrics** | `computeClassificationReport`, `computeConfusionMatrix`, `runClassificationEval`, `formatClassificationReport`, `formatConfusionMatrix` | Precision / recall / F1 (per-label + macro / micro / weighted), accuracy, and confusion matrix against labeled ground truth |
+| **RAG Eval** | `faithfulness`, `answerRelevancy`, `contextPrecision`, `contextRecall`, `runRagEval`, `formatRagEvalReport` | RAGAS-style RAG scoring: groundedness via LLM judge plus reference-based retrieval precision / recall |
+| **Rubric Judge** | `createRubricJudge`, `RubricCriterion`, `RubricJudgeResult`, `RubricJudge`, `TextGenerator` | Structured LLM-as-a-judge with weighted multi-criterion rubrics and per-criterion breakdown; produces an `LLMJudge` |
 | **Snapshot** | `createSnapshotStore`, `hashOutput`, `testSnapshot`, `PromptSnapshot`, `SnapshotStore`, `SnapshotTestResult` | Hash-based snapshot testing for LLM outputs |
 | **Prompts** | `createPromptRegistry`, `definePrompt`, `PromptDefinition`, `PromptDiff`, `DiffLine`, `PromptRegistry` | Versioned prompt registry with diff and rendering |
 | **Regression** | `createRegressionSuite`, `RegressionBaseline`, `RegressionResult`, `RegressionDetail`, `RegressionSuite` | Baseline-driven regression detection |
@@ -436,6 +439,119 @@ console.log(formatEvalReport(result))
 //   --------------------------------------------------
 //   Score: 100.0% | 2/2 passed | 4ms
 ```
+
+---
+
+## Classification Metrics
+
+When the output is categorical and you have historical ground truth (e.g. claim decisions `APPROVE` / `DENY` / `REVIEW`), score the system exactly like a classifier: precision, recall, F1, and a confusion matrix.
+
+### `runClassificationEval()`
+
+Runs a classifier over labeled cases and returns the full report plus per-case predictions.
+
+```ts
+import { runClassificationEval, formatClassificationReport } from '@elsium-ai/testing'
+
+const result = await runClassificationEval({
+  name: 'claims triage',
+  labels: ['APPROVE', 'DENY', 'REVIEW'],
+  cases: [
+    { input: 'minor fender bender, under deductible', expected: 'DENY' },
+    { input: 'total loss, valid policy', expected: 'APPROVE' },
+    { input: 'ambiguous liability', expected: 'REVIEW' },
+  ],
+  runner: async (input) => classifyClaim(input),
+})
+
+console.log(formatClassificationReport(result.report))
+```
+
+### `computeClassificationReport()`
+
+If you already have predictions, skip the runner and compute metrics directly.
+
+```ts
+function computeClassificationReport(
+  cases: ClassificationCase[],
+  options?: { labels?: string[] },
+): ClassificationReport
+```
+
+`ClassificationCase` is `{ predicted: string; actual: string; name?: string }`. The report exposes `accuracy`, `perLabel` (precision / recall / f1 / support), `macro` / `micro` / `weighted` averages, and a `confusion` matrix. Labels are auto-derived (sorted) when not provided. All divisions are zero-safe.
+
+### `computeConfusionMatrix()` / `formatConfusionMatrix()`
+
+```ts
+function computeConfusionMatrix(cases, options?): ConfusionMatrix // { labels, matrix } — rows = actual, cols = predicted
+function formatConfusionMatrix(confusion: ConfusionMatrix): string
+```
+
+---
+
+## RAG Eval
+
+RAGAS-style scoring for retrieval-augmented answers. Judge-based metrics measure groundedness; reference-based metrics measure retrieval quality and are fully deterministic (no LLM needed).
+
+| Metric | Kind | Measures |
+|---|---|---|
+| `faithfulness` | LLM judge | Is every claim in the answer supported by the retrieved context? |
+| `answerRelevancy` | LLM judge | Does the answer actually address the question? |
+| `contextPrecision` | reference-based | Of the retrieved contexts, how many are relevant (rank-weighted)? |
+| `contextRecall` | reference-based | Of the relevant contexts, how many were retrieved? |
+
+### `runRagEval()`
+
+```ts
+import { runRagEval, formatRagEvalReport } from '@elsium-ai/testing'
+
+const result = await runRagEval({
+  name: 'policy QA',
+  judge, // an LLMJudge — omit to run reference-based metrics only
+  cases: [
+    {
+      question: 'Is flood damage covered?',
+      answer: 'Yes, clause 4 covers flood damage.',
+      contexts: ['Clause 4: flood damage is covered.', 'Clause 9: unrelated.'],
+      relevant: ['Clause 4: flood damage is covered.'], // omit to run judge-based metrics only
+    },
+  ],
+})
+
+console.log(formatRagEvalReport(result))
+console.log(result.aggregate) // { faithfulness, answerRelevancy, contextPrecision, contextRecall, overall }
+```
+
+Each metric is available standalone (`faithfulness(input)`, `contextPrecision(input)`, …) returning `{ score, reasoning }`. Judge scores are clamped to `[0, 1]`.
+
+---
+
+## Rubric Judge
+
+Structured LLM-as-a-judge. Instead of a hand-rolled callback, define a weighted rubric; the judge prompts the model for a per-criterion JSON score, parses it robustly, and returns a normalized weighted score plus a breakdown.
+
+### `createRubricJudge()`
+
+```ts
+import { createRubricJudge } from '@elsium-ai/testing'
+
+const judge = createRubricJudge({
+  generate: (prompt) => gateway.complete({ messages: [{ role: 'user', content: prompt }] }).then((r) => r.text),
+  criteria: [
+    { name: 'correctness', description: 'Is the answer factually correct?', weight: 2 },
+    { name: 'tone', description: 'Is the tone appropriate for a customer?', weight: 1 },
+  ],
+  scale: 10, // optional, default 10 — scores are normalized to [0,1]
+})
+
+const detailed = await judge.evaluate('the answer to grade')
+// { score: 0.83, reasoning: 'correctness: 100%, tone: 50%', breakdown: [...] }
+
+// It is also a drop-in LLMJudge, usable directly in an `llm_judge` eval criterion:
+const { score, reasoning } = await judge('the answer to grade')
+```
+
+`generate` is any `(prompt: string) => Promise<string>` — wire it to the gateway, a mock provider, or anything else (the judge stays backend-agnostic). On unparseable responses the judge returns `score: 0` with a diagnostic `reasoning` rather than throwing.
 
 ---
 

@@ -1094,6 +1094,21 @@ export {
 	// Agent Eval
 	runAgentEval,
 	formatAgentEvalReport,
+	// Classification Metrics
+	computeConfusionMatrix,
+	computeClassificationReport,
+	runClassificationEval,
+	formatClassificationReport,
+	formatConfusionMatrix,
+	// RAG Eval
+	faithfulness,
+	answerRelevancy,
+	contextPrecision,
+	contextRecall,
+	runRagEval,
+	formatRagEvalReport,
+	// Structured LLM-as-a-judge
+	createRubricJudge,
 } from '@elsium-ai/testing'
 
 export type {
@@ -1172,4 +1187,32 @@ export type {
 	AgentEvalConfig,
 	AgentEvalCaseResult,
 	AgentEvalResult,
+	// Classification Metrics types
+	ClassificationCase,
+	LabelMetrics,
+	AverageMetrics,
+	ConfusionMatrix,
+	ClassificationReport,
+	ClassificationOptions,
+	ClassificationEvalCase,
+	ClassificationEvalConfig,
+	ClassificationPrediction,
+	ClassificationEvalResult,
+	// RAG Eval types
+	RagMetricResult,
+	FaithfulnessInput,
+	AnswerRelevancyInput,
+	ContextRelevanceInput,
+	RagEvalCase,
+	RagEvalConfig,
+	RagCaseResult,
+	RagEvalAggregate,
+	RagEvalResult,
+	// Structured LLM-as-a-judge types
+	TextGenerator,
+	RubricCriterion,
+	RubricBreakdownItem,
+	RubricJudgeResult,
+	RubricJudgeConfig,
+	RubricJudge,
 } from '@elsium-ai/testing'
