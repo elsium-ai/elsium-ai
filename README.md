@@ -246,7 +246,7 @@ The three pillars are what make ElsiumAI unique. These are the fundamentals it a
 - **Client SDK** — TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers
 - **Persistent storage** — SQLite memory stores for agents, PgVector for RAG
 - **Cost intelligence** — Budgets, projections, loop detection
-- **Testing** — Mock providers, evals, classification metrics (precision/recall/F1 + confusion matrix), RAG eval (faithfulness, answer relevancy, context precision/recall), structured rubric LLM-as-judge, prompt versioning, regression suites, dataset loading (JSON/CSV/JSONL), baseline comparison, multi-turn conversation testing, tool call assertions, automated red-teaming (44 adversarial probes including multi-turn), agent metrics (efficiency, recovery, cost), unified agent eval runner, CI reporters (JUnit XML, GitHub Actions, Markdown)
+- **Testing** — Mock providers, evals, classification metrics (precision/recall/F1 + confusion matrix), RAG eval (faithfulness, answer relevancy, context precision/recall), structured rubric LLM-as-judge, **signed hash-chained eval attestation** (verifiable proof, not just a score), **eval-as-policy gates** with compliance-control mapping (EU AI Act / NIST / OWASP) and recorded sign-off overrides, prompt versioning, regression suites, dataset loading (JSON/CSV/JSONL), baseline comparison, multi-turn conversation testing, tool call assertions, automated red-teaming (44 adversarial probes including multi-turn), agent metrics (efficiency, recovery, cost), unified agent eval runner, CI reporters (JUnit XML, GitHub Actions, Markdown)
 - **Structured extraction** — Zod schema → typed output, auto-retry on validation failure
 - **Dev Studio** — Local web dashboard for live traces, X-Ray, costs, streaming events
 - **AI Proxy** — OpenAI-compatible proxy with cost tracking, caching, audit — any language, zero code changes
@@ -313,7 +313,7 @@ Three Pillars — where each feature lives:
 | [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server, resources, prompts |
 | [`@elsium-ai/app`](./packages/app) | HTTP server, CORS, auth, rate limiting, RBAC, SSE streaming, multi-tenant |
 | [`@elsium-ai/client`](./packages/client) | TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers |
-| [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, classification metrics, RAG eval (faithfulness + retrieval), rubric LLM-judge, multi-turn agent testing, tool assertions, red-teaming (single + multi-turn), agent metrics, CI reporters |
+| [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, classification metrics, RAG eval (faithfulness + retrieval), rubric LLM-judge, signed eval attestation, eval-as-policy + compliance gates, multi-turn agent testing, tool assertions, red-teaming (single + multi-turn), agent metrics, CI reporters |
 | [`@elsium-ai/cli`](./packages/cli) | Scaffolding, dev server, X-Ray inspection |
 
 ---

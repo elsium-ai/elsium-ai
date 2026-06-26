@@ -1109,6 +1109,15 @@ export {
 	formatRagEvalReport,
 	// Structured LLM-as-a-judge
 	createRubricJudge,
+	// Eval Attestation
+	attestEvalSuite,
+	verifyEvalAttestation,
+	formatAttestation,
+	// Eval-as-policy + compliance
+	runEvalGate,
+	toAttestedGovernance,
+	buildEvalComplianceReport,
+	formatEvalComplianceReport,
 } from '@elsium-ai/testing'
 
 export type {
@@ -1215,4 +1224,24 @@ export type {
 	RubricJudgeResult,
 	RubricJudgeConfig,
 	RubricJudge,
+	// Eval Attestation types
+	AttestationMetadata,
+	AttestedOverride,
+	AttestedGovernance,
+	AttestationSummary,
+	AttestationHeader,
+	AttestationRecord,
+	AttestationEntry,
+	EvalAttestation,
+	AttestEvalOptions,
+	AttestationVerification,
+	// Eval-as-policy + compliance types
+	GovernanceAssertion,
+	EvalGateConfig,
+	GovernanceViolation,
+	EvalGateCaseResult,
+	EvalGateResult,
+	EvalComplianceControlResult,
+	EvalComplianceReport,
+	EvalComplianceReportOptions,
 } from '@elsium-ai/testing'

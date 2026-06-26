@@ -21,6 +21,8 @@ npm install @elsium-ai/testing --save-dev
 | **Classification Metrics** | `computeClassificationReport`, `computeConfusionMatrix`, `runClassificationEval`, `formatClassificationReport`, `formatConfusionMatrix` | Precision / recall / F1 (per-label + macro / micro / weighted), accuracy, and confusion matrix against labeled ground truth |
 | **RAG Eval** | `faithfulness`, `answerRelevancy`, `contextPrecision`, `contextRecall`, `runRagEval`, `formatRagEvalReport` | RAGAS-style RAG scoring: groundedness via LLM judge plus reference-based retrieval precision / recall |
 | **Rubric Judge** | `createRubricJudge`, `RubricCriterion`, `RubricJudgeResult`, `RubricJudge`, `TextGenerator` | Structured LLM-as-a-judge with weighted multi-criterion rubrics and per-criterion breakdown; produces an `LLMJudge` |
+| **Eval Attestation** | `attestEvalSuite`, `verifyEvalAttestation`, `formatAttestation`, `EvalAttestation`, `AttestationVerification` | Signed, hash-chained (HMAC-SHA256) eval records storing only input/output **hashes** — tamper-evident, independently verifiable evidence that a score came from specific inputs. Evals as proof, not opinion. |
+| **Eval-as-Policy** | `runEvalGate`, `toAttestedGovernance`, `buildEvalComplianceReport`, `formatEvalComplianceReport`, `GovernanceAssertion`, `EvalGateResult`, `EvalComplianceReport` | Turn eval results into a governance gate wired to the `@elsium-ai/core` policy engine, with a recorded sign-off override and compliance-control mapping (EU AI Act / NIST / OWASP). |
 | **Snapshot** | `createSnapshotStore`, `hashOutput`, `testSnapshot`, `PromptSnapshot`, `SnapshotStore`, `SnapshotTestResult` | Hash-based snapshot testing for LLM outputs |
 | **Prompts** | `createPromptRegistry`, `definePrompt`, `PromptDefinition`, `PromptDiff`, `DiffLine`, `PromptRegistry` | Versioned prompt registry with diff and rendering |
 | **Regression** | `createRegressionSuite`, `RegressionBaseline`, `RegressionResult`, `RegressionDetail`, `RegressionSuite` | Baseline-driven regression detection |
@@ -552,6 +554,86 @@ const { score, reasoning } = await judge('the answer to grade')
 ```
 
 `generate` is any `(prompt: string) => Promise<string>` — wire it to the gateway, a mock provider, or anything else (the judge stays backend-agnostic). On unparseable responses the judge returns `score: 0` with a diagnostic `reasoning` rather than throwing.
+
+---
+
+## Eval Attestation
+
+Other frameworks give you a score. Attestation gives you **proof**: a signed, hash-chained record of an eval run that anyone can verify independently, without trusting your infrastructure. Each record stores only the **hashes** of inputs and outputs — so the attestation is shareable as audit evidence without leaking the underlying data, yet still provable against the originals.
+
+### `attestEvalSuite()` / `verifyEvalAttestation()`
+
+```ts
+import { runEvalSuite, attestEvalSuite, verifyEvalAttestation } from '@elsium-ai/testing'
+
+const result = await runEvalSuite({ /* ... */ })
+
+const attestation = await attestEvalSuite(result, {
+  secret: process.env.ATTESTATION_SECRET, // ≥16 chars; stored outside the file
+  metadata: { model: 'claude-opus-4-8', datasetVersion: 'claims-v3', seed: 7 },
+})
+
+// Ship `attestation` (JSON) to an auditor. They verify it with the secret:
+const verdict = await verifyEvalAttestation(attestation, process.env.ATTESTATION_SECRET)
+// { valid: true, entryCount: 42 }
+```
+
+The chain is HMAC-SHA256: the header (suite, metadata, summary, embedded governance) seeds a genesis signature, and each per-case record signs over the previous signature. Any tampered record, reordered entry, or swapped metadata field detaches the chain — `verifyEvalAttestation` returns `{ valid: false, invalidAtIndex, reason }` pinpointing the break. A file without its secret is just data; with the secret it is evidence.
+
+### Binding a governance verdict
+
+Pass an `EvalGateResult` summary (see below) so the policy verdict and any human override are sealed into the same tamper-proof record:
+
+```ts
+const attestation = await attestEvalSuite(result, {
+  secret,
+  governance: toAttestedGovernance(gate),
+})
+```
+
+---
+
+## Eval-as-Policy
+
+An eval score answers "is it good?". A governance gate answers "is it **allowed to ship**?". `runEvalGate` turns eval results into pass/fail policy verdicts — wired to the `@elsium-ai/core` policy engine and/or custom assertions — and records who signed off when you knowingly override a violation.
+
+### `runEvalGate()`
+
+```ts
+import { runEvalGate, buildEvalComplianceReport, formatEvalComplianceReport } from '@elsium-ai/testing'
+import { createPolicySet } from '@elsium-ai/core'
+
+const gate = runEvalGate(suiteResult, {
+  name: 'pre-release gate',
+  assertions: [
+    {
+      name: 'no-ssn',
+      description: 'Output must not contain an SSN',
+      controls: ['eu-ai-act:art-10', 'nist-ai-rmf:measure-2.7'],
+      assert: (r) => !/\d{3}-\d{2}-\d{4}/.test(r.output),
+    },
+  ],
+  policySet: createPolicySet([ /* core policy rules — denials become violations */ ]),
+})
+
+if (!gate.passed) {
+  // Block the release in CI — or record a signed-off override:
+  const override = { approver: 'eric@elsiumai.com', reason: 'fixture data, not real PII' }
+  const approved = runEvalGate(suiteResult, config, override) // passed: true, override recorded
+}
+```
+
+A clean run passes with no override. A run with violations fails unless an `override` is supplied, in which case it passes **and** the approver + reason are recorded (and can be sealed into the attestation via `toAttestedGovernance`).
+
+### Compliance mapping
+
+Assertions carry `controls` (regulatory control IDs). `buildEvalComplianceReport` aggregates which controls passed or failed:
+
+```ts
+const report = buildEvalComplianceReport(gate, config, { framework: 'EU AI Act' })
+console.log(formatEvalComplianceReport(report))
+// report.compliant === false when any mapped control has a violation
+```
 
 ---
 

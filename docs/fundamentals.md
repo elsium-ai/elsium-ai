@@ -136,6 +136,8 @@ Three Pillars — where each feature lives:
   - [Classification Metrics](#classification-metrics)
   - [RAG Eval (Faithfulness & Retrieval)](#rag-eval-faithfulness--retrieval)
   - [Rubric LLM-as-a-Judge](#rubric-llm-as-a-judge)
+  - [Eval Attestation (Proof, not Opinion)](#eval-attestation-proof-not-opinion)
+  - [Eval-as-Policy & Compliance Gates](#eval-as-policy--compliance-gates)
   - [Regression Detection](#regression-detection)
   - [Snapshot Testing](#snapshot-testing)
   - [Replay & Fixtures](#replay--fixtures)
@@ -4465,6 +4467,55 @@ const criterion = { type: 'llm_judge', prompt: 'Grade this answer', judge, thres
 ```
 
 `generate` is any `(prompt) => Promise<string>`, so the judge stays backend-agnostic — wire it to the gateway, a mock provider, or a different model. Unparseable responses yield `score: 0` with a diagnostic reason rather than throwing.
+
+### Eval Attestation (Proof, not Opinion)
+
+Most eval tools give you a score you have to trust. Attestation gives you a **signed, hash-chained record** of the run that anyone can verify independently — the reproducibility pillar applied to evaluation. Each record stores only the **hashes** of inputs and outputs, so the attestation is shareable as audit evidence without leaking the underlying data:
+
+```ts
+import { runEvalSuite, attestEvalSuite, verifyEvalAttestation } from '@elsium-ai/testing'
+
+const result = await runEvalSuite({ /* ... */ })
+
+const attestation = await attestEvalSuite(result, {
+  secret: process.env.ATTESTATION_SECRET, // ≥16 chars, stored outside the file
+  metadata: { model: 'claude-opus-4-8', datasetVersion: 'claims-v3', seed: 7 },
+})
+
+const verdict = await verifyEvalAttestation(attestation, process.env.ATTESTATION_SECRET)
+// { valid: true, entryCount: 42 }
+```
+
+The chain is HMAC-SHA256: the header (suite, metadata, summary, embedded governance) seeds a genesis signature, and each case record signs over the previous one. A tampered record, reordered entry, or swapped metadata field detaches the chain — verification returns `{ valid: false, invalidAtIndex, reason }`. A file without its secret is just data; with the secret it is evidence. This reuses the same hash-chain pattern as the [audit trail](#audit-trail) and [signed replay](#replay--fixtures).
+
+### Eval-as-Policy & Compliance Gates
+
+An eval score answers "is it good?"; a governance gate answers "is it **allowed to ship?**". `runEvalGate` turns eval results into policy verdicts — wired to the `@elsium-ai/core` policy engine and/or custom assertions — and records a human sign-off when you knowingly override a violation:
+
+```ts
+import { runEvalGate, buildEvalComplianceReport, toAttestedGovernance } from '@elsium-ai/testing'
+
+const gate = runEvalGate(result, {
+  name: 'pre-release gate',
+  assertions: [
+    {
+      name: 'no-ssn',
+      controls: ['eu-ai-act:art-10', 'nist-ai-rmf:measure-2.7'],
+      assert: (r) => !/\d{3}-\d{2}-\d{4}/.test(r.output),
+    },
+  ],
+})
+
+if (!gate.passed) process.exitCode = 1 // block the release in CI
+
+// Map violations to regulatory controls:
+const report = buildEvalComplianceReport(gate, config, { framework: 'EU AI Act' })
+
+// Seal the verdict + any override into the tamper-proof attestation:
+const attestation = await attestEvalSuite(result, { secret, governance: toAttestedGovernance(gate) })
+```
+
+Assertions carry regulatory `controls` (EU AI Act / NIST / OWASP), so a passing gate doubles as a compliance report mapping each control to the assertions that exercised it. An override (`{ approver, reason }`) flips a failed gate to passed while recording who accepted the risk — and that record is sealed into the attestation chain.
 
 ### Regression Detection
 

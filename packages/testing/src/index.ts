@@ -201,6 +201,39 @@ export type {
 	RubricJudge,
 } from './llm-judge'
 
+// Eval Attestation (signed, hash-chained, verifiable eval records)
+export { attestEvalSuite, verifyEvalAttestation, formatAttestation } from './attestation'
+export type {
+	AttestationMetadata,
+	AttestedOverride,
+	AttestedGovernance,
+	AttestationSummary,
+	AttestationHeader,
+	AttestationRecord,
+	AttestationEntry,
+	EvalAttestation,
+	AttestEvalOptions,
+	AttestationVerification,
+} from './attestation'
+
+// Eval-as-policy gate + compliance mapping
+export {
+	runEvalGate,
+	toAttestedGovernance,
+	buildEvalComplianceReport,
+	formatEvalComplianceReport,
+} from './eval-policy'
+export type {
+	GovernanceAssertion,
+	EvalGateConfig,
+	GovernanceViolation,
+	EvalGateCaseResult,
+	EvalGateResult,
+	EvalComplianceControlResult,
+	EvalComplianceReport,
+	EvalComplianceReportOptions,
+} from './eval-policy'
+
 // replayFrom — time-travel replay with overrides
 export { createTraceRecorder, replayFrom } from './replay-from'
 export type {
