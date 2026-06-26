@@ -1,5 +1,11 @@
 # @elsium-ai/observe
 
+## 0.17.0
+
+### Patch Changes
+
+- @elsium-ai/core@0.17.0
+
 ## 0.16.1
 
 ### Patch Changes

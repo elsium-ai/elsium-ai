@@ -1,7 +1,7 @@
 {
   "name": "@elsium-ai/integration-test",
   "private": true,
-  "version": "0.16.1",
+  "version": "0.17.0",
   "type": "module",
   "scripts": {
     "test": "npx vitest run",

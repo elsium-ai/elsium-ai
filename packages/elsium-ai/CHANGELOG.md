@@ -1,5 +1,25 @@
 # elsium-ai
 
+## 0.17.0
+
+### Patch Changes
+
+- Updated dependencies [ef5a689]
+- Updated dependencies [ef5a689]
+- Updated dependencies [ef5a689]
+- Updated dependencies [662d64c]
+  - @elsium-ai/app@0.17.0
+  - @elsium-ai/testing@0.17.0
+  - @elsium-ai/tools@0.17.0
+  - @elsium-ai/agents@0.17.0
+  - @elsium-ai/mcp@0.17.0
+  - @elsium-ai/client@0.17.0
+  - @elsium-ai/core@0.17.0
+  - @elsium-ai/gateway@0.17.0
+  - @elsium-ai/observe@0.17.0
+  - @elsium-ai/rag@0.17.0
+  - @elsium-ai/workflows@0.17.0
+
 ## 0.16.1
 
 ### Patch Changes
