@@ -1,5 +1,19 @@
 # @elsium-ai/app
 
+## 0.17.0
+
+### Patch Changes
+
+- ef5a689: Bump `hono` to `^4.12.21` to resolve published security advisories affecting `<4.12.21`, including a high-severity CORS issue where the middleware reflects any `Origin` with credentials when `origin` defaults to the wildcard (GHSA-88fw-hqm2-52qc), plus several moderate advisories (IPv6 deny-rule bypass, `serve-static` path traversal on Windows, JWT scheme acceptance, cookie sanitization, and others). Consumers installing `@elsium-ai/app` now resolve the patched `hono` floor.
+- Updated dependencies [662d64c]
+  - @elsium-ai/tools@0.17.0
+  - @elsium-ai/agents@0.17.0
+  - @elsium-ai/core@0.17.0
+  - @elsium-ai/gateway@0.17.0
+  - @elsium-ai/observe@0.17.0
+  - @elsium-ai/rag@0.17.0
+  - @elsium-ai/workflows@0.17.0
+
 ## 0.16.1
 
 ### Patch Changes
