@@ -18,6 +18,11 @@ npm install @elsium-ai/testing --save-dev
 | **Mock Provider** | `mockProvider`, `MockProvider`, `MockProviderOptions`, `MockResponseConfig` | Zero-latency LLM provider for unit tests |
 | **Fixtures** | `createFixture`, `loadFixture`, `createRecorder`, `Fixture`, `FixtureEntry`, `FixtureRecorder` | Record, save, and replay request/response pairs |
 | **Eval** | `runEvalSuite`, `formatEvalReport`, `EvalCase`, `EvalCriterion`, `EvalResult`, `CriterionResult`, `EvalSuiteConfig`, `EvalSuiteResult`, `LLMJudge` | Evaluation framework with built-in and custom criteria |
+| **Classification Metrics** | `computeClassificationReport`, `computeConfusionMatrix`, `runClassificationEval`, `formatClassificationReport`, `formatConfusionMatrix` | Precision / recall / F1 (per-label + macro / micro / weighted), accuracy, and confusion matrix against labeled ground truth |
+| **RAG Eval** | `faithfulness`, `answerRelevancy`, `contextPrecision`, `contextRecall`, `runRagEval`, `formatRagEvalReport` | RAGAS-style RAG scoring: groundedness via LLM judge plus reference-based retrieval precision / recall |
+| **Rubric Judge** | `createRubricJudge`, `RubricCriterion`, `RubricJudgeResult`, `RubricJudge`, `TextGenerator` | Structured LLM-as-a-judge with weighted multi-criterion rubrics and per-criterion breakdown; produces an `LLMJudge` |
+| **Eval Attestation** | `attestEvalSuite`, `verifyEvalAttestation`, `formatAttestation`, `EvalAttestation`, `AttestationVerification` | Signed, hash-chained (HMAC-SHA256) eval records storing only input/output **hashes** — tamper-evident, independently verifiable evidence that a score came from specific inputs. Evals as proof, not opinion. |
+| **Eval-as-Policy** | `runEvalGate`, `toAttestedGovernance`, `buildEvalComplianceReport`, `formatEvalComplianceReport`, `GovernanceAssertion`, `EvalGateResult`, `EvalComplianceReport` | Turn eval results into a governance gate wired to the `@elsium-ai/core` policy engine, with a recorded sign-off override and compliance-control mapping (EU AI Act / NIST / OWASP). |
 | **Snapshot** | `createSnapshotStore`, `hashOutput`, `testSnapshot`, `PromptSnapshot`, `SnapshotStore`, `SnapshotTestResult` | Hash-based snapshot testing for LLM outputs |
 | **Prompts** | `createPromptRegistry`, `definePrompt`, `PromptDefinition`, `PromptDiff`, `DiffLine`, `PromptRegistry` | Versioned prompt registry with diff and rendering |
 | **Regression** | `createRegressionSuite`, `RegressionBaseline`, `RegressionResult`, `RegressionDetail`, `RegressionSuite` | Baseline-driven regression detection |
@@ -435,6 +440,199 @@ console.log(formatEvalReport(result))
 //   [PASS] negative review (1ms)
 //   --------------------------------------------------
 //   Score: 100.0% | 2/2 passed | 4ms
+```
+
+---
+
+## Classification Metrics
+
+When the output is categorical and you have historical ground truth (e.g. claim decisions `APPROVE` / `DENY` / `REVIEW`), score the system exactly like a classifier: precision, recall, F1, and a confusion matrix.
+
+### `runClassificationEval()`
+
+Runs a classifier over labeled cases and returns the full report plus per-case predictions.
+
+```ts
+import { runClassificationEval, formatClassificationReport } from '@elsium-ai/testing'
+
+const result = await runClassificationEval({
+  name: 'claims triage',
+  labels: ['APPROVE', 'DENY', 'REVIEW'],
+  cases: [
+    { input: 'minor fender bender, under deductible', expected: 'DENY' },
+    { input: 'total loss, valid policy', expected: 'APPROVE' },
+    { input: 'ambiguous liability', expected: 'REVIEW' },
+  ],
+  runner: async (input) => classifyClaim(input),
+})
+
+console.log(formatClassificationReport(result.report))
+```
+
+### `computeClassificationReport()`
+
+If you already have predictions, skip the runner and compute metrics directly.
+
+```ts
+function computeClassificationReport(
+  cases: ClassificationCase[],
+  options?: { labels?: string[] },
+): ClassificationReport
+```
+
+`ClassificationCase` is `{ predicted: string; actual: string; name?: string }`. The report exposes `accuracy`, `perLabel` (precision / recall / f1 / support), `macro` / `micro` / `weighted` averages, and a `confusion` matrix. Labels are auto-derived (sorted) when not provided. All divisions are zero-safe.
+
+### `computeConfusionMatrix()` / `formatConfusionMatrix()`
+
+```ts
+function computeConfusionMatrix(cases, options?): ConfusionMatrix // { labels, matrix } — rows = actual, cols = predicted
+function formatConfusionMatrix(confusion: ConfusionMatrix): string
+```
+
+---
+
+## RAG Eval
+
+RAGAS-style scoring for retrieval-augmented answers. Judge-based metrics measure groundedness; reference-based metrics measure retrieval quality and are fully deterministic (no LLM needed).
+
+| Metric | Kind | Measures |
+|---|---|---|
+| `faithfulness` | LLM judge | Is every claim in the answer supported by the retrieved context? |
+| `answerRelevancy` | LLM judge | Does the answer actually address the question? |
+| `contextPrecision` | reference-based | Of the retrieved contexts, how many are relevant (rank-weighted)? |
+| `contextRecall` | reference-based | Of the relevant contexts, how many were retrieved? |
+
+### `runRagEval()`
+
+```ts
+import { runRagEval, formatRagEvalReport } from '@elsium-ai/testing'
+
+const result = await runRagEval({
+  name: 'policy QA',
+  judge, // an LLMJudge — omit to run reference-based metrics only
+  cases: [
+    {
+      question: 'Is flood damage covered?',
+      answer: 'Yes, clause 4 covers flood damage.',
+      contexts: ['Clause 4: flood damage is covered.', 'Clause 9: unrelated.'],
+      relevant: ['Clause 4: flood damage is covered.'], // omit to run judge-based metrics only
+    },
+  ],
+})
+
+console.log(formatRagEvalReport(result))
+console.log(result.aggregate) // { faithfulness, answerRelevancy, contextPrecision, contextRecall, overall }
+```
+
+Each metric is available standalone (`faithfulness(input)`, `contextPrecision(input)`, …) returning `{ score, reasoning }`. Judge scores are clamped to `[0, 1]`.
+
+---
+
+## Rubric Judge
+
+Structured LLM-as-a-judge. Instead of a hand-rolled callback, define a weighted rubric; the judge prompts the model for a per-criterion JSON score, parses it robustly, and returns a normalized weighted score plus a breakdown.
+
+### `createRubricJudge()`
+
+```ts
+import { createRubricJudge } from '@elsium-ai/testing'
+
+const judge = createRubricJudge({
+  generate: (prompt) => gateway.complete({ messages: [{ role: 'user', content: prompt }] }).then((r) => r.text),
+  criteria: [
+    { name: 'correctness', description: 'Is the answer factually correct?', weight: 2 },
+    { name: 'tone', description: 'Is the tone appropriate for a customer?', weight: 1 },
+  ],
+  scale: 10, // optional, default 10 — scores are normalized to [0,1]
+})
+
+const detailed = await judge.evaluate('the answer to grade')
+// { score: 0.83, reasoning: 'correctness: 100%, tone: 50%', breakdown: [...] }
+
+// It is also a drop-in LLMJudge, usable directly in an `llm_judge` eval criterion:
+const { score, reasoning } = await judge('the answer to grade')
+```
+
+`generate` is any `(prompt: string) => Promise<string>` — wire it to the gateway, a mock provider, or anything else (the judge stays backend-agnostic). On unparseable responses the judge returns `score: 0` with a diagnostic `reasoning` rather than throwing.
+
+---
+
+## Eval Attestation
+
+Other frameworks give you a score. Attestation gives you **proof**: a signed, hash-chained record of an eval run that anyone can verify independently, without trusting your infrastructure. Each record stores only the **hashes** of inputs and outputs — so the attestation is shareable as audit evidence without leaking the underlying data, yet still provable against the originals.
+
+### `attestEvalSuite()` / `verifyEvalAttestation()`
+
+```ts
+import { runEvalSuite, attestEvalSuite, verifyEvalAttestation } from '@elsium-ai/testing'
+
+const result = await runEvalSuite({ /* ... */ })
+
+const attestation = await attestEvalSuite(result, {
+  secret: process.env.ATTESTATION_SECRET, // ≥16 chars; stored outside the file
+  metadata: { model: 'claude-opus-4-8', datasetVersion: 'claims-v3', seed: 7 },
+})
+
+// Ship `attestation` (JSON) to an auditor. They verify it with the secret:
+const verdict = await verifyEvalAttestation(attestation, process.env.ATTESTATION_SECRET)
+// { valid: true, entryCount: 42 }
+```
+
+The chain is HMAC-SHA256: the header (suite, metadata, summary, embedded governance) seeds a genesis signature, and each per-case record signs over the previous signature. Any tampered record, reordered entry, or swapped metadata field detaches the chain — `verifyEvalAttestation` returns `{ valid: false, invalidAtIndex, reason }` pinpointing the break. A file without its secret is just data; with the secret it is evidence.
+
+### Binding a governance verdict
+
+Pass an `EvalGateResult` summary (see below) so the policy verdict and any human override are sealed into the same tamper-proof record:
+
+```ts
+const attestation = await attestEvalSuite(result, {
+  secret,
+  governance: toAttestedGovernance(gate),
+})
+```
+
+---
+
+## Eval-as-Policy
+
+An eval score answers "is it good?". A governance gate answers "is it **allowed to ship**?". `runEvalGate` turns eval results into pass/fail policy verdicts — wired to the `@elsium-ai/core` policy engine and/or custom assertions — and records who signed off when you knowingly override a violation.
+
+### `runEvalGate()`
+
+```ts
+import { runEvalGate, buildEvalComplianceReport, formatEvalComplianceReport } from '@elsium-ai/testing'
+import { createPolicySet } from '@elsium-ai/core'
+
+const gate = runEvalGate(suiteResult, {
+  name: 'pre-release gate',
+  assertions: [
+    {
+      name: 'no-ssn',
+      description: 'Output must not contain an SSN',
+      controls: ['eu-ai-act:art-10', 'nist-ai-rmf:measure-2.7'],
+      assert: (r) => !/\d{3}-\d{2}-\d{4}/.test(r.output),
+    },
+  ],
+  policySet: createPolicySet([ /* core policy rules — denials become violations */ ]),
+})
+
+if (!gate.passed) {
+  // Block the release in CI — or record a signed-off override:
+  const override = { approver: 'eric@elsiumai.com', reason: 'fixture data, not real PII' }
+  const approved = runEvalGate(suiteResult, config, override) // passed: true, override recorded
+}
+```
+
+A clean run passes with no override. A run with violations fails unless an `override` is supplied, in which case it passes **and** the approver + reason are recorded (and can be sealed into the attestation via `toAttestedGovernance`).
+
+### Compliance mapping
+
+Assertions carry `controls` (regulatory control IDs). `buildEvalComplianceReport` aggregates which controls passed or failed:
+
+```ts
+const report = buildEvalComplianceReport(gate, config, { framework: 'EU AI Act' })
+console.log(formatEvalComplianceReport(report))
+// report.compliant === false when any mapped control has a violation
 ```
 
 ---
