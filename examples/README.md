@@ -27,6 +27,7 @@ Runnable examples that show how to use each piece of the framework. Most run wit
 | [`reproducible-run/`](./reproducible-run/) | Seed propagation (`defineAgent({ seed })`) + `assertDeterministic` + `pinOutput` | no |
 | [`judge-alignment/`](./judge-alignment/) | Is your LLM-judge trustworthy? — agreement + Cohen's kappa vs human labels + self-consistency | no |
 | [`eval-proof/`](./eval-proof/) | Sign eval results as an Ed25519 `ExecutionProof`; verify offline with only the public key | no |
+| [`dataset-provenance/`](./dataset-provenance/) | Trust the eval labels — inter-annotator agreement, Fleiss' kappa, dataset content hash | no |
 
 ## Streaming & routing
 
