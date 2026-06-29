@@ -97,6 +97,21 @@ export type { DeterminismResult, StabilityResult } from './determinism'
 export { loadDataset, loadDatasetFromJSON, loadDatasetFromCSV } from './dataset'
 export type { EvalDataset, DatasetLoaderOptions } from './dataset'
 
+// Dataset provenance — is the eval DATA itself trustworthy?
+export {
+	summarizeAnnotations,
+	hashDataset,
+	createDatasetManifest,
+} from './dataset-provenance'
+export type {
+	Annotation,
+	AnnotatedCase,
+	AnnotationSummaryOptions,
+	CaseAnnotationSummary,
+	DatasetAnnotationReport,
+	DatasetManifest,
+} from './dataset-provenance'
+
 // Eval Comparison
 export { saveBaseline, loadBaseline, compareResults, formatComparison } from './eval-compare'
 export type { EvalBaseline, EvalComparison } from './eval-compare'
