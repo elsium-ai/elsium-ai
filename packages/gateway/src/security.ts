@@ -222,15 +222,115 @@ export function classifyContent(text: string): ClassificationResult {
 
 // ─── Detection Functions ────────────────────────────────────────
 
-function normalizeText(text: string): string {
-	return text.normalize('NFKC')
+// Zero-width / invisible characters used to break up keywords and evade matching:
+// ZWSP, ZWNJ, ZWJ (U+200B-200D), word joiner (U+2060), BOM (U+FEFF), soft hyphen (U+00AD).
+// Built from code points (no regex char class) to avoid joined-sequence pitfalls.
+const ZERO_WIDTH_CHARS = [0x200b, 0x200c, 0x200d, 0x2060, 0xfeff, 0x00ad].map((c) =>
+	String.fromCharCode(c),
+)
+
+function stripZeroWidth(text: string): string {
+	let out = text
+	for (const ch of ZERO_WIDTH_CHARS) out = out.split(ch).join('')
+	return out
+}
+
+// Common homoglyphs (Cyrillic / Greek lookalikes) folded to ASCII so that
+// "іgnоre previous instructions" is matched like its ASCII form. Small on
+// purpose — covers realistic evasion, not every Unicode confusable.
+const CONFUSABLES: Record<string, string> = {
+	а: 'a',
+	е: 'e',
+	о: 'o',
+	р: 'p',
+	с: 'c',
+	х: 'x',
+	у: 'y',
+	к: 'k',
+	м: 'm',
+	н: 'h',
+	т: 't',
+	в: 'b',
+	і: 'i',
+	ѕ: 's',
+	ј: 'j',
+	ԁ: 'd',
+	ɡ: 'g',
+	ո: 'n',
+	ս: 'u',
+	α: 'a',
+	ο: 'o',
+	ε: 'e',
+	ρ: 'p',
+	ι: 'i',
+	ν: 'v',
+	τ: 't',
+	υ: 'u',
+}
+
+function foldConfusables(text: string): string {
+	let out = ''
+	for (const ch of text) out += CONFUSABLES[ch] ?? ch
+	return out
+}
+
+/**
+ * Normalize text for keyword detection (NOT for redaction): unicode NFKC, strip
+ * zero-width chars, fold homoglyphs to ASCII, collapse whitespace, lowercase.
+ * Pure, dependency-free, edge-safe. Exported so external guardrails can reuse it.
+ */
+export function normalizeForDetection(text: string): string {
+	return foldConfusables(stripZeroWidth(text.normalize('NFKC')))
+		.replace(/\s+/g, ' ')
+		.trim()
+		.toLowerCase()
+}
+
+const BASE64_SEGMENT = /[A-Za-z0-9+/]{16,}={0,2}/g
+
+/** True if the string is mostly readable ASCII (tab/newline/space..tilde). */
+function isMostlyPrintable(s: string): boolean {
+	let printable = 0
+	for (let i = 0; i < s.length; i++) {
+		const c = s.charCodeAt(i)
+		if (c === 9 || c === 10 || c === 13 || (c >= 0x20 && c <= 0x7e)) printable++
+	}
+	return s.length > 0 && printable / s.length >= 0.85
+}
+
+/** Decode long base64 segments and return any printable ASCII payloads found. */
+function decodeBase64Payloads(text: string): string {
+	const matches = text.match(BASE64_SEGMENT)
+	if (!matches) return ''
+	const decoded: string[] = []
+	for (const segment of matches) {
+		try {
+			const out = atob(segment)
+			// Keep only payloads that look like readable text, not binary noise.
+			if (out.length >= 6 && isMostlyPrintable(out)) decoded.push(out)
+		} catch {
+			/* not valid base64 — ignore */
+		}
+	}
+	return decoded.join(' ')
+}
+
+/**
+ * Produce the haystack to scan for injection/jailbreak: the normalized text plus
+ * any decoded base64 payloads (also normalized). Catches obfuscated attacks
+ * without any external dependency or ML model.
+ */
+export function expandForDetection(text: string): string {
+	const normalized = normalizeForDetection(text)
+	const decoded = decodeBase64Payloads(text)
+	return decoded ? `${normalized} ${normalizeForDetection(decoded)}` : normalized
 }
 
 export function detectPromptInjection(text: string): SecurityViolation[] {
 	const violations: SecurityViolation[] = []
-	const normalized = normalizeText(text)
+	const haystack = expandForDetection(text)
 	for (const { pattern, detail } of INJECTION_PATTERNS) {
-		if (pattern.test(normalized)) {
+		if (new RegExp(pattern.source, pattern.flags).test(haystack)) {
 			violations.push({ type: 'prompt_injection', detail, severity: 'high' })
 		}
 	}
@@ -239,9 +339,9 @@ export function detectPromptInjection(text: string): SecurityViolation[] {
 
 export function detectJailbreak(text: string): SecurityViolation[] {
 	const violations: SecurityViolation[] = []
-	const normalized = normalizeText(text)
+	const haystack = expandForDetection(text)
 	for (const { pattern, detail } of JAILBREAK_PATTERNS) {
-		if (pattern.test(normalized)) {
+		if (new RegExp(pattern.source, pattern.flags).test(haystack)) {
 			violations.push({ type: 'jailbreak', detail, severity: 'high' })
 		}
 	}

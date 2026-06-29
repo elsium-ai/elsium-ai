@@ -44,6 +44,8 @@ export type {
 // Security
 export { createAgentSecurity } from './security'
 export type { AgentSecurityConfig, AgentSecurityResult } from './security'
+export { createLLMGuardrail } from './guardrail-models'
+export type { InputGuardrail, LLMGuardrailOptions } from './guardrail-models'
 
 // Confidence
 export { createConfidenceScorer } from './confidence'
