@@ -29,8 +29,22 @@ Creates an agent that can reason, use tools, and maintain memory across turns.
 | `memory` | `Memory` | Memory strategy for conversation history |
 | `guardrails` | `Guardrail[]` | Input/output validation guardrails |
 | `maxIterations` | `number` | Maximum tool-use loop iterations (default: 10) |
+| `seed` | `number` | Seed forwarded to every LLM request for reproducibility (overridable per run) |
 
 **Returns** an `Agent` with `run(input, opts?)`, `stream(input, opts?)`, and `generate(input, schema, opts?)` methods.
+
+### Reproducibility (`seed`)
+
+Set `AgentConfig.seed` to forward a seed to every `CompletionRequest` the agent issues (both the tool loop and streaming). Override it per call with `AgentRunOptions.seed`; the per-run value falls back to the agent-level one when omitted.
+
+```ts
+const agent = defineAgent({ name: 'extractor', system: '...', seed: 42 })
+
+const a = await agent.run('Extract the fields')
+const b = await agent.run('Extract the fields', { seed: 7 }) // per-run override
+```
+
+**Caveat:** `seed` is only effective if the provider honors it (forwarded where supported, e.g. OpenAI and Google; absent on Anthropic). It does not, on its own, make a hosted model deterministic. Use `@elsium-ai/testing`'s `assertDeterministic` to measure run-to-run variance (it measures variance, it does not enforce it). See `examples/reproducible-run`.
 
 ```ts
 import { defineAgent, createMemory } from '@elsium-ai/agents'
@@ -376,10 +390,62 @@ Validates agent outputs for hallucination, relevance, and grounding against sour
 ### createAgentSecurity
 
 ```ts
-createAgentSecurity(config: AgentSecurityConfig): Guardrail
+createAgentSecurity(config: AgentSecurityConfig): {
+  validateInput(input: string): AgentSecurityResult
+  sanitizeInput(input: string): AgentSecurityResult
+  sanitizeOutput(output: string): AgentSecurityResult
+}
 ```
 
-Scans for prompt injection, jailbreak attempts, and secrets in agent inputs and outputs.
+Scans for prompt injection, jailbreak attempts, and secrets in agent inputs and outputs, and can redact secrets / PII from input before it reaches the model.
+
+**AgentSecurityConfig:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `detectPromptInjection` | `boolean` | `true` | Detect prompt injection patterns in input |
+| `detectJailbreak` | `boolean` | `false` | Detect jailbreak attempt patterns in input |
+| `redactSecrets` | `boolean` | `true` | Redact secrets (API keys, passwords, SSNs, cards, bearer tokens) in output |
+| `blockedPatterns` | `RegExp[]` | `[]` | Additional custom regex patterns to block in input |
+| `redactInputSecrets` | `boolean` | `false` | Redact secrets from user **input** before it reaches the model |
+| `redactInputPii` | `Array<'email' \| 'phone' \| 'address' \| 'passport' \| 'all'>` | `[]` | PII categories to redact from input; setting any category also redacts input secrets |
+| `injectionClassifier` | `InputGuardrail` | -- | Optional async classifier run on the raw input; return `true` to reject it (applied on `run`/`chat`/`generate`, not `stream`) |
+| `redactToolArgSecrets` | `boolean` | `false` | Redact secrets from tool-call arguments before execution and trace (PII is left intact) |
+
+**Input guardrail pipeline** (applied on `run` / `chat` / `generate`): detection (throws on violation) → async `injectionClassifier` (throws if flagged) → redaction (transforms the text sent to the model). `stream` applies only the synchronous steps (detection + redaction); the async classifier is skipped. See `examples/input-guardrails`.
+
+### createLLMGuardrail
+
+```ts
+createLLMGuardrail(options: LLMGuardrailOptions): InputGuardrail
+```
+
+Returns a built-in `InputGuardrail` (`(input: string) => boolean | Promise<boolean>`, `true` = reject) backed by the gateway you already use — no extra install. Plug it into `AgentSecurityConfig.injectionClassifier` as a higher-precision alternative to the heuristic regex detector.
+
+`InputGuardrail` is the extension port: pass `createLLMGuardrail`, or your own function wrapping an external tool (Lakera, NeMo Guardrails, Presidio, etc.). External integration is the caller's choice, never a dependency.
+
+**LLMGuardrailOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `complete` | `LLMComplete` | -- | Completion function — typically `gateway.complete` |
+| `model` | `string` | gateway default | Model override |
+| `instructions` | `string` | built-in prompt | Override the classification system prompt |
+| `onError` | `'allow' \| 'block'` | `'allow'` | `'allow'` fails open (do not block on classifier failure); `'block'` fails closed |
+
+```ts
+import { defineAgent, createLLMGuardrail } from '@elsium-ai/agents'
+
+const agent = defineAgent({
+  name: 'assistant',
+  system: 'You are helpful.',
+  guardrails: {
+    security: {
+      injectionClassifier: createLLMGuardrail({ complete: (req) => llm.complete(req) }),
+    },
+  },
+})
+```
 
 ### createConfidenceScorer
 
@@ -402,7 +468,7 @@ const agent = defineAgent({
       checkRelevance: true,
     }),
     createAgentSecurity({
-      detectInjection: true,
+      detectPromptInjection: true,
       detectJailbreak: true,
       redactSecrets: true,
     }),

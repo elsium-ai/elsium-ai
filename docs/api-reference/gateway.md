@@ -205,7 +205,7 @@ const gw = gateway({
     loggingMiddleware,
     costTrackingMiddleware,
     xrayMiddleware,
-    securityMiddleware({ detectInjection: true, redactSecrets: true }),
+    securityMiddleware({ promptInjection: true, secretRedaction: true }),
     bulkheadMiddleware({ maxConcurrent: 10 }),
     cacheMiddleware(createInMemoryCache({ ttlMs: 60000, maxSize: 100 })),
   ],
@@ -252,27 +252,57 @@ const gw = gateway({
 
 ## Security
 
-Functions for scanning and sanitizing LLM inputs.
+Functions for scanning and sanitizing LLM inputs and outputs.
 
 | Export | Signature | Description |
 |---|---|---|
-| `detectPromptInjection` | `detectPromptInjection(text: string): DetectionResult` | Detect prompt injection attempts |
-| `detectJailbreak` | `detectJailbreak(text: string): DetectionResult` | Detect jailbreak attempts |
-| `redactSecrets` | `redactSecrets(text: string): string` | Redact API keys, tokens, and secrets |
-| `checkBlockedPatterns` | `checkBlockedPatterns(text: string, patterns: RegExp[]): PatternMatch[]` | Check text against custom blocked patterns |
-| `classifyContent` | `classifyContent(text: string): ContentClassification` | Classify content for safety |
+| `securityMiddleware` | `securityMiddleware(config: SecurityMiddlewareConfig): Middleware` | Scan inputs for injection/jailbreak/blocked patterns; redact secrets in responses (and, with `redactInput`, in requests) |
+| `detectPromptInjection` | `detectPromptInjection(text: string): SecurityViolation[]` | Detect prompt injection attempts |
+| `detectJailbreak` | `detectJailbreak(text: string): SecurityViolation[]` | Detect jailbreak attempts |
+| `redactSecrets` | `redactSecrets(text: string, piiTypes?): { redacted: string; found: SecurityViolation[] }` | Redact API keys, tokens, secrets, and optional PII |
+| `checkBlockedPatterns` | `checkBlockedPatterns(text: string, patterns: (string \| RegExp)[]): SecurityViolation[]` | Check text against custom blocked patterns |
+| `classifyContent` | `classifyContent(text: string): ClassificationResult` | Classify content sensitivity (`public` / `confidential` / `restricted`) |
+| `normalizeForDetection` | `normalizeForDetection(text: string): string` | Normalize text for detection (strip zero-width, fold homoglyphs, collapse whitespace, lowercase) |
+| `expandForDetection` | `expandForDetection(text: string): string` | Normalized text plus any decoded base64 payloads — the haystack the detectors scan |
 
 ```ts
 import { detectPromptInjection, redactSecrets } from '@elsium-ai/gateway'
 
-const injection = detectPromptInjection(userInput)
-if (injection.detected) {
-  log.warn('Injection attempt detected', { score: injection.score })
+const violations = detectPromptInjection(userInput)
+if (violations.length > 0) {
+  log.warn('Injection attempt detected', { detail: violations[0].detail })
 }
 
-const sanitized = redactSecrets('My key is sk-abc123xyz')
-// sanitized: 'My key is [REDACTED]'
+const { redacted } = redactSecrets('My key is sk-abc12345xyz')
+// redacted: 'My key is [REDACTED_API_KEY]'
 ```
+
+### Input-side redaction
+
+By default `securityMiddleware` redacts secrets only in the model's **response**. Set `redactInput: true` to also redact secrets — and any configured `piiTypes` — from the **outgoing** request (system prompt + input messages) *before* it reaches the provider, so sensitive values never leave your process. Off by default and backward-compatible.
+
+```ts
+import { gateway, securityMiddleware } from '@elsium-ai/gateway'
+
+const gw = gateway({
+  provider: 'anthropic',
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  middleware: [
+    securityMiddleware({
+      redactInput: true,           // mask secrets/PII before they reach the provider
+      piiTypes: ['email', 'phone'],
+    }),
+  ],
+})
+```
+
+### Evasion-resistant detection
+
+`detectPromptInjection` and `detectJailbreak` normalize input before matching: strip zero-width/invisible characters, fold common Cyrillic/Greek homoglyphs to ASCII, collapse whitespace, and decode embedded base64 payloads so hidden attacks are scanned too. The normalization is pure, dependency-free, and edge-safe, and is exported as `normalizeForDetection` / `expandForDetection` for reuse in external guardrails.
+
+Detection quality is measured by the internal benchmark `benchmarks/guardrail-detection.ts` (run `bun benchmarks/guardrail-detection.ts`): on its internal adversarial set it reports **100% recall across 6 evasion categories** (plain, zero-width, homoglyph, spacing, uppercase, base64) with **0% false positives** on a benign set including hard near-misses. This measures coverage against **known** evasions, not robustness to novel attacks — the detectors are evasion-resistant (harder to evade), not evasion-proof. The roadmap is validation against an external prompt-injection corpus; for higher assurance, layer an external detector on top.
+
+That external-detector seam lives at the agent level: `@elsium-ai/agents` exposes an `injectionClassifier` extension point on `AgentSecurityConfig` (`(input: string) => boolean | Promise<boolean>`) for plugging in an LLM-based or third-party guardrail. The heuristic plus normalization described here is the gateway-level built-in.
 
 ---
 

@@ -304,8 +304,8 @@ Three Pillars — where each feature lives:
 | Package | Description |
 |---------|-------------|
 | [`@elsium-ai/core`](./packages/core) | Types, errors, streaming, circuit breaker, dedup, policy engine, shutdown, tokens, context manager, registry, schema |
-| [`@elsium-ai/gateway`](./packages/gateway) | Multi-provider gateway, X-Ray, provider mesh, OpenAI-compatible provider, bulkhead, PII detection, caching, output guardrails, batch processing |
-| [`@elsium-ai/agents`](./packages/agents) | Agents, ReAct agent, memory, persistent stores (in-memory, SQLite), guardrails, approval gates, multi-agent |
+| [`@elsium-ai/gateway`](./packages/gateway) | Multi-provider gateway, X-Ray, provider mesh, OpenAI-compatible provider, bulkhead, PII detection (input + output), evasion-resistant injection/jailbreak detection, caching, output guardrails, batch processing |
+| [`@elsium-ai/agents`](./packages/agents) | Agents, ReAct agent, memory, persistent stores (in-memory, SQLite), input guardrails (PII/secret redaction + pluggable injection classifier), approval gates, seed propagation, multi-agent |
 | [`@elsium-ai/tools`](./packages/tools) | Tool definitions with Zod validation |
 | [`@elsium-ai/rag`](./packages/rag) | Document loading, PDF loading, chunking, embeddings, BM25, hybrid search, vector search, PgVector store, plugin registries |
 | [`@elsium-ai/workflows`](./packages/workflows) | DAG workflows, sequential, parallel, branching, checkpointing, resumable workflows |
@@ -313,7 +313,7 @@ Three Pillars — where each feature lives:
 | [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server, resources, prompts |
 | [`@elsium-ai/app`](./packages/app) | HTTP server, CORS, auth, rate limiting, RBAC, SSE streaming, multi-tenant |
 | [`@elsium-ai/client`](./packages/client) | TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers |
-| [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, classification metrics, RAG eval (faithfulness + retrieval), rubric LLM-judge, signed eval attestation, eval-as-policy + compliance gates, multi-turn agent testing, tool assertions, red-teaming (single + multi-turn), agent metrics, CI reporters |
+| [`@elsium-ai/testing`](./packages/testing) | Mocks, evals, classification metrics, RAG eval (faithfulness + retrieval), rubric LLM-judge, **judge alignment (Cohen's/Fleiss kappa + self-consistency)**, signed eval attestation, **Ed25519 eval proofs (offline-verifiable)**, **dataset provenance (inter-annotator agreement + content hash)**, eval-as-policy + compliance gates, multi-turn agent testing, tool assertions, red-teaming (single + multi-turn), agent metrics, CI reporters |
 | [`@elsium-ai/cli`](./packages/cli) | Scaffolding, dev server, X-Ray inspection |
 
 ---
@@ -325,8 +325,8 @@ Beyond agents, tools, RAG, and multi-provider routing, ElsiumAI ships production
 | Category | Feature |
 |----------|---------|
 | **Reliability** | Circuit Breaker, Bulkhead Isolation, Request Dedup, Graceful Shutdown, Retry with Backoff, Stream Failover |
-| **Governance** | Policy Engine, Runtime Policy Enforcement, RBAC, Approval Gates, Agent Identity, Memory Integrity, Hash-Chained Audit, Compliance Reporting, MCP Trust Framework, PII Detection, Output Guardrails, Multi-Tenant |
-| **Determinism** | Seed Propagation, Output Pinning, Determinism Assertions, Provenance Tracking, A/B Experiments |
+| **Governance** | Policy Engine, Runtime Policy Enforcement, RBAC, Approval Gates, Agent Identity, Memory Integrity, Hash-Chained Audit, Compliance Reporting, Ed25519 Eval Proofs, MCP Trust Framework, PII Detection (input + output), Input/Output Guardrails, Multi-Tenant |
+| **Determinism** | Seed Propagation, Output Pinning, Determinism Assertions, Judge Alignment (kappa), Dataset Provenance, Provenance Tracking, A/B Experiments |
 | **Performance** | Response Caching, Batch Processing, Token Counting, Context Management |
 | **Multimodal** | Text, Image, Audio, Document across Anthropic, OpenAI, Google |
 | **Structured Output** | Native JSON mode per provider, Zod schema validation |
