@@ -25,6 +25,7 @@ Runnable examples that show how to use each piece of the framework. Most run wit
 | [`ask-human/`](./ask-human/) | `askHuman` — responder mode + durable store mode + timeout | no |
 | [`input-guardrails/`](./input-guardrails/) | Redact secrets/PII from input before the model · `injectionClassifier` · tool-arg redaction | no |
 | [`reproducible-run/`](./reproducible-run/) | Seed propagation (`defineAgent({ seed })`) + `assertDeterministic` + `pinOutput` | no |
+| [`judge-alignment/`](./judge-alignment/) | Is your LLM-judge trustworthy? — agreement + Cohen's kappa vs human labels + self-consistency | no |
 
 ## Streaming & routing
 

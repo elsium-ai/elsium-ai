@@ -201,6 +201,23 @@ export type {
 	RubricJudge,
 } from './llm-judge'
 
+// Judge alignment — is the judge trustworthy vs human ground-truth?
+export {
+	computeJudgeAlignment,
+	runJudgeAlignment,
+	assessJudgeConsistency,
+} from './judge-alignment'
+export type {
+	AlignmentPair,
+	JudgeAlignmentOptions,
+	JudgeAlignmentResult,
+	AgreementStrength,
+	LabeledJudgeCase,
+	JudgeScorer,
+	JudgeConsistencyOptions,
+	JudgeConsistencyResult,
+} from './judge-alignment'
+
 // Eval Attestation (signed, hash-chained, verifiable eval records)
 export { attestEvalSuite, verifyEvalAttestation, formatAttestation } from './attestation'
 export type {
