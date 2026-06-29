@@ -1,4 +1,4 @@
-import { redactSecrets } from '@elsium-ai/gateway'
+import { expandForDetection, redactSecrets } from '@elsium-ai/gateway'
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -150,9 +150,9 @@ function matchPatterns(
 	severity: 'low' | 'medium' | 'high',
 ): AgentSecurityResult['violations'] {
 	const violations: AgentSecurityResult['violations'] = []
-	const normalized = text.normalize('NFKC')
+	const haystack = expandForDetection(text)
 	for (const { pattern, detail } of patterns) {
-		if (pattern.test(normalized)) {
+		if (new RegExp(pattern.source, pattern.flags).test(haystack)) {
 			violations.push({ type, detail, severity })
 		}
 	}

@@ -13,6 +13,38 @@ gap. All of it is opt-in via `AgentSecurityConfig`.
 - **Tool-arg redaction** — `redactToolArgSecrets` removes secrets from tool-call
   arguments before the tool runs and before they are recorded in the trace.
 
+## Self-sufficient by default, open to external tools
+
+The heuristic detector is **evasion-resistant out of the box** — it strips
+zero-width characters, folds homoglyphs (`іgnоre` → `ignore`), and decodes
+base64 payloads before matching. No external install.
+
+For higher precision, the built-in `createLLMGuardrail` uses the LLM you already
+configured — still nothing extra to install:
+
+```typescript
+import { createLLMGuardrail } from '@elsium-ai/agents'
+import { gateway } from '@elsium-ai/gateway'
+
+const llm = gateway({ provider: 'anthropic', apiKey: process.env.ANTHROPIC_API_KEY })
+
+const agent = defineAgent({
+  name: 'guarded',
+  system: '...',
+  guardrails: {
+    security: { injectionClassifier: createLLMGuardrail({ complete: (r) => llm.complete(r) }) },
+  },
+})
+```
+
+`injectionClassifier` (type `InputGuardrail`) is the extension port. Want to use
+Lakera / NeMo Guardrails / Rebuff / Presidio instead? Pass your own function —
+the framework never depends on them, integrating is your choice:
+
+```typescript
+guardrails: { security: { injectionClassifier: async (input) => myLakeraClient.isMalicious(input) } }
+```
+
 The mock provider echoes back what it received, so you can see exactly what
 survived the input pipeline.
 

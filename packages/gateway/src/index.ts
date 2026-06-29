@@ -47,6 +47,8 @@ export {
 	redactSecrets,
 	checkBlockedPatterns,
 	classifyContent,
+	normalizeForDetection,
+	expandForDetection,
 } from './security'
 export type {
 	SecurityMiddlewareConfig,
