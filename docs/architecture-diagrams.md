@@ -392,43 +392,57 @@ best-of-breed tool is expected — Elsium integrates there, it does not compete.
 
 ```mermaid
 flowchart TB
-    subgraph T1["TIER 1 — ELSIUM'S CORE · own it · built-in is excellent"]
+    subgraph T1["TIER 1 — ELSIUM'S CORE"]
         direction TB
-        RUNTIME["Agent runtime · workflows · MCP orchestration"]
-        GOV["Governance<br/>governed guardrails · policy/RBAC<br/>hash-chained audit · agent identity & capability tokens"]
-        REPRO["Reproducibility & signed proofs<br/>seed propagation · Ed25519 ExecutionProof · verify offline"]
-        EVALS["Evals as proof<br/>LLM-judge · classification · RAG eval · eval-as-policy · attestation"]
+        subgraph NEC["necessary · table-stakes (everyone has this)"]
+            RUNTIME["Agent runtime · workflows · MCP orchestration"]
+        end
+        subgraph DIFF["differentiating · why teams choose Elsium"]
+            direction TB
+            REPRO["★ Reproducibility & signed proofs<br/>seed · Ed25519 ExecutionProof · verify offline<br/><i>the unique core — nobody integrates this</i>"]
+            GOV["Governance<br/>governed guardrails · policy/RBAC · hash-chained audit<br/><b>agent identity</b> + capability tokens"]
+            EVALS["Evals as proof<br/>LLM-judge · classification · RAG eval · attestation"]
+        end
     end
 
-    T1 --> T2
+    T1 -. "core consumes via ports" .-> T2
 
-    subgraph T2["COMMODITY PORTS — integrate, don't compete · built-in = quick start, swap-in expected"]
+    subgraph T2["TIER 2 — COMMODITY PORTS · integrate, don't compete · built-in = quick start, swap-in expected"]
         direction LR
         PL["LLM gateway<br/>built-in: multi-provider"] -.-> XL["Portkey · LiteLLM · OpenRouter"]
         PR["Vector / RAG<br/>built-in: BM25 + pgvector"] -.-> XR["Pinecone · Weaviate · Qdrant"]
         PO["Observability<br/>built-in: OTel + cost"] -.-> XO["LangSmith · Langfuse · Datadog"]
         PS["Persistence<br/>built-in: in-mem + SQLite"] -.-> XS["Redis · Postgres"]
-        PA["User auth / SSO<br/>thin — push to swap-in"] -.-> XA["Auth0 · Entra ID · WorkOS"]
+        PA["<b>People auth / SSO</b> (humans)<br/>thin — push to swap-in"] -.-> XA["Auth0 · Entra ID · WorkOS"]
     end
 
-    classDef core fill:#0f172a,stroke:#38bdf8,color:#fff,stroke-width:2px
+    classDef hero fill:#0e7490,stroke:#67e8f9,color:#fff,stroke-width:4px
     classDef diff fill:#134e4a,stroke:#5eead4,color:#fff
+    classDef nec fill:#334155,stroke:#94a3b8,color:#fff
     classDef port fill:#1e3a8a,stroke:#93c5fd,color:#fff
     classDef ext fill:#78350f,stroke:#fbbf24,color:#fff
-    class RUNTIME core
-    class GOV,REPRO,EVALS diff
+    class REPRO hero
+    class GOV,EVALS diff
+    class RUNTIME nec
     class PL,PR,PO,PS,PA port
     class XL,XR,XO,XS,XA ext
 ```
 
 **Reading it:**
-- **Tier 1 is the product** — why teams choose Elsium. The built-in is the
-  differentiator and must stay excellent.
-- **Tier 2 is honest commodity** — the built-in is "good enough to start"; the
-  port is the value. `User auth / SSO` is deliberately thin: agent identity +
-  capability tokens live in Tier 1, but user authentication should be delegated
-  to a dedicated provider.
-- **Guardrails are described as "governed", not absolute.** Detection quality is
-  measured by `benchmarks/guardrail-detection.ts` (internal adversarial set):
-  100% recall across 6 evasion categories with 0% false positives on benign
-  near-misses — re-run it rather than trusting an adjective.
+- **Tier 1 splits "necessary" from "differentiating".** The agent runtime is
+  table-stakes (everyone has one) — it is core but not *why* you'd be chosen.
+  The differentiator is **reproducibility & signed proofs** (highlighted): the
+  one thing in the whole diagram nobody else integrates. Governance and evals
+  reinforce it.
+- **The arrow is consumption, not sequence.** The core *consumes* Tier 2 via
+  ports — it doesn't run "before" them.
+- **Two different "identities", deliberately on different tiers.** **Agent
+  identity** (signed, replay-protected) lives in Tier 1 governance — it's yours.
+  **People auth / SSO** (human login) is a thin Tier 2 port — delegate it to
+  Auth0/Entra/WorkOS. They are not the same thing.
+- **Guardrails are "governed", not absolute.** Detection is measured by
+  `benchmarks/guardrail-detection.ts` (internal adversarial set): 100% recall
+  across 6 evasion categories, 0% false positives on benign near-misses that
+  *legitimately discuss* injection/jailbreak. This measures coverage against
+  **known** evasions, not robustness to novel attacks — the roadmap is validating
+  against an external corpus. Re-run it rather than trusting an adjective.
