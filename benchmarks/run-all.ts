@@ -13,6 +13,7 @@ const benchmarks = [
 	{ name: 'Memory', file: 'memory.ts' },
 	{ name: 'Bundle Size', file: 'bundle-size.ts' },
 	{ name: 'Framework Overhead', file: 'framework-overhead.ts' },
+	{ name: 'Guardrail Detection', file: 'guardrail-detection.ts' },
 ]
 
 function runBenchmark(file: string): Promise<number> {

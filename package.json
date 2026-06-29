@@ -26,6 +26,7 @@
     "release": "bun run build && bun scripts/publish.ts --registry npm",
     "bench": "bun benchmarks/run-all.ts",
     "bench:overhead": "bun benchmarks/framework-overhead.ts",
+    "bench:guardrails": "bun benchmarks/guardrail-detection.ts",
     "bench:check": "bun benchmarks/framework-overhead.ts && bun benchmarks/check-regression.ts",
     "bench:freeze": "bun benchmarks/check-regression.ts --freeze",
     "typecheck": "tsc --noEmit -p tsconfig.check.json",
