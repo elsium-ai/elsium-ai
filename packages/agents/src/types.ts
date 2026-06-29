@@ -24,6 +24,12 @@ export interface AgentConfig {
 	apiKey?: string
 	baseUrl?: string
 	identity?: AgentIdentityConfig
+	/**
+	 * Seed forwarded to every LLM request for reproducibility. Honored by
+	 * providers that support seeding; captured in the request hash of signed
+	 * proofs. Overridable per-run via `AgentRunOptions.seed`.
+	 */
+	seed?: number
 }
 
 export interface GuardrailConfig {
@@ -97,4 +103,6 @@ export interface AgentRunOptions {
 	signal?: AbortSignal
 	traceId?: string
 	metadata?: Record<string, unknown>
+	/** Per-run seed override; falls back to `AgentConfig.seed`. */
+	seed?: number
 }

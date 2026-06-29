@@ -334,6 +334,7 @@ async function runStreamLoop(
 			messages: conversationMessages,
 			model: config.model,
 			system: config.system,
+			seed: options.seed ?? config.seed,
 			tools: config.tools?.map((t) => t.toDefinition()),
 		}
 

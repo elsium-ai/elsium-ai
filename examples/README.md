@@ -24,6 +24,7 @@ Runnable examples that show how to use each piece of the framework. Most run wit
 | [`tool-contracts/`](./tool-contracts/) | Tool contracts — `sideEffectLevel`, idempotency cache, preconditions, `dryRun` | no |
 | [`ask-human/`](./ask-human/) | `askHuman` — responder mode + durable store mode + timeout | no |
 | [`input-guardrails/`](./input-guardrails/) | Redact secrets/PII from input before the model · `injectionClassifier` · tool-arg redaction | no |
+| [`reproducible-run/`](./reproducible-run/) | Seed propagation (`defineAgent({ seed })`) + `assertDeterministic` + `pinOutput` | no |
 
 ## Streaming & routing
 

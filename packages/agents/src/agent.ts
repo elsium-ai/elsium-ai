@@ -390,11 +390,15 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		}
 	}
 
-	function buildCompletionRequest(conversationMessages: Message[]): CompletionRequest {
+	function buildCompletionRequest(
+		conversationMessages: Message[],
+		seed?: number,
+	): CompletionRequest {
 		return {
 			messages: conversationMessages,
 			model: config.model,
 			system: config.system,
+			seed,
 			tools: config.tools?.map((t) => t.toDefinition()),
 		}
 	}
@@ -448,6 +452,9 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 	async function executeLoop(messages: Message[], options: AgentRunOptions): Promise<AgentResult> {
 		const traceId = options.traceId ?? generateTraceId()
+		// Per-run seed override falls back to the agent-level seed, so determinism
+		// is configured once and propagated to every LLM request in the loop.
+		const seed = options.seed ?? config.seed
 		const recorder: TraceRecorder = createTraceRecorder({
 			agentId: config.name,
 			traceId,
@@ -470,7 +477,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 			checkBudget(totalInputTokens, totalOutputTokens)
 			checkDuration(loopStartTime)
 
-			const request = buildCompletionRequest(conversationMessages)
+			const request = buildCompletionRequest(conversationMessages, seed)
 			const llmStart = performance.now()
 			const response = await resolvedDeps.complete(request)
 			recorder.recordStep({
