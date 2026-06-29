@@ -219,6 +219,10 @@ export type {
 } from './judge-alignment'
 
 // Eval Attestation (signed, hash-chained, verifiable eval records)
+// Ed25519 eval proofs — third-party-verifiable (offline, no shared secret)
+export { proveEvalSuite, verifyEvalProof } from './eval-proof'
+export type { EvalProofOptions } from './eval-proof'
+
 export { attestEvalSuite, verifyEvalAttestation, formatAttestation } from './attestation'
 export type {
 	AttestationMetadata,

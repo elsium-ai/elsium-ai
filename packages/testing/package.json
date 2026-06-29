@@ -29,6 +29,7 @@
 		"@elsium-ai/core": "workspace:*",
 		"@elsium-ai/gateway": "workspace:*",
 		"@elsium-ai/agents": "workspace:*",
+		"@elsium-ai/observe": "workspace:*",
 		"@elsium-ai/tools": "workspace:*"
 	},
 	"devDependencies": {

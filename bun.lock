@@ -22,7 +22,7 @@
     },
     "examples/integration-test": {
       "name": "@elsium-ai/integration-test",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/app": "workspace:*",
@@ -44,7 +44,7 @@
     },
     "packages/agents": {
       "name": "@elsium-ai/agents",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/gateway": "workspace:*",
@@ -58,7 +58,7 @@
     },
     "packages/app": {
       "name": "@elsium-ai/app",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
@@ -77,7 +77,7 @@
     },
     "packages/cli": {
       "name": "@elsium-ai/cli",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "bin": {
         "elsium": "./dist/cli.js",
       },
@@ -92,7 +92,7 @@
     },
     "packages/client": {
       "name": "@elsium-ai/client",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -102,7 +102,7 @@
     },
     "packages/core": {
       "name": "@elsium-ai/core",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "zod": "^3.24.0",
         "zod-to-json-schema": "^3.25.2",
@@ -113,7 +113,7 @@
     },
     "packages/elsium-ai": {
       "name": "elsium-ai",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/app": "workspace:*",
@@ -133,7 +133,7 @@
     },
     "packages/gateway": {
       "name": "@elsium-ai/gateway",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -144,7 +144,7 @@
     },
     "packages/mcp": {
       "name": "@elsium-ai/mcp",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/tools": "workspace:*",
@@ -155,7 +155,7 @@
     },
     "packages/observe": {
       "name": "@elsium-ai/observe",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -165,7 +165,7 @@
     },
     "packages/rag": {
       "name": "@elsium-ai/rag",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -175,11 +175,12 @@
     },
     "packages/testing": {
       "name": "@elsium-ai/testing",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/gateway": "workspace:*",
+        "@elsium-ai/observe": "workspace:*",
         "@elsium-ai/tools": "workspace:*",
       },
       "devDependencies": {
@@ -188,7 +189,7 @@
     },
     "packages/tools": {
       "name": "@elsium-ai/tools",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -199,7 +200,7 @@
     },
     "packages/workflows": {
       "name": "@elsium-ai/workflows",
-      "version": "0.16.1",
+      "version": "0.17.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
