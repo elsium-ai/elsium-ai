@@ -9,9 +9,9 @@ proposed phased guardrail pipeline.
 >   redaction stages (🟧 in diagram 5: input PII/secret redaction and tool-arg
 >   secret redaction) are now implemented and opt-in via `AgentSecurityConfig`
 >   (`redactInputSecrets`, `redactInputPii`, `redactToolArgSecrets`,
->   `injectionClassifier`) and `securityMiddleware({ redactInput })`. The LLM-backed
->   injection classifier ships as an injectable `injectionClassifier` hook rather
->   than a built-in model call.
+>   `injectionClassifier`) and `securityMiddleware({ redactInput })`.
+> - Diagram 6 is the **consolidated current state** after the self-contained
+>   guardrails and seed-propagation work landed. ★ marks what those changes added.
 
 ---
 
@@ -290,3 +290,92 @@ flowchart TD
   `sanitizeInput` entry point.
 - Every verdict is **audited**, fitting the hash-chained audit trail in
   `@elsium-ai/observe`, so any `block`/`transform` is recorded.
+
+---
+
+## 6. Consolidated current state (self-contained guardrails + reproducibility)
+
+End-to-end view of the engine after two changes landed: **self-sufficient
+guardrails** (evasion-resistant detection, a built-in LLM guardrail, an open
+extension port, input/tool-arg redaction) and **seed propagation** that makes the
+reproducibility tooling usable end-to-end. ★ marks what these changes added.
+The guiding principle across both: self-contained by default, with an open port —
+the built-ins are enough; integrating an external tool is the caller's choice,
+never a dependency.
+
+```mermaid
+flowchart TD
+    IN(["agent.run / chat / generate / stream<br/>★ run(input, { seed })"]) --> PREP["prepareInput (engine)"]
+
+    subgraph G0["INPUT GUARDRAILS — ordered pipeline"]
+        direction TB
+        NORM["★ Evasion-resistant normalization<br/>zero-width · homoglyphs · base64 · NFKC"]
+        NORM --> HEUR["Heuristic detection<br/>injection · jailbreak · blocked"]
+        HEUR --> PORT{"injectionClassifier?<br/>★ InputGuardrail port"}
+        PORT -->|built-in| LLMG["★ createLLMGuardrail<br/>uses your gateway · 0 deps"]
+        PORT -->|external opt-in| EXT["★ Lakera · NeMo · Presidio<br/>(caller's responsibility)"]
+        PORT -->|none| H2["(heuristic only)"]
+        LLMG --> RED
+        EXT --> RED
+        H2 --> RED
+        RED["★ Input redaction<br/>secrets + PII (redactInputPii)"]
+    end
+
+    PREP --> G0
+    G0 -->|malicious| BLK[["throw · never reaches the LLM"]]
+    G0 -->|sanitized input| LOOP
+
+    subgraph LOOP["ENGINE · executeLoop"]
+        direction TB
+        LG["guards: abort · budget · duration"] --> BUILD["buildCompletionRequest<br/>★ injects seed into every request"]
+        BUILD --> LLM["LLM complete()"]
+        LLM --> DEC{"tool_use?"}
+        DEC -->|yes| TG
+        DEC -->|no| OUT
+    end
+
+    subgraph TG["TOOL GUARDRAILS (per tool call)"]
+        direction TB
+        APPR["approval gate"] --> RBAC["runtime policy / RBAC"]
+        RBAC --> ARG["★ redact secrets in args"]
+        ARG --> EXEC["tool.execute()"]
+    end
+    TG --> LOOP
+
+    subgraph OUT["OUTPUT GUARDRAILS"]
+        OV["output validator + redaction"] --> SEM["semantic validation"]
+        SEM --> CONF["confidence scoring"]
+    end
+    OUT --> RESULT(["AgentResult / Stream"])
+
+    BUILD -.seed in requestHash.-> REPRO
+    RESULT -.-> REPRO
+    subgraph REPRO["REPRODUCIBILITY PLANE (★ enabled by seed)"]
+        direction LR
+        DET["assertDeterministic<br/>N runs · same seed"]
+        PIN["pinOutput<br/>regression"]
+        PROOF["signed ExecutionProof (Ed25519)<br/>-> elsium verify (offline)"]
+    end
+
+    classDef new fill:#78350f,stroke:#fbbf24,color:#fff
+    classDef port fill:#1e3a8a,stroke:#93c5fd,color:#fff
+    classDef stop fill:#7f1d1d,stroke:#fca5a5,color:#fff
+    classDef repro fill:#134e4a,stroke:#5eead4,color:#fff
+    class NORM,LLMG,RED,ARG,BUILD new
+    class PORT,EXT port
+    class BLK stop
+    class DET,PIN,PROOF repro
+```
+
+**What changed:**
+- **Input (self-contained guardrails):** evasion-resistant normalization runs
+  before detection; `injectionClassifier` is a **port** (built-in LLM guardrail or
+  your external integration); input PII/secret redaction closes the pipeline.
+- **Tool calls:** secrets are redacted from arguments before execution and trace
+  recording.
+- **Engine (seed propagation):** `buildCompletionRequest` injects the seed into
+  every request.
+- **Reproducibility plane (enabled):** because the seed travels in every request,
+  `assertDeterministic`, `pinOutput`, and signed `ExecutionProof`s (whose request
+  hash includes the seed) now work end-to-end, verifiable offline with
+  `elsium verify`.
