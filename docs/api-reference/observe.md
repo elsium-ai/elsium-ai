@@ -13,7 +13,7 @@ import { createSpan, observe, createCostEngine, createMetrics } from '@elsium-ai
 ### createSpan
 
 ```ts
-createSpan(name: string, opts?: SpanOptions): Span
+createSpan(name: string, options?: { traceId?: string; parentId?: string; kind?: SpanKind; onEnd?: SpanHandler }): Span
 ```
 
 Creates a trace span for tracking execution of a unit of work.
@@ -22,25 +22,23 @@ Creates a trace span for tracking execution of a unit of work.
 
 | Field | Type | Description |
 |---|---|---|
-| `kind` | `string` | Span kind (e.g., `'llm'`, `'tool'`, `'agent'`) |
-| `parent` | `Span` | Parent span for nested traces |
-| `attributes` | `Record<string, unknown>` | Key-value metadata |
+| `kind` | `SpanKind` | Span kind: `'llm'` \| `'tool'` \| `'agent'` \| `'workflow'` \| `'custom'` |
+| `parentId` | `string` | Parent span id for nested traces |
+| `traceId` | `string` | Trace id to attach this span to |
+| `onEnd` | `SpanHandler` | Callback invoked with span data when the span ends |
 
 ```ts
 import { createSpan } from '@elsium-ai/observe'
 
-const span = createSpan('llm-request', {
-  kind: 'llm',
-  attributes: { model: 'claude-sonnet-4-20250514', provider: 'anthropic' },
-})
+const span = createSpan('llm-request', { kind: 'llm' })
+span.setMetadata('model', 'claude-sonnet-4-20250514')
+span.setMetadata('provider', 'anthropic')
 
 try {
   const result = await provider.complete(request)
-  span.setAttributes({ tokens: result.usage.totalTokens })
-  span.end()
+  span.end({ status: 'ok', metadata: { tokens: result.usage.totalTokens } })
 } catch (error) {
-  span.setError(error)
-  span.end()
+  span.end({ status: 'error', metadata: { error: String(error) } })
   throw error
 }
 ```
@@ -48,7 +46,7 @@ try {
 ### observe
 
 ```ts
-observe(config: ObserveConfig): Tracer
+observe(config?: TracerConfig): Tracer
 ```
 
 Creates a tracer with sampling, exporters, and cost tracking.
@@ -57,9 +55,8 @@ Creates a tracer with sampling, exporters, and cost tracking.
 import { observe } from '@elsium-ai/observe'
 
 const tracer = observe({
-  serviceName: 'my-ai-app',
   samplingRate: 0.1, // sample 10% of traces
-  exporters: [consoleExporter, otlpExporter],
+  output: [consoleExporter, otlpExporter],
   costTracking: true,
 })
 
@@ -116,13 +113,13 @@ Creates a cost engine for budget enforcement, loop detection, and model cost sug
 import { createCostEngine } from '@elsium-ai/observe'
 
 const costEngine = createCostEngine({
-  budget: { maxTotalCost: 10.0, currency: 'USD' },
-  alertThreshold: 0.8, // alert at 80% budget usage
+  totalBudget: 10.0,
+  alertThresholds: [0.8], // alert at 80% budget usage
 })
 
-costEngine.track(response.cost)
-const remaining = costEngine.remaining()
-const suggestion = costEngine.suggestModel({ budget: 1.0, minQuality: 'high' })
+costEngine.trackCall(response)
+const report = costEngine.getReport()
+const suggestion = costEngine.suggestModel(response.model, 500)
 ```
 
 ### createBudgetAwareRoutingPolicy
@@ -163,7 +160,7 @@ const gw = gateway({
 ### registerModelTier
 
 ```ts
-registerModelTier(model: string, tier: ModelTier): void
+registerModelTier(model: string, entry: ModelTierEntry): void
 ```
 
 Registers a model's pricing tier for cost engine calculations.
@@ -172,9 +169,8 @@ Registers a model's pricing tier for cost engine calculations.
 import { registerModelTier } from '@elsium-ai/observe'
 
 registerModelTier('custom-model-v1', {
-  inputPer1kTokens: 0.005,
-  outputPer1kTokens: 0.015,
-  tier: 'premium',
+  tier: 'high',
+  costPerMToken: 12,
 })
 ```
 
@@ -185,7 +181,7 @@ registerModelTier('custom-model-v1', {
 ### createMetrics
 
 ```ts
-createMetrics(): Metrics
+createMetrics(): MetricsCollector
 ```
 
 Creates a metrics collector for tracking counters, gauges, and histograms.
@@ -194,9 +190,9 @@ Creates a metrics collector for tracking counters, gauges, and histograms.
 
 | Method | Signature | Description |
 |---|---|---|
-| `increment` | `increment(name: string, value?: number, tags?: Tags): void` | Increment a counter |
-| `gauge` | `gauge(name: string, value: number, tags?: Tags): void` | Set a gauge value |
-| `histogram` | `histogram(name: string, value: number, tags?: Tags): void` | Record a histogram value |
+| `increment` | `increment(name: string, value?: number, tags?: Record<string, string>): void` | Increment a counter |
+| `gauge` | `gauge(name: string, value: number, tags?: Record<string, string>): void` | Set a gauge value |
+| `histogram` | `histogram(name: string, value: number, tags?: Record<string, string>): void` | Record a histogram value |
 
 ```ts
 import { createMetrics } from '@elsium-ai/observe'
@@ -224,18 +220,20 @@ Creates a SHA-256 hash-chained audit log for tamper-evident recording of LLM int
 import { createAuditTrail } from '@elsium-ai/observe'
 
 const audit = createAuditTrail({
-  storage: 'file',
-  path: './audit/llm-audit.log',
+  storage: 'memory',
+  hashChain: true,
 })
 
-await audit.record({
-  action: 'completion',
-  model: 'claude-sonnet-4-20250514',
-  input: request.messages,
-  output: response.content,
-  cost: response.cost,
-  userId: ctx.userId,
-})
+audit.log(
+  'llm_call',
+  {
+    model: 'claude-sonnet-4-20250514',
+    input: request.messages,
+    output: response.content,
+    cost: response.cost,
+  },
+  { actor: ctx.userId, traceId: ctx.traceId },
+)
 ```
 
 ### auditMiddleware
@@ -249,7 +247,7 @@ Middleware that automatically records all requests and responses to the audit tr
 ```ts
 import { createAuditTrail, auditMiddleware } from '@elsium-ai/observe'
 
-const audit = createAuditTrail({ storage: 'file', path: './audit.log' })
+const audit = createAuditTrail({ storage: 'memory' })
 
 const gw = gateway({
   middleware: [auditMiddleware(audit)],
@@ -274,20 +272,24 @@ import { createProvenanceTracker } from '@elsium-ai/observe'
 const provenance = createProvenanceTracker()
 
 provenance.record({
+  prompt: 'chunk',
+  model: 'text-splitter',
+  config: { chunkSize: 512 },
   input: 'raw-document',
   output: 'chunked-document',
-  operation: 'chunk',
-  metadata: { chunkSize: 512 },
+  traceId: 'trc_pipeline_1',
 })
 
-provenance.record({
+const embedded = provenance.record({
+  prompt: 'embed',
+  model: 'text-embedding-3-small',
+  config: {},
   input: 'chunked-document',
   output: 'embedded-document',
-  operation: 'embed',
-  metadata: { model: 'text-embedding-3-small' },
+  traceId: 'trc_pipeline_1',
 })
 
-const lineage = provenance.getLineage('embedded-document')
+const lineage = provenance.getLineage(embedded.outputHash)
 ```
 
 ---
@@ -318,18 +320,17 @@ const store = createFileExperimentStore('./experiments')
 const experiment = createExperiment({
   name: 'prompt-comparison',
   variants: [
-    { name: 'concise', systemPrompt: 'Be concise.' },
-    { name: 'detailed', systemPrompt: 'Be detailed and thorough.' },
+    { name: 'concise', weight: 1, config: { systemPrompt: 'Be concise.' } },
+    { name: 'detailed', weight: 1, config: { systemPrompt: 'Be detailed and thorough.' } },
   ],
-  metrics: ['latency', 'cost', 'quality'],
   store,
 })
 
 const variant = experiment.assign(userId)
 const result = await runWithVariant(variant)
-experiment.record(variant, result)
+experiment.record(variant.name, result)
 
-const analysis = experiment.analyze()
+const analysis = experiment.results()
 ```
 
 ---
@@ -356,7 +357,7 @@ Wraps an agent with automatic tracing, creating spans for each run and tool invo
 import { observe, instrumentComplete, instrumentAgent } from '@elsium-ai/observe'
 import { defineAgent } from '@elsium-ai/agents'
 
-const tracer = observe({ serviceName: 'my-app' })
+const tracer = observe()
 
 // Instrument gateway completions
 const tracedComplete = instrumentComplete(gw.complete.bind(gw), tracer)
@@ -378,24 +379,24 @@ Integration with the OpenTelemetry ecosystem for exporting traces to any OTel-co
 
 | Export | Signature | Description |
 |---|---|---|
-| `toOTelSpan` | `toOTelSpan(span: Span): OTelSpan` | Convert an ElsiumAI span to OTel span format |
-| `toOTelExportRequest` | `toOTelExportRequest(spans: Span[]): OTLPExportRequest` | Create an OTLP export request from spans |
+| `toOTelSpan` | `toOTelSpan(span: SpanData): OTelSpan` | Convert an ElsiumAI span to OTel span format |
+| `toOTelExportRequest` | `toOTelExportRequest(spans: SpanData[]): OTelExportRequest` | Create an OTLP export request from spans |
 
 ### W3C Trace Context
 
 | Export | Signature | Description |
 |---|---|---|
-| `toTraceparent` | `toTraceparent(span: Span): string` | Generate a W3C `traceparent` header value |
-| `parseTraceparent` | `parseTraceparent(header: string): TraceContext` | Parse a `traceparent` header |
-| `injectTraceContext` | `injectTraceContext(span: Span, headers: Headers): Headers` | Inject trace context into outgoing request headers |
-| `extractTraceContext` | `extractTraceContext(headers: Headers): TraceContext \| null` | Extract trace context from incoming request headers |
+| `toTraceparent` | `toTraceparent(span: SpanData): string` | Generate a W3C `traceparent` header value |
+| `parseTraceparent` | `parseTraceparent(header: string): TraceContext \| null` | Parse a `traceparent` header |
+| `injectTraceContext` | `injectTraceContext(span: SpanData, headers?: Record<string, string>): Record<string, string>` | Inject trace context into outgoing request headers |
+| `extractTraceContext` | `extractTraceContext(headers: Record<string, string \| undefined>): TraceContext \| null` | Extract trace context from incoming request headers |
 
 ### OTLP Exporter
 
 ### createOTLPExporter
 
 ```ts
-createOTLPExporter(config: OTLPExporterConfig): Exporter
+createOTLPExporter(config: OTLPExporterConfig): TracerExporter
 ```
 
 Creates an OTLP HTTP exporter with batching for sending traces to an OTel collector.
@@ -417,8 +418,7 @@ const exporter = createOTLPExporter({
 })
 
 const tracer = observe({
-  serviceName: 'my-ai-app',
-  exporters: [exporter],
+  output: [exporter],
 })
 
 // W3C Trace Context propagation
@@ -426,8 +426,7 @@ const span = tracer.startSpan('outgoing-request')
 const traceparent = toTraceparent(span)
 // traceparent: '00-<traceId>-<spanId>-01'
 
-const headers = new Headers()
-injectTraceContext(span, headers)
+const headers = injectTraceContext(span, {})
 // headers now contains 'traceparent' for downstream services
 ```
 
@@ -465,7 +464,7 @@ Generates a compliance report by evaluating audit trail events against a set of 
 | `systemName` | `string` | Name of the AI system |
 | `systemVersion` | `string` | Version of the system |
 | `reportPeriod` | `{ from: number; to: number }` | Time range for the report |
-| `riskLevel` | `string?` | Risk classification (EU AI Act) |
+| `riskLevel` | `'minimal' \| 'limited' \| 'high' \| 'unacceptable'` (optional) | Risk classification (EU AI Act) |
 | `customChecks` | `ComplianceCheck[]?` | Custom checks for `custom` framework |
 
 ```ts

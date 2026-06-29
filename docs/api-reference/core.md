@@ -21,19 +21,19 @@ Core types for messages, content, provider configuration, and middleware.
 | `DocumentContent` | Document content part with `type: 'document'` |
 | `ContentPart` | Union of all content part types |
 | `ToolCall` | Tool invocation with `id`, `name`, and `arguments` |
-| `ToolResult` | Tool execution result with `toolCallId` and `output` |
+| `ToolResult` | Tool execution result with `toolCallId` and `content` |
 | `Message` | Chat message with `role`, `content`, and optional `toolCalls` / `toolResults` |
 | `TokenUsage` | Token counts: `inputTokens`, `outputTokens`, `totalTokens` |
 | `CostBreakdown` | Cost details: `inputCost`, `outputCost`, `totalCost`, `currency` |
-| `StopReason` | Why generation stopped: `'end'` \| `'length'` \| `'tool_call'` \| `'content_filter'` |
-| `LLMResponse` | Complete response with `content`, `usage`, `cost`, `stopReason`, `model` |
-| `StreamEvent` | Stream event types: `content-delta`, `tool-call-delta`, `usage`, `done` |
+| `StopReason` | Why generation stopped: `'end_turn'` \| `'max_tokens'` \| `'stop_sequence'` \| `'tool_use'` |
+| `LLMResponse` | Complete response with `message`, `usage`, `cost`, `stopReason`, `model` |
+| `StreamEvent` | Stream event types: `text_delta`, `tool_call_delta`, `message_end`, and others |
 | `XRayData` | Detailed execution trace data attached to responses |
 | `StreamCheckpoint` | Checkpoint data for stream recovery |
-| `ProviderConfig` | Provider configuration: `apiKey`, `baseUrl`, `defaultModel`, `options` |
+| `ProviderConfig` | Provider configuration: `apiKey`, `baseUrl`, `timeout`, `maxRetries` |
 | `CompletionRequest` | Request object: `messages`, `model`, `temperature`, `maxTokens`, `tools`, `stream` |
-| `ToolDefinition` | Tool schema: `name`, `description`, `parameters` (JSON Schema) |
-| `TenantContext` | Multi-tenant context with `tenantId`, `userId`, `metadata` |
+| `ToolDefinition` | Tool schema: `name`, `description`, `inputSchema` (JSON Schema) |
+| `TenantContext` | Multi-tenant context with `tenantId`, `tier`, `metadata` |
 | `MiddlewareContext` | Context passed through middleware chain |
 | `MiddlewareNext` | Next function signature for middleware |
 | `Middleware` | Request middleware `(ctx, next) => Promise<LLMResponse>` |
@@ -138,19 +138,19 @@ Async iterable stream with checkpoint and recovery support.
 ### createStream
 
 ```ts
-createStream(source: AsyncIterable<StreamEvent>): ElsiumStream
+createStream(executor: (emit: (event: StreamEvent) => void) => Promise<void>): ElsiumStream
 ```
 
-Creates a managed stream from an async iterable source. Supports iteration, checkpointing, and event handling.
+Creates a managed stream from a push-based executor. Supports iteration, checkpointing, and event handling. To wrap an existing async iterable, use `new ElsiumStream(source)`.
 
 ```ts
-import { createStream } from '@elsium-ai/core'
+import { ElsiumStream } from '@elsium-ai/core'
 
-const stream = createStream(provider.stream(request))
+const stream = new ElsiumStream(provider.stream(request))
 
 for await (const event of stream) {
-  if (event.type === 'content-delta') {
-    process.stdout.write(event.delta)
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.text)
   }
 }
 ```
@@ -277,16 +277,16 @@ const all = providers.list() // string[]
 | Export | Signature | Description |
 |---|---|---|
 | `countTokens` | `countTokens(text: string): number` | Estimate token count for text |
-| `createContextManager` | `createContextManager(maxTokens: number): ContextManager` | Manage context window budget |
+| `createContextManager` | `createContextManager(config: ContextManagerConfig): ContextManager` | Manage context window budget |
 
 ```ts
 import { countTokens, createContextManager } from '@elsium-ai/core'
 
 const tokens = countTokens('Hello, world!')
 
-const ctx = createContextManager(4096)
-ctx.add(messages)
-const fits = ctx.fits(newMessage)
+const ctx = createContextManager({ maxTokens: 4096, strategy: 'truncate' })
+const used = ctx.estimateTokens(messages)
+const fitted = await ctx.fit(messages)
 ```
 
 ---
@@ -296,7 +296,7 @@ const fits = ctx.fits(newMessage)
 ### createCircuitBreaker
 
 ```ts
-createCircuitBreaker(opts: CircuitBreakerOptions): CircuitBreaker
+createCircuitBreaker(config?: CircuitBreakerConfig): CircuitBreaker
 ```
 
 Implements the circuit breaker pattern for fault tolerance.
@@ -321,13 +321,13 @@ Request deduplication to prevent duplicate concurrent requests.
 | Export | Signature | Description |
 |---|---|---|
 | `createDedup` | `createDedup(): Dedup` | Create a deduplication instance |
-| `dedupMiddleware` | `Middleware` | Middleware that deduplicates identical in-flight requests |
+| `dedupMiddleware` | `dedupMiddleware(config?: DedupConfig): Middleware` | Middleware that deduplicates identical in-flight requests |
 
 ```ts
 import { dedupMiddleware } from '@elsium-ai/core'
 
 const gw = gateway({
-  middleware: [dedupMiddleware],
+  middleware: [dedupMiddleware()],
 })
 ```
 
@@ -339,12 +339,12 @@ Policy-based access control for requests.
 
 | Export | Signature | Description |
 |---|---|---|
-| `createPolicySet` | `createPolicySet(rules: PolicyRule[]): PolicySet` | Create a policy set from rules |
+| `createPolicySet` | `createPolicySet(policies: PolicyConfig[]): PolicySet` | Create a policy set from policies |
 | `policyMiddleware` | `policyMiddleware(policySet: PolicySet, opts?): Middleware` | Enforce policies as middleware |
-| `modelAccessPolicy` | `modelAccessPolicy(models: string[]): PolicyRule` | Restrict allowed models |
-| `tokenLimitPolicy` | `tokenLimitPolicy(max: number): PolicyRule` | Limit max tokens per request |
-| `costLimitPolicy` | `costLimitPolicy(max: number): PolicyRule` | Limit cost per request |
-| `contentPolicy` | `contentPolicy(patterns: RegExp[]): PolicyRule` | Block content matching patterns |
+| `modelAccessPolicy` | `modelAccessPolicy(models: string[]): PolicyConfig` | Restrict allowed models |
+| `tokenLimitPolicy` | `tokenLimitPolicy(max: number): PolicyConfig` | Limit max tokens per request |
+| `costLimitPolicy` | `costLimitPolicy(max: number): PolicyConfig` | Limit cost per request |
+| `contentPolicy` | `contentPolicy(patterns: RegExp[]): PolicyConfig` | Block content matching patterns |
 
 ```ts
 import { createPolicySet, policyMiddleware, modelAccessPolicy, tokenLimitPolicy } from '@elsium-ai/core'
@@ -369,18 +369,18 @@ const gw = gateway({
 createShutdownManager(): ShutdownManager
 ```
 
-Manages graceful shutdown with registered cleanup handlers.
+Manages graceful shutdown by draining in-flight operations (installs SIGTERM/SIGINT handlers).
 
 ```ts
 import { createShutdownManager } from '@elsium-ai/core'
 
 const shutdown = createShutdownManager()
 
-shutdown.register('database', async () => {
-  await db.close()
+// Track in-flight work so shutdown can drain it before exiting
+await shutdown.trackOperation(async () => {
+  await handleRequest()
 })
 
-shutdown.register('cache', async () => {
-  await cache.flush()
-})
+// Begin graceful drain (also triggered automatically on SIGTERM/SIGINT)
+await shutdown.shutdown()
 ```

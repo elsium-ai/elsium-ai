@@ -13,7 +13,7 @@ import { defineAgent, createMemory, runSequential } from '@elsium-ai/agents'
 ### defineAgent
 
 ```ts
-defineAgent(config: AgentConfig): Agent
+defineAgent(config: AgentConfig, deps?: AgentDependencies): Agent
 ```
 
 Creates an agent that can reason, use tools, and maintain memory across turns.
@@ -24,11 +24,11 @@ Creates an agent that can reason, use tools, and maintain memory across turns.
 |---|---|---|
 | `name` | `string` | Agent identifier |
 | `model` | `string` | LLM model to use |
-| `systemPrompt` | `string` | System prompt defining agent behavior |
-| `tools` | `ToolDefinition[]` | Tools available to the agent |
-| `memory` | `Memory` | Memory strategy for conversation history |
-| `guardrails` | `Guardrail[]` | Input/output validation guardrails |
-| `maxIterations` | `number` | Maximum tool-use loop iterations (default: 10) |
+| `system` | `string` | System prompt defining agent behavior |
+| `tools` | `Tool[]` | Tools available to the agent |
+| `memory` | `MemoryConfig` | Memory strategy for conversation history |
+| `guardrails` | `GuardrailConfig` | Input/output validation guardrails |
+| `guardrails.maxIterations` | `number` | Maximum tool-use loop iterations (default: 10) |
 | `seed` | `number` | Seed forwarded to every LLM request for reproducibility (overridable per run) |
 
 **Returns** an `Agent` with `run(input, opts?)`, `stream(input, opts?)`, and `generate(input, schema, opts?)` methods.
@@ -47,15 +47,15 @@ const b = await agent.run('Extract the fields', { seed: 7 }) // per-run override
 **Caveat:** `seed` is only effective if the provider honors it (forwarded where supported, e.g. OpenAI and Google; absent on Anthropic). It does not, on its own, make a hosted model deterministic. Use `@elsium-ai/testing`'s `assertDeterministic` to measure run-to-run variance (it measures variance, it does not enforce it). See `examples/reproducible-run`.
 
 ```ts
-import { defineAgent, createMemory } from '@elsium-ai/agents'
+import { defineAgent } from '@elsium-ai/agents'
 
 const agent = defineAgent({
   name: 'researcher',
   model: 'claude-sonnet-4-20250514',
-  systemPrompt: 'You are a research assistant. Use tools to find and synthesize information.',
+  system: 'You are a research assistant. Use tools to find and synthesize information.',
   tools: [searchTool, summarizeTool],
-  memory: createMemory('sliding-window', { maxMessages: 50 }),
-  maxIterations: 15,
+  memory: { strategy: 'sliding-window', maxMessages: 50 },
+  guardrails: { maxIterations: 15 },
 })
 
 const result = await agent.run('What are the latest advances in quantum computing?')
@@ -137,7 +137,7 @@ Creates an in-memory message store. Messages are lost when the process exits.
 ### createSqliteMemoryStore
 
 ```ts
-createSqliteMemoryStore(path: string): MemoryStore
+createSqliteMemoryStore(config: SqliteMemoryStoreConfig): MemoryStore
 ```
 
 Creates a SQLite-backed persistent message store. Messages survive process restarts.
@@ -145,8 +145,9 @@ Creates a SQLite-backed persistent message store. Messages survive process resta
 ```ts
 import { createMemory, createSqliteMemoryStore } from '@elsium-ai/agents'
 
-const store = createSqliteMemoryStore('./data/memory.db')
-const memory = createMemory('sliding-window', {
+const store = createSqliteMemoryStore({ path: './data/memory.db' })
+const memory = createMemory({
+  strategy: 'sliding-window',
   maxMessages: 100,
   store,
 })
@@ -184,7 +185,7 @@ const findings = shared.get('findings')
 ### runSequential
 
 ```ts
-runSequential(agents: Agent[], input: string, opts?: MultiAgentOptions): Promise<AgentResult>
+runSequential(agents: Agent[], input: string, opts?: MultiAgentOptions): Promise<AgentResult[]>
 ```
 
 Runs agents in sequence. Each agent receives the previous agent's output as its input.
@@ -382,7 +383,7 @@ const result = await task.wait()
 ### createSemanticValidator
 
 ```ts
-createSemanticValidator(config: SemanticValidatorConfig): Guardrail
+createSemanticValidator(config: SemanticGuardrailConfig, llmComplete?: LLMComplete): SemanticValidator
 ```
 
 Validates agent outputs for hallucination, relevance, and grounding against source material.
@@ -450,29 +451,29 @@ const agent = defineAgent({
 ### createConfidenceScorer
 
 ```ts
-createConfidenceScorer(config: ConfidenceScorerConfig): Guardrail
+createConfidenceScorer(config: ConfidenceConfig): { score(input: string, output: string, semanticResult?: SemanticValidationResult): Promise<ConfidenceResult> }
 ```
 
 Scores confidence of agent outputs based on configurable criteria.
 
 ```ts
-import { defineAgent, createSemanticValidator, createAgentSecurity } from '@elsium-ai/agents'
+import { defineAgent } from '@elsium-ai/agents'
 
 const agent = defineAgent({
   name: 'assistant',
   model: 'claude-sonnet-4-20250514',
-  systemPrompt: 'You are a helpful assistant.',
-  guardrails: [
-    createSemanticValidator({
-      checkHallucination: true,
-      checkRelevance: true,
-    }),
-    createAgentSecurity({
+  system: 'You are a helpful assistant.',
+  guardrails: {
+    semantic: {
+      hallucination: { enabled: true },
+      relevance: { enabled: true },
+    },
+    security: {
       detectPromptInjection: true,
       detectJailbreak: true,
       redactSecrets: true,
-    }),
-  ],
+    },
+  },
 })
 ```
 
@@ -480,7 +481,10 @@ const agent = defineAgent({
 
 ```ts
 createApprovalGate(config: ApprovalGateConfig): ApprovalGate
-shouldRequireApproval(action: AgentAction, gate: ApprovalGate): boolean
+shouldRequireApproval(
+  config: ApprovalGateConfig['requireApprovalFor'],
+  context: { toolName?: string; model?: string; cost?: number },
+): boolean
 ```
 
 Human-in-the-loop approval for sensitive agent actions.
@@ -488,14 +492,18 @@ Human-in-the-loop approval for sensitive agent actions.
 ```ts
 import { createApprovalGate, shouldRequireApproval } from '@elsium-ai/agents'
 
+const requireApprovalFor = { tools: ['delete', 'send-email', 'execute-code'] }
+
 const gate = createApprovalGate({
-  requireApprovalFor: ['delete', 'send-email', 'execute-code'],
-  autoApprove: ['search', 'summarize'],
+  callback: (req) => requestHumanApproval(req),
+  requireApprovalFor,
 })
 
-if (shouldRequireApproval(action, gate)) {
-  const approved = await requestHumanApproval(action)
-  if (!approved) return
+if (shouldRequireApproval(requireApprovalFor, { toolName: action.name })) {
+  const decision = await gate.requestApproval('tool_call', `Run ${action.name}`, {
+    toolName: action.name,
+  })
+  if (!decision.approved) return
 }
 ```
 
@@ -507,11 +515,12 @@ if (shouldRequireApproval(action, gate)) {
 
 ```ts
 executeStateMachine(
-  agent: Agent,
-  states: StateMachineConfig,
+  baseConfig: AgentConfig,
+  stateConfig: { states: Record<string, StateDefinition>; initialState: string },
+  deps: AgentDependencies,
   input: string,
-  opts?: StateMachineOptions,
-): Promise<AgentResult>
+  options?: AgentRunOptions,
+): Promise<StateMachineResult>
 ```
 
 Runs an agent through a defined state machine. Each state defines transitions that determine the next state based on the agent's output. Context is threaded through all transitions.
@@ -521,39 +530,47 @@ Runs an agent through a defined state machine. Each state defines transitions th
 - `{ next: string; context?: Record<string, unknown> }` -- next state with updated context
 
 ```ts
-import { defineAgent, executeStateMachine } from '@elsium-ai/agents'
+import { executeStateMachine } from '@elsium-ai/agents'
 
-const agent = defineAgent({ name: 'support', model: 'claude-sonnet-4-20250514', /* ... */ })
+// deps: { complete, stream } backed by your gateway
+const deps = { complete: (req) => llm.complete(req), stream: (req) => llm.stream(req) }
 
-const result = await executeStateMachine(agent, {
-  initial: 'classify',
-  states: {
-    classify: {
-      systemPrompt: 'Classify the user issue as billing, technical, or general.',
-      transitions: (output, ctx) => {
-        if (output.includes('billing')) return { next: 'billing', context: { type: 'billing' } }
-        if (output.includes('technical')) return 'technical'
-        return 'general'
+const result = await executeStateMachine(
+  { name: 'support', model: 'claude-sonnet-4-20250514', system: 'Help the user.' },
+  {
+    initialState: 'classify',
+    states: {
+      classify: {
+        system: 'Classify the user issue as billing, technical, or general.',
+        transition: (result, ctx) => {
+          const output = String(result.message.content)
+          if (output.includes('billing')) return { next: 'billing', context: { type: 'billing' } }
+          if (output.includes('technical')) return 'technical'
+          return 'general'
+        },
+      },
+      billing: {
+        system: 'Help the user with their billing issue.',
+        transition: () => 'resolve',
+      },
+      technical: {
+        system: 'Help the user with their technical issue.',
+        transition: () => 'resolve',
+      },
+      general: {
+        system: 'Help the user with their general inquiry.',
+        transition: () => 'resolve',
+      },
+      resolve: {
+        system: 'Summarize the resolution and ask if there is anything else.',
+        terminal: true, // terminal state
+        transition: () => 'resolve',
       },
     },
-    billing: {
-      systemPrompt: 'Help the user with their billing issue.',
-      transitions: () => 'resolve',
-    },
-    technical: {
-      systemPrompt: 'Help the user with their technical issue.',
-      transitions: () => 'resolve',
-    },
-    general: {
-      systemPrompt: 'Help the user with their general inquiry.',
-      transitions: () => 'resolve',
-    },
-    resolve: {
-      systemPrompt: 'Summarize the resolution and ask if there is anything else.',
-      transitions: () => null, // terminal state
-    },
   },
-}, 'I was double-charged on my last invoice')
+  deps,
+  'I was double-charged on my last invoice',
+)
 ```
 
 ---
@@ -790,7 +807,7 @@ Cryptographic agent identity with HMAC-SHA256 signing, replay protection, and cr
 ### createAgentIdentity
 
 ```ts
-createAgentIdentity(config: AgentIdentityConfig): AgentIdentity
+createAgentIdentity(config: AgentIdentityConfig): Promise<AgentIdentity>
 ```
 
 Creates a cryptographic identity for an agent. Each identity has a unique keypair, can sign payloads with HMAC-SHA256, and verify signatures with timing-safe comparison and replay protection.
@@ -806,11 +823,11 @@ Creates a cryptographic identity for an agent. Each identity has a unique keypai
 ```ts
 import { createAgentIdentity } from '@elsium-ai/agents'
 
-const identity = createAgentIdentity({ agentId: 'researcher' })
+const identity = await createAgentIdentity({ agentId: 'researcher' })
 
-const signed = identity.sign({ action: 'tool_call', tool: 'search' })
+const signed = await identity.sign({ action: 'tool_call', tool: 'search' })
 
-const result = identity.verify(signed)
+const result = await identity.verify(signed)
 // { valid: true }
 ```
 
@@ -827,14 +844,14 @@ import { createAgentIdentity, createIdentityRegistry } from '@elsium-ai/agents'
 
 const registry = createIdentityRegistry()
 
-const researcher = createAgentIdentity({ agentId: 'researcher' })
-const reviewer = createAgentIdentity({ agentId: 'reviewer' })
+const researcher = await createAgentIdentity({ agentId: 'researcher' })
+const reviewer = await createAgentIdentity({ agentId: 'reviewer' })
 
 registry.register(researcher)
 registry.register(reviewer)
 
-const signed = researcher.sign({ data: 'findings' })
-const verification = registry.verifySignedPayload(signed)
+const signed = await researcher.sign({ data: 'findings' })
+const verification = await registry.verifySignedPayload(signed)
 // { valid: true }
 ```
 

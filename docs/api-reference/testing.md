@@ -86,7 +86,7 @@ Runs a `scorer` (`(output, input?) => Promise<number> | number`) over human-labe
 ```ts
 const alignment = await runJudgeAlignment(
   cases,
-  async (output, input) => (await judge.evaluate(output, input)).score,
+  async (output) => (await judge.evaluate(output)).score,
 )
 ```
 

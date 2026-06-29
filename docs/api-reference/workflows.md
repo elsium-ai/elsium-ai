@@ -184,7 +184,7 @@ interface WorkflowRunOptions {
 ```ts
 interface WorkflowResult {
   name: string
-  status: WorkflowStatus            // 'pending' | 'running' | 'completed' | 'failed'
+  status: WorkflowStatus            // 'pending' | 'running' | 'completed' | 'failed' | 'paused'
   steps: StepResult[]               // Results for each step
   totalDurationMs: number
   outputs: Record<string, unknown>  // Step outputs keyed by step name
@@ -206,7 +206,7 @@ interface WorkflowResult {
 | `ParallelWorkflowConfig` | Parallel config: `name`, `steps[]`, `onComplete?` |
 | `BranchConfig` | Branch definition: `condition` function and `workflow` |
 | `WorkflowResult` | Workflow outcome: `name`, `status`, `steps[]`, `totalDurationMs`, `outputs` |
-| `WorkflowStatus` | `'pending'` \| `'running'` \| `'completed'` \| `'failed'` |
+| `WorkflowStatus` | `'pending'` \| `'running'` \| `'completed'` \| `'failed'` \| `'paused'` |
 | `WorkflowRunOptions` | Run options: `signal?` |
 | `Workflow` | Workflow instance: `name`, `run(input, options?)` |
 
