@@ -21,7 +21,10 @@ npm install @elsium-ai/testing --save-dev
 | **Classification Metrics** | `computeClassificationReport`, `computeConfusionMatrix`, `runClassificationEval`, `formatClassificationReport`, `formatConfusionMatrix` | Precision / recall / F1 (per-label + macro / micro / weighted), accuracy, and confusion matrix against labeled ground truth |
 | **RAG Eval** | `faithfulness`, `answerRelevancy`, `contextPrecision`, `contextRecall`, `runRagEval`, `formatRagEvalReport` | RAGAS-style RAG scoring: groundedness via LLM judge plus reference-based retrieval precision / recall |
 | **Rubric Judge** | `createRubricJudge`, `RubricCriterion`, `RubricJudgeResult`, `RubricJudge`, `TextGenerator` | Structured LLM-as-a-judge with weighted multi-criterion rubrics and per-criterion breakdown; produces an `LLMJudge` |
+| **Judge Alignment** | `computeJudgeAlignment`, `runJudgeAlignment`, `assessJudgeConsistency`, `AlignmentPair`, `LabeledJudgeCase`, `JudgeAlignmentResult`, `JudgeConsistencyResult` | Measure whether an LLM-judge can be trusted vs human ground truth: agreement rate, Cohen's kappa, MAE, Pearson, confusion matrix, plus self-consistency across re-runs. *Trust the judge.* |
 | **Eval Attestation** | `attestEvalSuite`, `verifyEvalAttestation`, `formatAttestation`, `EvalAttestation`, `AttestationVerification` | Signed, hash-chained (HMAC-SHA256) eval records storing only input/output **hashes** — tamper-evident, independently verifiable evidence that a score came from specific inputs. Evals as proof, not opinion. |
+| **Eval Proof (Ed25519)** | `proveEvalSuite`, `verifyEvalProof`, `EvalProofOptions` | Sign an eval suite as an Ed25519 `ExecutionProof` (from `@elsium-ai/observe`); anyone verifies it offline with only the public key — no shared secret — via `verifyEvalProof` or the `elsium verify` CLI. *Trust the result.* |
+| **Dataset Provenance** | `summarizeAnnotations`, `hashDataset`, `createDatasetManifest`, `Annotation`, `AnnotatedCase`, `DatasetAnnotationReport`, `DatasetManifest` | Audit the eval data itself: inter-annotator agreement (gold label, disputed cases, Fleiss' kappa) and a deterministic, order-independent SHA-256 content hash / manifest. *Trust the data.* |
 | **Eval-as-Policy** | `runEvalGate`, `toAttestedGovernance`, `buildEvalComplianceReport`, `formatEvalComplianceReport`, `GovernanceAssertion`, `EvalGateResult`, `EvalComplianceReport` | Turn eval results into a governance gate wired to the `@elsium-ai/core` policy engine, with a recorded sign-off override and compliance-control mapping (EU AI Act / NIST / OWASP). |
 | **Snapshot** | `createSnapshotStore`, `hashOutput`, `testSnapshot`, `PromptSnapshot`, `SnapshotStore`, `SnapshotTestResult` | Hash-based snapshot testing for LLM outputs |
 | **Prompts** | `createPromptRegistry`, `definePrompt`, `PromptDefinition`, `PromptDiff`, `DiffLine`, `PromptRegistry` | Versioned prompt registry with diff and rendering |
@@ -557,6 +560,94 @@ const { score, reasoning } = await judge('the answer to grade')
 
 ---
 
+## Judge Alignment
+
+A rubric judge produces a score; on its own that is an *opinion*. Judge alignment turns it into a calibrated instrument by measuring how well it agrees with human ground truth — and how consistent it is with itself. This is the first leg of the "evals are proof, not opinion" trilogy: **trust the judge** → [trust the result](#eval-proof-ed25519) → [trust the data](#dataset-provenance).
+
+### `computeJudgeAlignment()`
+
+Pure (no I/O) comparison of human vs judge scores.
+
+```ts
+function computeJudgeAlignment(
+  pairs: AlignmentPair[],            // { human: number; judge: number }, scores 0..1
+  options?: { threshold?: number },  // pass/fail cutoff, default 0.5
+): JudgeAlignmentResult
+```
+
+```ts
+import { computeJudgeAlignment } from '@elsium-ai/testing'
+
+const report = computeJudgeAlignment([
+  { human: 1, judge: 0.9 },
+  { human: 0, judge: 0.2 },
+  { human: 1, judge: 0.4 },
+])
+
+report.agreementRate      // observed pass/fail agreement after thresholding (0..1)
+report.cohenKappa         // agreement corrected for chance (-1..1)
+report.meanAbsoluteError  // mean |human - judge| over continuous scores
+report.pearson            // correlation of continuous scores (0 when no variance)
+report.confusion          // { truePos, trueNeg, falsePos, falseNeg }
+report.strength           // Landis–Koch label for kappa: 'poor' | 'fair' | 'moderate' | 'substantial' | 'almost-perfect'
+```
+
+`computeJudgeAlignment` throws if `pairs` is empty.
+
+### `runJudgeAlignment()`
+
+Run a scorer over human-labeled cases and report alignment in one step. The scorer is any `(output: string, input?: string) => Promise<number> | number` — including `createRubricJudge(...).evaluate` wrapped to return its `score`.
+
+```ts
+function runJudgeAlignment(
+  cases: LabeledJudgeCase[],   // { output: string; input?: string; humanScore: number }
+  scorer: JudgeScorer,
+  options?: { threshold?: number },
+): Promise<JudgeAlignmentResult & { pairs: AlignmentPair[] }>
+```
+
+```ts
+import { createRubricJudge, runJudgeAlignment } from '@elsium-ai/testing'
+
+const judge = createRubricJudge({ generate, criteria })
+
+const alignment = await runJudgeAlignment(
+  [
+    { input: 'Is flood covered?', output: 'Yes, clause 4.', humanScore: 1 },
+    { input: 'Is theft covered?', output: 'I am not sure.', humanScore: 0 },
+  ],
+  async (output, input) => (await judge.evaluate(output, input)).score,
+)
+
+console.log(alignment.cohenKappa, alignment.strength)
+```
+
+### `assessJudgeConsistency()`
+
+Re-run the judge on the **same** input N times and measure how much it disagrees with itself — reliability independent of ground truth.
+
+```ts
+function assessJudgeConsistency(
+  scorer: () => Promise<number> | number,
+  options?: { runs?: number; tolerance?: number },  // default runs: 5, tolerance: 0.1
+): Promise<JudgeConsistencyResult>
+```
+
+```ts
+const consistency = await assessJudgeConsistency(
+  async () => (await judge.evaluate('the answer to grade')).score,
+  { runs: 5, tolerance: 0.1 },
+)
+
+consistency.mean        // average score across runs
+consistency.stdDev      // spread
+consistency.range       // max - min
+consistency.consistent  // true when range <= tolerance
+consistency.scores      // every score recorded
+```
+
+---
+
 ## Eval Attestation
 
 Other frameworks give you a score. Attestation gives you **proof**: a signed, hash-chained record of an eval run that anyone can verify independently, without trusting your infrastructure. Each record stores only the **hashes** of inputs and outputs — so the attestation is shareable as audit evidence without leaking the underlying data, yet still provable against the originals.
@@ -589,6 +680,123 @@ const attestation = await attestEvalSuite(result, {
   secret,
   governance: toAttestedGovernance(gate),
 })
+```
+
+---
+
+## Eval Proof (Ed25519)
+
+`attestEvalSuite` (above) proves integrity only to whoever holds the shared **secret**. An eval *proof* is signed with **Ed25519** and emitted as a standard `ExecutionProof` (from `@elsium-ai/observe`), so anyone can verify it offline with just the **public key** — no secret shared. This is the second leg of the trilogy: [trust the judge](#judge-alignment) → **trust the result** → [trust the data](#dataset-provenance).
+
+### `proveEvalSuite()`
+
+Signs an `EvalSuiteResult` as an Ed25519 `ExecutionProof`. Each case becomes a hash-chained event and the chain head is signed once.
+
+```ts
+function proveEvalSuite(
+  result: EvalSuiteResult,
+  options: {
+    signer: Signer       // Ed25519 signer, e.g. from createEd25519Signer in @elsium-ai/core
+    suiteId?: string     // logical id for the suite (defaults to result.name)
+    clock?: () => number // injected clock for deterministic tests
+  },
+): Promise<ExecutionProof>
+```
+
+```ts
+import { runEvalSuite, proveEvalSuite, verifyEvalProof } from '@elsium-ai/testing'
+import { createEd25519Signer, createKeyRegistry } from '@elsium-ai/core'
+
+const result = await runEvalSuite({ /* ... */ })
+
+const signer = createEd25519Signer(/* keypair */)
+const proof = await proveEvalSuite(result, { signer })
+// Ship `proof` (JSON) to anyone — no secret travels with it.
+```
+
+### `verifyEvalProof()`
+
+Verifies a proof offline against a registry of trusted public keys — re-derives the hash chain and checks the Ed25519 signature. The existing `elsium verify` CLI verifies the same proof.
+
+```ts
+function verifyEvalProof(proof: ExecutionProof, registry: KeyRegistry): VerifyProofResult
+```
+
+```ts
+const verdict = verifyEvalProof(proof, registry) // { valid: true, ... }
+```
+
+| | `attestEvalSuite` (HMAC) | `proveEvalSuite` (Ed25519) |
+|---|---|---|
+| Algorithm | HMAC-SHA256 | Ed25519 signature |
+| Verifier needs | the shared secret | only the public key |
+| Output type | `EvalAttestation` | `ExecutionProof` (`@elsium-ai/observe`) |
+| CLI | — | `elsium verify` |
+
+> **Runtime caveat:** the proof path reuses the `@elsium-ai/observe` proof recorder, which depends on `node:crypto`. It runs on Node and Bun, **not** edge runtimes. For edge, use `attestEvalSuite` (HMAC) instead.
+
+---
+
+## Dataset Provenance
+
+Two questions a third party asks about an eval: "do I trust the judge?" (see [Judge Alignment](#judge-alignment)) and "do I trust the labels?". This is the third leg of the trilogy — [trust the judge](#judge-alignment) → [trust the result](#eval-proof-ed25519) → **trust the data**: inter-annotator agreement plus a content hash so a signed eval proof can pin the exact dataset it ran against.
+
+### `summarizeAnnotations()`
+
+Summarize multi-annotator labels into a gold label, per-case agreement, disputed cases, and Fleiss' kappa.
+
+```ts
+function summarizeAnnotations(
+  cases: AnnotatedCase[],   // { name; input?; annotations: Annotation[] }
+  options?: {
+    threshold?: number,     // numeric labels >= threshold are the positive class, default 0.5
+    disputeBelow?: number,  // a case is "disputed" when agreement < this, default 0.8
+  },
+): DatasetAnnotationReport
+```
+
+`Annotation` is `{ annotator: string; label: number | string; at?: number; confidence?: number }`.
+
+```ts
+import { summarizeAnnotations } from '@elsium-ai/testing'
+
+const report = summarizeAnnotations([
+  {
+    name: 'flood-claim',
+    annotations: [
+      { annotator: 'alice', label: 1 },
+      { annotator: 'bob', label: 1 },
+      { annotator: 'carol', label: 0 },
+    ],
+  },
+])
+
+report.cases            // [{ name, annotatorCount, goldLabel, agreement, disputed }]
+report.overallAgreement // mean per-case agreement (0..1)
+report.disputedCases    // names of cases below disputeBelow
+report.annotators       // distinct annotator ids
+report.fleissKappa      // Fleiss' kappa — only when every case has the SAME rater count; otherwise null
+```
+
+`summarizeAnnotations` throws if `cases` is empty or any case has no annotations. **Note:** `fleissKappa` is `null` unless the rater count is uniform across all cases (and there are ≥ 2 raters); it is not an approximation when counts differ.
+
+### `hashDataset()` / `createDatasetManifest()`
+
+A deterministic, **order-independent** SHA-256 hash of an `EvalDataset` (cases are canonicalized and sorted by name first), so the same data always yields the same hash regardless of case order.
+
+```ts
+function hashDataset(dataset: EvalDataset): Promise<string>
+function createDatasetManifest(dataset: EvalDataset): Promise<DatasetManifest>
+// DatasetManifest: { name; version?; caseCount; contentHash }
+```
+
+```ts
+import { loadDataset, hashDataset, createDatasetManifest } from '@elsium-ai/testing'
+
+const dataset = loadDataset(/* ... */)
+const contentHash = await hashDataset(dataset)
+const manifest = await createDatasetManifest(dataset)
+// Embed manifest.contentHash in an eval proof to pin the exact dataset the run scored against.
 ```
 
 ---

@@ -63,6 +63,72 @@ Formats results as a human-readable report.
 
 ---
 
+## Evals are proof, not opinion
+
+Three capabilities answer the three questions a third party asks about an eval — **trust the judge** (Judge Alignment), **trust the result** (Eval Proofs), and **trust the data** (Dataset Provenance).
+
+### Judge Alignment
+
+Measure whether an LLM-judge can be trusted against human ground truth.
+
+```ts
+computeJudgeAlignment(pairs: AlignmentPair[], options?: { threshold?: number }): JudgeAlignmentResult
+```
+
+Pure comparison of human vs judge scores. `AlignmentPair` is `{ human: number; judge: number }` (scores `0..1`); `threshold` (default `0.5`) is the pass/fail cutoff. Returns `agreementRate`, `cohenKappa`, `meanAbsoluteError`, `pearson`, a `confusion` matrix (`{ truePos, trueNeg, falsePos, falseNeg }`), and a Landis–Koch `strength` label (`'poor' | 'fair' | 'moderate' | 'substantial' | 'almost-perfect'`). Throws if `pairs` is empty.
+
+```ts
+runJudgeAlignment(cases: LabeledJudgeCase[], scorer: JudgeScorer, options?): Promise<JudgeAlignmentResult & { pairs: AlignmentPair[] }>
+```
+
+Runs a `scorer` (`(output, input?) => Promise<number> | number`) over human-labeled `cases` (`{ output: string; input?: string; humanScore: number }`) and reports alignment. Plugs directly into `createRubricJudge(...).evaluate`:
+
+```ts
+const alignment = await runJudgeAlignment(
+  cases,
+  async (output, input) => (await judge.evaluate(output, input)).score,
+)
+```
+
+```ts
+assessJudgeConsistency(scorer: () => Promise<number> | number, options?: { runs?: number; tolerance?: number }): Promise<JudgeConsistencyResult>
+```
+
+Re-runs the judge on the same input N times (default `runs: 5`) and measures self-disagreement. Returns `mean`, `stdDev`, `min`, `max`, `range`, `scores`, and `consistent` (true when `range <= tolerance`, default `0.1`).
+
+### Eval Proofs (Ed25519)
+
+```ts
+proveEvalSuite(result: EvalSuiteResult, options: { signer: Signer; suiteId?: string; clock?: () => number }): Promise<ExecutionProof>
+```
+
+Signs an eval suite as an Ed25519 `ExecutionProof` (from `@elsium-ai/observe`); each case becomes a hash-chained event and the chain head is signed once.
+
+```ts
+verifyEvalProof(proof: ExecutionProof, registry: KeyRegistry): VerifyProofResult
+```
+
+Verifies offline against trusted public keys — no shared secret needed. The `elsium verify` CLI verifies the same proof.
+
+Contrast with `attestEvalSuite` (HMAC-SHA256), which proves integrity only to whoever holds the shared secret. **Caveat:** the proof path reuses the `@elsium-ai/observe` proof recorder, which depends on `node:crypto` — it runs on Node and Bun, not edge runtimes. For edge, use `attestEvalSuite`.
+
+### Dataset Provenance
+
+```ts
+summarizeAnnotations(cases: AnnotatedCase[], options?: { threshold?: number; disputeBelow?: number }): DatasetAnnotationReport
+```
+
+Summarizes multi-annotator labels. `AnnotatedCase` is `{ name; input?; annotations: Annotation[] }`; `Annotation` is `{ annotator; label: number | string; at?; confidence? }`. Returns per-case `goldLabel` + `agreement`, `overallAgreement`, `disputedCases` (agreement below `disputeBelow`, default `0.8`), and `fleissKappa`. `fleissKappa` is `null` unless the rater count is uniform across all cases (≥ 2 raters). Throws if `cases` is empty or any case has no annotations.
+
+```ts
+hashDataset(dataset: EvalDataset): Promise<string>
+createDatasetManifest(dataset: EvalDataset): Promise<DatasetManifest>
+```
+
+Deterministic, order-independent SHA-256 content hash of a dataset (cases canonicalized and sorted by name). `createDatasetManifest` wraps it as `{ name; version?; caseCount; contentHash }` — embed `contentHash` in an eval proof to pin the exact dataset a run scored against.
+
+---
+
 ## Tool Assertions
 
 ### assertToolCalls
