@@ -376,6 +376,92 @@ const task = asyncAgent.submit('Research quantum computing')
 const result = await task.wait()
 ```
 
+### Task Stores
+
+Pass a `TaskStore` as `AsyncAgentConfig.taskStore` to persist every task transition, so submitted tasks survive process restarts. The package ships two reference adapters; for production durability implement `TaskStore` against your own backend.
+
+```ts
+createInMemoryTaskStore(): TaskStore
+createJsonFileTaskStore(config: JsonFileTaskStoreConfig): TaskStore
+```
+
+`createInMemoryTaskStore` keeps `PersistedTask` records in a `Map` (lost on exit). `createJsonFileTaskStore` writes one `<taskId>.json` file per task under `config.dir` using atomic temp-file renames and per-id write serialization.
+
+**JsonFileTaskStoreConfig:**
+
+| Field | Type | Description |
+|---|---|---|
+| `dir` | `string` | Directory where task JSON files are written (created if missing) |
+
+**TaskStore methods:**
+
+| Method | Returns | Description |
+|---|---|---|
+| `save(task)` | `Promise<void>` | Persist (upsert) a `PersistedTask` |
+| `load(taskId)` | `Promise<PersistedTask \| null>` | Load a task by ID |
+| `list(filter?)` | `Promise<PersistedTask[]>` | List tasks, optionally filtered by `status` |
+| `delete(taskId)` | `Promise<void>` | Remove a task record |
+
+```ts
+import { createAsyncAgent, createJsonFileTaskStore } from '@elsium-ai/agents'
+
+const taskStore = createJsonFileTaskStore({ dir: './data/tasks' })
+const asyncAgent = createAsyncAgent({ agent, taskStore })
+```
+
+---
+
+## ReAct Agent
+
+### defineReActAgent
+
+```ts
+defineReActAgent(config: ReActConfig): ReActAgent
+```
+
+Creates an agent that follows the explicit **ReAct** (Reason + Act) loop — emitting `Thought → Action → Action Input → Observation` cycles until it produces a `Final Answer`. Unlike `defineAgent`, the result carries the full step-by-step `reasoning` trace, and the agent is wired directly to a gateway/provider rather than taking `AgentDependencies`.
+
+**ReActConfig:**
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Agent identifier |
+| `tools` | `Tool[]` | Tools available to the agent |
+| `model` | `string?` | LLM model to use |
+| `system` | `string?` | User system prompt, prepended to the built-in ReAct prompt |
+| `maxIterations` | `number?` | Maximum reasoning iterations (default: 10) |
+| `maxTokenBudget` | `number?` | Token budget across the run (default: 500000) |
+| `hooks` | `ReActConfig['hooks']?` | `AgentHooks` plus `onThought`, `onAction`, `onObservation` callbacks |
+| `provider` | `string \| LLMProvider \| ProviderMesh?` | Provider name, or an object exposing `complete` |
+| `apiKey` | `string?` | API key (required when `provider` is a name string) |
+| `baseUrl` | `string?` | Optional provider base URL |
+
+Provide either an `LLMProvider`/`ProviderMesh` object as `provider`, or a provider name string together with `apiKey`; otherwise construction throws.
+
+**ReActAgent** exposes `name` and `run(input, options?): Promise<ReActResult>`.
+
+**ReActResult** extends `AgentResult` with `reasoning: ReActStep[]`, where each `ReActStep` is `{ iteration, thought, action?: { tool, input }, observation? }`.
+
+```ts
+import { defineReActAgent } from '@elsium-ai/agents'
+
+const agent = defineReActAgent({
+  name: 'researcher',
+  provider: 'openai',
+  apiKey: process.env.OPENAI_API_KEY,
+  model: 'gpt-4o',
+  tools: [searchTool, calculatorTool],
+  hooks: {
+    onThought: (thought, i) => console.log(`[${i}] ${thought}`),
+  },
+})
+
+const result = await agent.run('What is the population of France times 2?')
+for (const step of result.reasoning) {
+  console.log(step.thought, step.action, step.observation)
+}
+```
+
 ---
 
 ## Guardrails
@@ -505,6 +591,238 @@ if (shouldRequireApproval(requireApprovalFor, { toolName: action.name })) {
   })
   if (!decision.approved) return
 }
+```
+
+### createApprovalChain / createInMemoryApprovalStore
+
+```ts
+createApprovalChain(config: ApprovalChainConfig): ApprovalChain
+createInMemoryApprovalStore(): ApprovalStore
+```
+
+Multi-stage human-in-the-loop approval. A request flows through ordered `ApprovalStage`s; each stage decides whether it applies (`enter`), who approves it (`approver`), and what happens on timeout. `callback` approvers are auto-invoked; `role`/`user` approvers pause the chain until resolved externally via `store.resolveStage(...)`. The package ships only the in-memory store; implement `ApprovalStore` against your own backend for durability.
+
+**ApprovalChainConfig:**
+
+| Field | Type | Description |
+|---|---|---|
+| `stages` | `readonly ApprovalStage[]` | Ordered stages (at least one; names must be unique) |
+| `store` | `ApprovalStore` | Persistence adapter for approval state |
+| `notifier` | `ApprovalNotifier?` | Optional hook called when a stage is entered (Slack/email/PagerDuty) |
+
+**ApprovalStage:**
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Unique stage name |
+| `enter` | `(req: ApprovalRequest) => boolean` | Returns `true` if the stage applies; `false` skips it |
+| `approver` | `ApproverSpec` | `{ type: 'role' \| 'user', target: string }` or `{ type: 'callback', target: ApprovalCallback }` |
+| `timeoutMs` | `number?` | Stage timeout (default: 300000) |
+| `onTimeout` | `'deny' \| 'escalate' \| 'allow'?` | Action when the timeout fires (default: `'deny'`) |
+
+**ApprovalChain methods:**
+
+| Method | Returns | Description |
+|---|---|---|
+| `request(req)` | `Promise<ApprovalState>` | Start a chain (`req` omits `id`/`requestedAt`); advances through auto-resolvable stages |
+| `resume(requestId)` | `Promise<ApprovalState>` | Re-advance a pending chain (e.g. after an external `resolveStage`) |
+| `cancel(requestId, reason)` | `Promise<ApprovalState>` | Deny all pending stages and mark the chain denied |
+| `store` | `ApprovalStore` | The backing store |
+
+`ApprovalState` reports `status` (`'pending' \| 'approved' \| 'denied' \| 'expired'`), `currentStage`, and per-stage `StageState[]`.
+
+```ts
+import { createApprovalChain, createInMemoryApprovalStore } from '@elsium-ai/agents'
+
+const chain = createApprovalChain({
+  store: createInMemoryApprovalStore(),
+  stages: [
+    {
+      name: 'manager',
+      enter: (req) => (req.context?.amount as number) > 1000,
+      approver: { type: 'role', target: 'manager' },
+      timeoutMs: 60_000,
+      onTimeout: 'escalate',
+    },
+    {
+      name: 'auto-policy',
+      enter: () => true,
+      approver: { type: 'callback', target: (req) => ({
+        requestId: req.id, approved: true, decidedAt: Date.now(),
+      }) },
+    },
+  ],
+})
+
+let state = await chain.request({ type: 'tool_call', description: 'Wire funds', context: { amount: 5000 } })
+// A role/user stage waits — the approving UI resolves it, then resume:
+await chain.store.resolveStage(state.request.id, 'manager', {
+  requestId: state.request.id, approved: true, decidedBy: 'alice', decidedAt: Date.now(),
+})
+state = await chain.resume(state.request.id)
+```
+
+### askHuman / resolveAskHuman / createInMemoryAskHumanStore
+
+```ts
+askHuman<TOption>(options: AskHumanOptions<TOption> & { timeoutMs?: string | number }): Promise<AskHumanDecision<TOption>>
+resolveAskHuman(store: AskHumanStore, requestId: string, decision: Omit<AskHumanDecision, 'decidedAt'>): Promise<void>
+createInMemoryAskHumanStore(config?: InMemoryAskHumanStoreConfig): AskHumanStore
+```
+
+Durable, option-based human-in-the-loop primitive. `askHuman` poses a question with a fixed set of `options` and resolves either through a `responder` callback or by polling a `store` until a human resolves it via `resolveAskHuman`. The same capability is also available pre-bound on every agent as `agent.askHuman(options)`.
+
+**AskHumanOptions:**
+
+| Field | Type | Description |
+|---|---|---|
+| `question` | `string` | The question to ask (required, non-empty) |
+| `options` | `readonly TOption[]` | Allowed answer options (at least one) |
+| `context` | `Record?` | Arbitrary context attached to the request |
+| `timeoutMs` | `string \| number?` | Timeout; accepts ms or a duration string like `'2h'`, `'1d'` (default: 24h) |
+| `onTimeout` | `'reject' \| 'timeout'?` | Status used when the timeout fires (default: `'timeout'`) |
+| `store` | `AskHumanStore?` | Store to persist/poll the request |
+| `responder` | `AskHumanResponder<TOption>?` | Callback that resolves the request directly |
+| `requestId` | `string?` | Custom request ID |
+
+Either a `responder` or a `store` must be supplied. **AskHumanDecision** is `{ status: 'approved' \| 'rejected' \| 'timeout' \| 'custom', option?, reason?, decidedBy?, decidedAt }`.
+
+```ts
+import { askHuman, createInMemoryAskHumanStore, resolveAskHuman } from '@elsium-ai/agents'
+
+const store = createInMemoryAskHumanStore()
+
+// Worker A: pauses until a human resolves the request (or 2h elapse)
+const pending = askHuman({
+  question: 'Approve the refund?',
+  options: ['approve', 'deny'] as const,
+  timeoutMs: '2h',
+  store,
+  requestId: 'refund-42',
+})
+
+// Worker B (the UI / webhook): resolve it
+await resolveAskHuman(store, 'refund-42', {
+  status: 'custom', option: 'approve', decidedBy: 'ops',
+})
+
+const decision = await pending // { status: 'custom', option: 'approve', ... }
+```
+
+---
+
+## Verification (VAG)
+
+Verification-Augmented Generation: generate, validate against one or more `Validator`s, and automatically re-generate with a repair prompt until the output passes or the repair budget is exhausted.
+
+### runWithVerification
+
+```ts
+runWithVerification<T>(generate: GenerateFn<T>, config: VerificationConfig<T>): Promise<VerificationOutcome<T>>
+```
+
+Runs the generate → validate → repair loop. `generate(repair?)` produces a candidate (receiving a `RepairContext` with a ready-made `repairPrompt` on retries); validators run in `'all'` mode (every validator must pass). Throws if `config.validators` is empty.
+
+**VerificationConfig:**
+
+| Field | Type | Description |
+|---|---|---|
+| `validators` | `Validator<T>[]` | Validators to apply (all must pass) |
+| `maxRepairs` | `number?` | Max repair attempts after the first try (default from package) |
+| `formatRepairPrompt` | `(failures, previousValue) => string?` | Custom repair-prompt builder |
+| `onAttempt` | `(attempt: VerificationAttempt<T>) => void?` | Called after each attempt |
+| `onAbort` | `(abort: VerificationAbort<T>) => void?` | Called when the loop gives up |
+
+**VerificationOutcome** is either `{ status: 'ok' \| 'repaired', value, attempts, history }` or `{ status: 'aborted', lastValue, attempts, history, reason }`.
+
+A `Validator<T>` is `{ name, validate(value, context): ValidationOutcome | Promise<ValidationOutcome> }`, where `ValidationOutcome` is `{ valid, failures: ValidationFailure[] }`. Built-in validator factories are exported for common cases: `zodValidator` / `schemaValidator`, `regexValidator`, `judgeValidator`, `semanticAdapter`, `externalValidator`, and `composeValidators`.
+
+```ts
+import { runWithVerification, zodValidator } from '@elsium-ai/agents'
+import { z } from 'zod'
+
+const schema = z.object({ title: z.string().max(60), tags: z.array(z.string()).min(1) })
+
+const outcome = await runWithVerification(
+  async (repair) => llm.completeJson(repair?.repairPrompt ?? 'Summarize the article'),
+  { validators: [zodValidator(schema)], maxRepairs: 2 },
+)
+
+if (outcome.status !== 'aborted') {
+  console.log(outcome.value, `passed in ${outcome.attempts} attempt(s)`)
+}
+```
+
+### withVerifiers
+
+```ts
+withVerifiers(base: Agent, verifiers: Validator<AgentResult>[], policy?: AgentRetryPolicy): Agent
+```
+
+Wraps an `Agent` so that `run` and `generate` automatically retry through `runWithVerification` against the supplied `AgentResult` verifiers. Failed verification throws an `ElsiumError` after exhausting the retry budget. The fluent equivalents `agent.withVerifier(validator)` and `agent.withRetryPolicy(policy)` are available on every agent returned by `defineAgent`.
+
+**AgentRetryPolicy:**
+
+| Field | Type | Description |
+|---|---|---|
+| `maxAttempts` | `number?` | Total attempts including the first (default: 3) |
+| `semantic` | `boolean?` | Enable semantic repair behavior (default: true) |
+
+```ts
+import { defineAgent, judgeValidator } from '@elsium-ai/agents'
+
+const agent = defineAgent({ name: 'writer', system: 'Write concise summaries.' })
+
+const verified = agent
+  .withVerifier(judgeValidator({
+    rubric: 'The summary must be under 3 sentences and factually grounded.',
+    judge: (rubric, value) => myLLMJudge(rubric, value), // { passed, score }
+  }))
+  .withRetryPolicy({ maxAttempts: 4 })
+
+const result = await verified.run('Summarize the quarterly report')
+```
+
+---
+
+## Confidence (CAG)
+
+Confidence-Augmented Generation voters aggregate multiple samples of the same generation into a single winner plus a confidence score. They plug into `selfConsistency({ voter })` (and are usable standalone).
+
+### createMajorityVoter / createSimilarityVoter
+
+```ts
+createMajorityVoter<T>(): Voter<T>
+createSimilarityVoter<T>(options: SimilarityVoterOptions<T>): Voter<T>
+```
+
+`createMajorityVoter` picks the most frequent sample using a canonicalized deep-equality key (order-insensitive for object keys); `confidence` is the winner's share of the votes. `createSimilarityVoter` clusters samples with a caller-supplied similarity function and returns the largest cluster's representative; `confidence` is that cluster's share.
+
+**SimilarityVoterOptions:**
+
+| Field | Type | Description |
+|---|---|---|
+| `similarity` | `(a: T, b: T) => number \| Promise<number>` | Pairwise similarity in `[0, 1]` |
+| `threshold` | `number?` | Minimum similarity to join a cluster (default: 0.85) |
+
+A `Voter<T>` is `{ name, vote(samples): VoteResult<T> | Promise<VoteResult<T>> }`, where `VoteResult` is `{ winner, confidence, details? }`.
+
+```ts
+import { selfConsistency, createMajorityVoter, createSimilarityVoter } from '@elsium-ai/agents'
+
+// Exact-match majority across 5 samples
+const exact = selfConsistency({ samples: 5, voter: createMajorityVoter() })
+const r1 = await exact.score(async () => ({ value: await classify(input) }))
+
+// Cluster free-text answers by embedding similarity
+const fuzzy = selfConsistency({
+  voter: createSimilarityVoter({
+    similarity: (a, b) => cosineSim(embed(a), embed(b)),
+    threshold: 0.9,
+  }),
+})
+const r2 = await fuzzy.score(async () => ({ value: await answer(input) }))
+console.log(r2.value, r2.confidence)
 ```
 
 ---

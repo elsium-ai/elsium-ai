@@ -154,6 +154,34 @@ const google = createGoogleProvider({
 })
 ```
 
+### createOpenAICompatibleProvider
+
+```ts
+createOpenAICompatibleProvider(config: OpenAICompatibleConfig): LLMProvider
+```
+
+Creates a provider for any OpenAI-compatible Chat Completions API (e.g. self-hosted vLLM, Together, Groq, Ollama, local gateways). Wraps `createOpenAIProvider` with a custom `baseUrl` and reports a configurable provider name.
+
+**Config:** extends `ProviderConfig` (`apiKey`, `timeout`, `maxRetries`).
+
+| Field | Type | Description |
+|---|---|---|
+| `baseUrl` | `string` | Base URL of the OpenAI-compatible endpoint (required) |
+| `name` | `string` | Provider name reported on responses (default `'openai-compatible'`) |
+| `defaultModel` | `string` | Default model identifier (default `'default'`) |
+| `capabilities` | `string[]` | Advertised capabilities (default `['tools', 'streaming', 'system']`) |
+
+```ts
+import { createOpenAICompatibleProvider } from '@elsium-ai/gateway'
+
+const local = createOpenAICompatibleProvider({
+  name: 'vllm',
+  baseUrl: 'http://localhost:8000',
+  apiKey: env('VLLM_API_KEY'),
+  defaultModel: 'llama-3.1-70b',
+})
+```
+
 ---
 
 ## Middleware
@@ -248,6 +276,96 @@ const gw = gateway({
   provider: 'anthropic',
   apiKey: env('ANTHROPIC_API_KEY'),
   middleware: [cacheMiddleware({ adapter: cache, ttlMs: 300000 })],
+})
+```
+
+---
+
+## Concurrency
+
+### createBulkhead
+
+```ts
+createBulkhead(config?: BulkheadConfig): Bulkhead
+```
+
+Creates a global concurrency limiter. Caps the number of in-flight operations and queues the rest; when the queue is full it rejects with a rate-limit error, and queued operations time out after `queueTimeoutMs`.
+
+**Config (`BulkheadConfig`):**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `maxConcurrent` | `number` | `10` | Maximum operations running at once (must be >= 1) |
+| `maxQueued` | `number` | `50` | Maximum operations waiting for a slot (0 disables queueing) |
+| `queueTimeoutMs` | `number` | `30000` | How long a queued operation waits before timing out |
+
+**Bulkhead:**
+
+| Member | Signature | Description |
+|---|---|---|
+| `execute` | `execute<T>(fn: () => Promise<T>): Promise<T>` | Run `fn` under the concurrency limit |
+| `active` | `number` (readonly) | Operations currently running |
+| `queued` | `number` (readonly) | Operations currently waiting |
+
+### bulkheadMiddleware
+
+```ts
+bulkheadMiddleware(config?: BulkheadConfig): Middleware
+```
+
+Wraps `createBulkhead` as request middleware, limiting concurrent gateway requests.
+
+```ts
+import { gateway, bulkheadMiddleware } from '@elsium-ai/gateway'
+
+const gw = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [bulkheadMiddleware({ maxConcurrent: 5, maxQueued: 20 })],
+})
+```
+
+### createFairQueue
+
+```ts
+createFairQueue(config: FairQueueConfig): FairQueue
+```
+
+Creates a per-agent token-bucket rate limiter. Unlike the global bulkhead, each identified agent gets its own bucket, so one greedy agent cannot starve others sharing the same LLM quota. Buckets refill continuously; requests consume one token and wait up to `waitTimeoutMs` for one. In-process only — distributed fairness is left to the user.
+
+**Config (`FairQueueConfig`):**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `perAgent` | `BucketConfig` | — | Default bucket parameters applied to every agent (required) |
+| `overrides` | `Record<string, BucketConfig>` | — | Per-agent bucket parameter overrides keyed by agent name |
+| `waitTimeoutMs` | `number` | `5000` | How long to wait for a token before giving up |
+| `onTimeout` | `'throw' \| 'proceed'` | `'throw'` | Behavior when `waitTimeoutMs` elapses |
+| `identifyAgent` | `(ctx: MiddlewareContext) => string \| undefined` | reads `ctx.metadata.agentName` | Extracts the agent identity; falls back to a shared `_default` bucket |
+
+**BucketConfig:** `{ capacity: number; refillRatePerSec: number }` — both must be positive finite numbers.
+
+**FairQueue:**
+
+| Member | Signature | Description |
+|---|---|---|
+| `middleware` | `middleware(): Middleware` | Rate-limiting middleware for the gateway |
+| `getBucketState` | `getBucketState(agent: string): BucketState \| null` | Current token state for one agent |
+| `listBuckets` | `listBuckets(): readonly BucketState[]` | Token state for all active buckets |
+
+```ts
+import { gateway, createFairQueue } from '@elsium-ai/gateway'
+
+const fairQueue = createFairQueue({
+  perAgent: { capacity: 10, refillRatePerSec: 2 },
+  overrides: { 'priority-agent': { capacity: 50, refillRatePerSec: 10 } },
+  waitTimeoutMs: 3000,
+})
+
+const gw = gateway({
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [fairQueue.middleware()],
 })
 ```
 
@@ -387,4 +505,200 @@ const mesh = createProviderMesh({
   ],
   strategy: 'fallback',
 })
+```
+
+### createDeclarativeRouter
+
+```ts
+createDeclarativeRouter(initial: RoutingPolicy): DeclarativeRouter
+```
+
+Creates a data-driven routing layer that maps a request's shape (model, provider, tenant, capabilities, estimated cost/latency, arbitrary metadata) to a `RoutingTarget`. Rules reuse the same condition expressions and operators as `@elsium-ai/core` authorization. It resolves a target; composing it with `createProviderMesh` to execute the request is left to the caller. The policy is validated on construction and on every `loadPolicy`.
+
+**RoutingPolicy:**
+
+| Field | Type | Description |
+|---|---|---|
+| `apiVersion` | `'elsium.routing/v1'` | Schema version |
+| `kind` | `'RoutingPolicy'` | Resource kind |
+| `metadata` | `{ name: string; description?: string }` | Policy identity |
+| `rules` | `RoutingRule[]` | Ordered routing rules |
+| `default` | `RoutingTarget` | Target used when no rule matches |
+
+**RoutingRule:** `{ name, when?: ConditionExpression, slo?: ServiceLevelObjective, target: RoutingTarget, priority?: number }` — higher `priority` evaluates first (default `0`).
+
+**ServiceLevelObjective:** `{ maxLatencyMs?, maxCost?, requireCapabilities?: string[] }` — a rule is ineligible if estimated latency/cost exceed the caps or required capabilities are missing.
+
+**RoutingTarget:** `{ strategy?: RoutingStrategy, provider?: string, model?: string }`.
+
+**RoutingContext (input to `resolve`):** `{ tenant?, model?, provider?, estimatedCost?, estimatedLatencyMs?, capabilities?: string[], metadata?: Record<string, string | number | boolean> }`.
+
+**RoutingResolution (output):** `{ target: RoutingTarget, matchedRule?: string, reason: string }`.
+
+**DeclarativeRouter:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `resolve` | `resolve(ctx: RoutingContext): RoutingResolution` | Resolve the target for a request context |
+| `loadPolicy` | `loadPolicy(policy: RoutingPolicy): void` | Replace the active policy (validated) |
+| `exportPolicy` | `exportPolicy(): RoutingPolicy` | Return a copy of the active policy |
+| `verify` | `verify(policy?: RoutingPolicy): { rule: string; issue: string }[]` | Lint a policy without applying it |
+
+```ts
+import { createDeclarativeRouter } from '@elsium-ai/gateway'
+
+const router = createDeclarativeRouter({
+  apiVersion: 'elsium.routing/v1',
+  kind: 'RoutingPolicy',
+  metadata: { name: 'tenant-routing' },
+  rules: [
+    {
+      name: 'enterprise-to-opus',
+      priority: 10,
+      when: { op: 'eq', field: 'tenant', value: 'enterprise' },
+      target: { provider: 'anthropic', model: 'claude-opus-4-20250514' },
+    },
+  ],
+  default: { strategy: 'cost-optimized' },
+})
+
+const { target } = router.resolve({ tenant: 'enterprise' })
+// target: { provider: 'anthropic', model: 'claude-opus-4-20250514' }
+```
+
+---
+
+## Cost-Aware Routed Generation (CARG)
+
+A cascade router that classifies a request's difficulty, then tries provider/model tiers from cheapest to most capable, escalating only when a tier fails, returns low-confidence output, or fails validation.
+
+### createCascadeRouter
+
+```ts
+createCascadeRouter(config: CascadeRouterConfig, deps?: CascadeRouterFactoryOptions): CascadeRouter
+```
+
+**CascadeRouterConfig:**
+
+| Field | Type | Description |
+|---|---|---|
+| `tiers` | `Tier[]` | Ordered tiers, cheapest first (at least one required) |
+| `classifier` | `LLMClassifier` | Optional classifier; tiers with a `maxDifficulty` below the request difficulty are skipped |
+| `escalateOnFailure` | `boolean \| EscalateOnFailureConfig` | Escalation policy (default `false`; `true` escalates on provider error only) |
+| `onAudit` | `(event: CascadeAuditEvent) => void` | Receives attempt/escalation/success/exhausted events |
+
+**Tier:** `{ name, provider, model, maxDifficulty? }`.
+
+**EscalateOnFailureConfig:** `{ onProviderError?, validator?: CascadeValidator, confidence?: CascadeConfidenceCheck, maxEscalations? }` — `validator` returns `ValidatorCheckResult` (`{ valid, reason?, detail? }`), `confidence` returns `ConfidenceCheckResult` (`{ ok, confidence, reason? }`). `maxEscalations` defaults to `tiers.length - 1`.
+
+**CascadeRouterFactoryOptions (`deps`):** `{ apiKeys?: Record<string, string>, makeGateway?: (tier: Tier) => Gateway }` — supply `apiKeys` keyed by provider for the default gateway factory, or inject `makeGateway` to build gateways yourself (e.g. in tests).
+
+**CascadeRouter:**
+
+| Member | Signature | Description |
+|---|---|---|
+| `complete` | `complete(request: CompletionRequest): Promise<CascadeResult>` | Run the cascade |
+| `tiers` | `ReadonlyArray<Tier>` | Configured tiers |
+
+**CascadeResult:** `{ response: LLMResponse, tier: string, totalCost: number, totalLatencyMs: number, attempts: CascadeAttempt[], classification?: RequestClassification }`. Each `CascadeAttempt` records the tier, status (`'ok' | 'failed' | 'validation-failed' | 'low-confidence' | 'skipped-by-classifier'`), cost, latency, and reason. When every eligible tier fails, `complete` throws `CascadeExhaustedError` (carrying `attempts` and `classification`).
+
+```ts
+import { createCascadeRouter, createHeuristicClassifier } from '@elsium-ai/gateway'
+
+const router = createCascadeRouter(
+  {
+    tiers: [
+      { name: 'cheap', provider: 'openai', model: 'gpt-4o-mini', maxDifficulty: 0.4 },
+      { name: 'capable', provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    ],
+    classifier: createHeuristicClassifier(),
+    escalateOnFailure: true,
+  },
+  { apiKeys: { openai: env('OPENAI_API_KEY'), anthropic: env('ANTHROPIC_API_KEY') } },
+)
+
+const result = await router.complete({
+  messages: [{ role: 'user', content: 'What is the capital of France?' }],
+})
+// result.tier === 'cheap', result.totalCost, result.attempts
+```
+
+### createHeuristicClassifier
+
+```ts
+createHeuristicClassifier(): LLMClassifier
+```
+
+A zero-cost, synchronous classifier that scores difficulty (0–1) from request shape (length, tool count, message count) and keyword domains (code, math, reasoning, creative). No LLM call.
+
+### createLLMClassifier
+
+```ts
+createLLMClassifier(options: LLMClassifierOptions): LLMClassifier
+```
+
+A classifier that asks an LLM to rate request difficulty and domain, returning a `RequestClassification` (`{ difficulty, domain?, reason? }`). Falls back to `difficulty: 0.5` if the response can't be parsed.
+
+**LLMClassifierOptions:** `{ complete: (request: CompletionRequest) => Promise<LLMResponse>, model?: string, maxTokens?: number }` (default `maxTokens` 64).
+
+---
+
+## PII Classification & Jurisdiction Routing
+
+Two composable ports for data-residency-aware routing: a PII classifier that detects sensitive data, and a jurisdiction router that restricts the allowed providers based on detected PII classes and the tenant's jurisdiction. The class-to-provider rules are the user's policy; the framework provides the engine.
+
+### createPiiClassifier
+
+```ts
+createPiiClassifier(): PiiClassifier
+```
+
+Creates a regex-based PII classifier. Built-in classes: `email`, `phone`, `ssn`, `credit_card`, `passport`, `ip_address`. Custom classes are added via `register`.
+
+**PiiClassifier:**
+
+| Member | Signature | Description |
+|---|---|---|
+| `classify` | `classify(text: string): readonly PiiMatch[]` | Find PII matches (`{ piiClass, start, end, matchedText }`) |
+| `register` | `register(piiClass: PiiClass, pattern: RegExp): void` | Add a custom PII class and pattern |
+| `classes` | `readonly PiiClass[]` | Registered PII classes |
+
+### createJurisdictionRouter
+
+```ts
+createJurisdictionRouter(config: JurisdictionRouterConfig): JurisdictionRouter
+```
+
+Given a request text and candidate providers, detects PII and returns the providers allowed to receive that data under the configured jurisdiction policy.
+
+**JurisdictionRouterConfig:** `{ policy: JurisdictionPolicy, classifier?: PiiClassifier }` (defaults to `createPiiClassifier()`).
+
+**JurisdictionPolicy:** `{ byJurisdiction: Record<string, JurisdictionRules>, default?: JurisdictionRules }`. **JurisdictionRules:** `{ classProviders: Record<PiiClass | '*', readonly string[]> }` — maps each PII class (or `'*'` fallback) to the providers allowed to handle it.
+
+**JurisdictionRouter:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `resolveProviders` | `resolveProviders(text, { jurisdiction?, candidateProviders }): JurisdictionResolution` | Resolve allowed providers for the text |
+
+**JurisdictionResolution:** `{ detectedClasses, allowedProviders, deniedProviders, jurisdictionUsed, reason }`.
+
+```ts
+import { createJurisdictionRouter } from '@elsium-ai/gateway'
+
+const router = createJurisdictionRouter({
+  policy: {
+    byJurisdiction: {
+      eu: { classProviders: { email: ['azure-eu'], '*': ['azure-eu', 'anthropic'] } },
+    },
+    default: { classProviders: { '*': ['anthropic', 'openai'] } },
+  },
+})
+
+const resolution = router.resolveProviders('Contact me at jane@example.com', {
+  jurisdiction: 'eu',
+  candidateProviders: ['azure-eu', 'anthropic', 'openai'],
+})
+// resolution.detectedClasses: ['email']
+// resolution.allowedProviders: ['azure-eu']
 ```

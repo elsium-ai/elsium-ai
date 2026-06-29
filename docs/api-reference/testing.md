@@ -129,6 +129,126 @@ Deterministic, order-independent SHA-256 content hash of a dataset (cases canoni
 
 ---
 
+## Datasets
+
+### loadDataset
+
+```ts
+loadDataset(path: string, options?: DatasetLoaderOptions): Promise<EvalDataset>
+```
+
+Loads eval cases from `.json`, `.csv`, or `.jsonl` by file extension (throws on anything else). `loadDatasetFromJSON` and `loadDatasetFromCSV` are also exported directly with the same signature. `EvalDataset` is `{ name; version?; cases: EvalCase[] }` — feed `cases` straight into `runEvalSuite`.
+
+`DatasetLoaderOptions` remaps source fields/columns onto `EvalCase`:
+
+| Field | Default | Maps to |
+|---|---|---|
+| `inputField` | `'input'` | `input` |
+| `expectedField` | `'expected'` | `expected` |
+| `nameField` | `'name'` | `name` |
+| `tagsField` | `'tags'` | `tags` (comma-split string or array) |
+
+JSON files may be a bare array of records or `{ name, version?, cases }`.
+
+---
+
+## Classification Metrics
+
+### runClassificationEval
+
+```ts
+runClassificationEval(config: ClassificationEvalConfig): Promise<ClassificationEvalResult>
+```
+
+Runs a classifier `runner` over labeled cases and scores the predictions.
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Suite name |
+| `cases` | `ClassificationEvalCase[]` | `{ name?; input; expected }` |
+| `runner` | `(input: string) => Promise<string>` | Classifier |
+| `labels` | `string[]?` | Fixed label set (otherwise inferred from cases and sorted) |
+| `concurrency` | `number?` | Parallel execution (default: 1) |
+
+Returns `ClassificationEvalResult` (`{ name; report; predictions; durationMs }`).
+
+### computeClassificationReport / computeConfusionMatrix
+
+```ts
+computeClassificationReport(cases: ClassificationCase[], options?: { labels?: string[] }): ClassificationReport
+computeConfusionMatrix(cases: ClassificationCase[], options?: { labels?: string[] }): ConfusionMatrix
+```
+
+Pure functions over `ClassificationCase[]` (`{ name?; predicted; actual }`). `ClassificationReport` carries `accuracy`, per-label `precision`/`recall`/`f1`/`support`, `macro`/`micro`/`weighted` averages, and the `confusion` matrix (rows = actual, cols = predicted). `formatClassificationReport` and `formatConfusionMatrix` render them as text.
+
+---
+
+## RAG Eval
+
+### runRagEval
+
+```ts
+runRagEval(config: RagEvalConfig): Promise<RagEvalResult>
+```
+
+Scores retrieval-augmented answers on up to four metrics. `RagEvalConfig` is `{ name; cases: RagEvalCase[]; judge?; concurrency? }`; each `RagEvalCase` is `{ name?; question; answer; contexts; relevant? }`.
+
+- With a `judge` (`LLMJudge`): **faithfulness** (every claim grounded in context) and **answer relevancy** (answer addresses the question).
+- With `relevant` ground-truth contexts: **context precision** (rank-weighted) and **context recall** — pure, no judge needed.
+
+Per-case `score` averages whichever metrics applied; `aggregate` (`RagEvalAggregate`) means each metric across the suite. The metric functions (`faithfulness`, `answerRelevancy`, `contextPrecision`, `contextRecall`) are exported individually, and `formatRagEvalReport` renders the result.
+
+---
+
+## Eval Gates & Compliance
+
+### runEvalGate
+
+```ts
+runEvalGate(suite: EvalSuiteResult, config: EvalGateConfig, override?: AttestedOverride): EvalGateResult
+```
+
+Treats an eval suite as a policy gate — each case is checked against governance assertions and/or a `PolicySet`.
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Gate name |
+| `assertions` | `GovernanceAssertion[]?` | `{ name; description?; controls?; assert(result) => boolean }` |
+| `policySet` | `PolicySet?` | Policy set from `@elsium-ai/core` |
+| `contextFor` | `(result) => PolicyContext` | Maps a case to policy context (default derives from output/score) |
+
+`EvalGateResult` reports `passed`, `violationCount`, and per-case `violations`. An `AttestedOverride` (`{ approver; reason; approvedAt? }`) flips `passed` to true while recording who approved it (only retained when there were violations). `toAttestedGovernance(gate)` converts the result for embedding in an attestation.
+
+### buildEvalComplianceReport
+
+```ts
+buildEvalComplianceReport(gate: EvalGateResult, config: EvalGateConfig, options?: { framework?: string; controls?: string[] }): EvalComplianceReport
+```
+
+Rolls gate violations up by the `controls` declared on each assertion (e.g. SOC 2 / ISO control IDs). Returns `{ framework?; compliant; controls; unmappedViolations }`, where `compliant` requires every control to pass **and** zero violations unmapped to any control. `formatEvalComplianceReport` renders it.
+
+---
+
+## Eval Attestation
+
+### attestEvalSuite
+
+```ts
+attestEvalSuite(result: EvalSuiteResult, options: AttestEvalOptions): Promise<EvalAttestation>
+```
+
+Produces an HMAC-SHA256 hash-chained attestation of an eval run: each case becomes a signed `AttestationRecord` (hashed input/output, score, per-criterion pass/fail) chained to the previous signature. `AttestEvalOptions` is `{ secret; metadata?; governance?; attestedAt? }` — `secret` must be ≥ 16 chars, `metadata` pins fields like `model`/`judge`/`datasetVersion`/`promptVersion`/`seed`, and `governance` embeds an `AttestedGovernance` gate result.
+
+```ts
+verifyEvalAttestation(fileOrJson: EvalAttestation | string, secret: string): Promise<AttestationVerification>
+```
+
+Re-derives the chain and returns `{ valid, entryCount, invalidAtIndex?, reason? }`, pinpointing the first tampered record. `formatAttestation` renders a summary.
+
+Contrast with `proveEvalSuite` (Ed25519, third-party-verifiable). `attestEvalSuite` proves integrity only to a holder of the shared secret, but runs on any runtime — it does not depend on `node:crypto`.
+
+---
+
 ## Tool Assertions
 
 ### assertToolCalls
@@ -342,7 +462,71 @@ await runRedTeam({ name: 'custom', runner: myRunner, probes })
 
 ## Snapshots, Regression, Replay, Pinning, Determinism
 
-See the [package README](../../packages/testing/README.md) for full documentation on these modules.
+See the [package README](../../packages/testing/README.md) for additional context on these modules.
+
+### Determinism
+
+```ts
+assertDeterministic(fn: (seed?: number) => Promise<string>, options?: { runs?: number; seed?: number; tolerance?: number }): Promise<DeterminismResult>
+```
+
+Runs `fn` N times (default `runs: 5`) and checks the outputs are identical. `variance` is `(uniqueOutputs - 1) / (runs - 1)`; the run is `deterministic` when `variance <= tolerance` (default `0`). Throws `ElsiumError.validation` when non-deterministic and `tolerance === 0`. `DeterminismResult` is `{ deterministic; runs; uniqueOutputs; outputs; variance }`.
+
+```ts
+assertStable(fn: (seed?: number) => Promise<string>, options?: { intervalMs?: number; runs?: number; seed?: number }): Promise<StabilityResult>
+```
+
+Runs `fn` N times (default `runs: 3`) spaced `intervalMs` apart (default `100`) to catch time-dependent drift. Never throws; returns `StabilityResult` (`{ stable; runs; uniqueOutputs; outputs: { output; timestamp }[]; variance }`) with `stable` true only when every run is identical.
+
+### Pinning
+
+```ts
+createPinStore(existing?: Pin[]): PinStore
+```
+
+In-memory store of golden outputs keyed by `${promptHash}:${configHash}`. `PinStore`: `get` / `set` / `delete` / `getAll` / `toJSON`.
+
+```ts
+pinOutput(name: string, store: PinStore, runner: () => Promise<string>, config: { prompt: string; model?: string; temperature?: number; seed?: number }, options?: { assert?: boolean }): Promise<PinResult>
+```
+
+Runs `runner`, hashes the output, and compares it against the stored pin for the same prompt+config. Returns `PinResult` (`{ status: 'new' | 'match' | 'mismatch'; pin: Pin; previousPin? }`). With `assert: true`, a mismatch throws instead of updating the pin; otherwise the store is updated to the new value.
+
+### Snapshots
+
+```ts
+createSnapshotStore(existing?: PromptSnapshot[]): SnapshotStore
+```
+
+In-memory store of prompt-output snapshots keyed by name. `SnapshotStore`: `get` / `set` / `getAll` / `toJSON`. Pair it with `testSnapshot(name, store, runner, request?)`, which returns `SnapshotTestResult` (`status: 'new' | 'match' | 'changed'`) and updates the store when output changes. `hashOutput(output)` exposes the SHA-256 used internally.
+
+### Regression
+
+```ts
+createRegressionSuite(name: string): RegressionSuite
+```
+
+Tracks output quality against a saved baseline. `RegressionSuite`: `load(path)`, `save(path)`, `addCase(input, output, score)`, `run(runner, scorer?)`, and `baseline`. `run` returns `RegressionResult` splitting cases into `regressions`/`improvements` (delta beyond ±0.1) and `unchanged`. Without a `scorer`, an exact output match scores `1`, otherwise `0.5`.
+
+```ts
+createBudgetedRegressionSuite(name: string): BudgetedRegressionSuite
+```
+
+Same shape, but each baseline case carries its own `tolerance` (default `0.1`) and `maxDelta` (default `0.3`) budget instead of the global ±0.1 threshold. `addCase(case)` takes `Omit<BudgetedRegressionCase, 'timestamp'>`; `setDefaults({ tolerance, maxDelta })` validates `0 ≤ tolerance ≤ maxDelta ≤ 1`. `run` returns `BudgetedRegressionReport`, classifying each case as `unchanged | improved | regression | critical` (`critical` when the drop reaches `maxDelta`).
+
+### Replay — recording
+
+```ts
+createReplayRecorder(): ReplayRecorder
+```
+
+Wraps a `complete` function and captures every `{ request, response, timestamp }`. `ReplayRecorder`: `wrap(completeFn)`, `getEntries()`, `toJSON()`, `clear()`. Feed `getEntries()` (or the JSON) into `createReplayPlayer`.
+
+```ts
+hashRequest(req: CompletionRequest): string
+```
+
+Stable SHA-256 over the semantic request shape (model, system, sampling params, sorted tool names, schema presence, messages) — cosmetic fields like `signal`/`stream` are excluded. This is the hash used by the `'hash'` replay strategy.
 
 ### Replay — matching strategies
 
@@ -365,6 +549,60 @@ const response = await hashPlayer.complete(myRequest) // matched by hash(myReque
 ```
 
 Cosmetic request fields (`signal`, `stream`) are excluded from the hash so a cancellable test run still matches an entry recorded without `AbortSignal`.
+
+### Replay — audit-grade (signed)
+
+HMAC-SHA256 hash-chained replay: a tampered or reordered entry detaches the chain. The secret lives outside the file (env / secret manager) — a replay file without its secret is just data; with the secret it is evidence.
+
+```ts
+createSignedReplayRecorder(config: { secret: string }): SignedReplayRecorder
+```
+
+Like `createReplayRecorder`, but each entry is signed against the previous signature. `export()` returns a `SignedReplayFile` (`{ apiVersion: 'elsium.replay/v1'; algorithm: 'hmac-sha256'; entries }`); `toJSON()` / `clear()` behave as usual. Throws if `secret` is shorter than 16 characters.
+
+```ts
+verifyReplay(fileOrJson: SignedReplayFile | string, secret: string): Promise<ReplayVerification>
+```
+
+Re-derives the chain and returns `{ valid, entryCount, invalidAtIndex?, reason? }`, pinpointing the first tampered entry.
+
+```ts
+createSignedReplayPlayer(fileOrJson: SignedReplayFile | string, options: { secret: string; strict?: boolean }): Promise<SignedReplayPlayer>
+```
+
+Verifies before playback; with `strict` (default `true`) it throws when verification fails. Exposes `complete(request)`, `remaining`, and the `verification` result.
+
+### Replay — streaming
+
+```ts
+createStreamReplayRecorder(): StreamReplayRecorder
+createStreamReplayPlayer(entriesOrJson: readonly StreamReplayEntry[] | string): StreamReplayPlayer
+```
+
+Record and replay `StreamEvent` sequences (token-level streaming) instead of single `complete()` responses, so streaming tests stay deterministic. The recorder's `wrap(streamFn)` captures each `AsyncIterable<StreamEvent>` once it is fully consumed; the player's `stream(request)` replays recorded sequences in order and exposes `remaining`.
+
+---
+
+## Prompt Registry
+
+### createPromptRegistry
+
+```ts
+createPromptRegistry(): PromptRegistry
+```
+
+In-memory, version-aware prompt store. `definePrompt(config)` builds a `PromptDefinition` (`{ name; version; content; variables; metadata? }`). The registry exposes `register(name, prompt)`, `get(name, version?)` (latest by semver when version omitted), `getLatest`, `getVersions`, `list`, `diff(name, fromVersion, toVersion)` (line-level `PromptDiff`), and `render(name, variables, version?)` which substitutes `{{var}}` placeholders.
+
+```ts
+const registry = createPromptRegistry()
+registry.register('greeting', definePrompt({
+  name: 'greeting',
+  version: '1.0.0',
+  content: 'Hello {{name}}',
+  variables: ['name'],
+}))
+registry.render('greeting', { name: 'Ada' }) // "Hello Ada"
+```
 
 ---
 
