@@ -1,4 +1,10 @@
-import type { LLMResponse, Middleware, MiddlewareContext, MiddlewareNext } from '@elsium-ai/core'
+import type {
+	LLMResponse,
+	Message,
+	Middleware,
+	MiddlewareContext,
+	MiddlewareNext,
+} from '@elsium-ai/core'
 import { ElsiumError, extractText } from '@elsium-ai/core'
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -20,6 +26,12 @@ export interface SecurityMiddlewareConfig {
 	jailbreakDetection?: boolean
 	blockedPatterns?: (string | RegExp)[]
 	piiTypes?: Array<'email' | 'phone' | 'address' | 'passport' | 'all'>
+	/**
+	 * Redact secrets (and any `piiTypes`) from the OUTGOING request — system
+	 * prompt and input messages — before it reaches the provider. Off by default
+	 * to preserve existing behavior. Pairs with `piiTypes` for PII redaction.
+	 */
+	redactInput?: boolean
 	onViolation?: (violation: SecurityViolation) => void
 }
 
@@ -361,29 +373,78 @@ function redactResponseSecrets(
 	}
 }
 
+function redactMessageContent(
+	content: Message['content'],
+	config: SecurityMiddlewareConfig,
+): { content: Message['content']; found: SecurityViolation[] } {
+	if (typeof content === 'string') {
+		const { redacted, found } = redactSecrets(content, config.piiTypes)
+		return { content: redacted, found }
+	}
+	const found: SecurityViolation[] = []
+	const parts = content.map((part) => {
+		if (part.type === 'text') {
+			const result = redactSecrets(part.text, config.piiTypes)
+			found.push(...result.found)
+			return result.found.length > 0 ? { ...part, text: result.redacted } : part
+		}
+		return part
+	})
+	return { content: parts, found }
+}
+
+function redactRequestInput(
+	ctx: MiddlewareContext,
+	config: SecurityMiddlewareConfig,
+): MiddlewareContext {
+	const violations: SecurityViolation[] = []
+
+	let system = ctx.request.system
+	if (system) {
+		const result = redactSecrets(system, config.piiTypes)
+		system = result.redacted
+		violations.push(...result.found)
+	}
+
+	const messages = ctx.request.messages.map((message) => {
+		const { content, found } = redactMessageContent(message.content, config)
+		violations.push(...found)
+		return found.length > 0 ? { ...message, content } : message
+	})
+
+	if (violations.length === 0) return ctx
+
+	for (const v of violations) {
+		config.onViolation?.(v)
+	}
+	return { ...ctx, request: { ...ctx.request, system, messages } }
+}
+
+/** Scan the system prompt and every input message; throw on the first violation. */
+function scanRequestForViolations(ctx: MiddlewareContext, config: SecurityMiddlewareConfig): void {
+	if (ctx.request.system) {
+		const sysViolations = scanMessageForViolations(ctx.request.system, config)
+		if (sysViolations.length > 0) reportAndThrow(sysViolations, config)
+	}
+
+	for (const message of ctx.request.messages) {
+		const text = extractText(message.content)
+		if (!text) continue
+		const violations = scanMessageForViolations(text, config)
+		if (violations.length > 0) reportAndThrow(violations, config)
+	}
+}
+
 export function securityMiddleware(config: SecurityMiddlewareConfig): Middleware {
 	return async (ctx: MiddlewareContext, next: MiddlewareNext): Promise<LLMResponse> => {
-		// Pre-processing: scan system prompt
-		if (ctx.request.system) {
-			const sysViolations = scanMessageForViolations(ctx.request.system, config)
-			if (sysViolations.length > 0) {
-				reportAndThrow(sysViolations, config)
-			}
-		}
+		// Pre-processing: detection (throws on violation)
+		scanRequestForViolations(ctx, config)
 
-		// Pre-processing: scan input messages
-		for (const message of ctx.request.messages) {
-			const text = extractText(message.content)
-			if (!text) continue
-
-			const violations = scanMessageForViolations(text, config)
-			if (violations.length > 0) {
-				reportAndThrow(violations, config)
-			}
-		}
+		// Pre-processing: redact secrets / PII in the outgoing request
+		const outgoing = config.redactInput ? redactRequestInput(ctx, config) : ctx
 
 		// Execute the next middleware / provider call
-		const response = await next(ctx)
+		const response = await next(outgoing)
 
 		// Post-processing: redact secrets in response
 		if (config.secretRedaction !== false) {

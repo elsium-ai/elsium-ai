@@ -123,4 +123,35 @@ describe('createAgentSecurity', () => {
 			expect(result.redactedOutput).toBeUndefined()
 		})
 	})
+
+	describe('sanitizeInput', () => {
+		it('is a no-op when no input redaction is configured', () => {
+			const security = createAgentSecurity({ detectPromptInjection: true })
+			const result = security.sanitizeInput('My key is sk-abcdefghijklmnopqrstuvwxyz')
+			expect(result.safe).toBe(true)
+			expect(result.redactedOutput).toBeUndefined()
+		})
+
+		it('redacts secrets from input when redactInputSecrets is enabled', () => {
+			const security = createAgentSecurity({ redactInputSecrets: true })
+			const result = security.sanitizeInput('My key is sk-abcdefghijklmnopqrstuvwxyz')
+			expect(result.safe).toBe(false)
+			expect(result.redactedOutput).toContain('[REDACTED_API_KEY]')
+			expect(result.redactedOutput).not.toContain('sk-abcdefghijklmnopqrstuvwxyz')
+		})
+
+		it('redacts PII from input when redactInputPii is set', () => {
+			const security = createAgentSecurity({ redactInputPii: ['email'] })
+			const result = security.sanitizeInput('Contact me at jane@example.com')
+			expect(result.safe).toBe(false)
+			expect(result.redactedOutput).toContain('[REDACTED_EMAIL]')
+		})
+
+		it('returns safe + no redaction for clean input', () => {
+			const security = createAgentSecurity({ redactInputSecrets: true })
+			const result = security.sanitizeInput('What is the weather today?')
+			expect(result.safe).toBe(true)
+			expect(result.redactedOutput).toBeUndefined()
+		})
+	})
 })
