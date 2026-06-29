@@ -21,7 +21,7 @@ Load raw content into structured `Document` objects.
 | `csvLoader` | `csvLoader(opts?): DocumentLoader` | CSV with row-per-document splitting |
 | `getLoader` | `getLoader(type: LoaderType): DocumentLoader` | Get a loader by type name |
 
-**LoaderType:** `'text'` | `'markdown'` | `'html'` | `'json'` | `'csv'`
+**LoaderType:** `'text'` | `'markdown'` | `'html'` | `'json'` | `'csv'` | `'pdf'`
 
 ### DocumentLoader Interface
 
@@ -209,7 +209,7 @@ createInMemoryStore({
 // MMR rerank options
 mmrRerank(queryEmbedding, results, {
   topK?: number,    // Number of results to return
-  lambda?: number,  // Balance relevance vs diversity (0-1, default 0.5)
+  lambda?: number,  // Balance relevance vs diversity (0-1, default 0.7)
 })
 ```
 
@@ -294,7 +294,6 @@ const pipeline = rag({
   loader: 'markdown',
   chunking: { strategy: 'recursive', maxChunkSize: 500, overlap: 50 },
   embeddings: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY },
-  store: { provider: 'memory' },
   retrieval: { topK: 5, strategy: 'mmr', mmrLambda: 0.7 },
 })
 
@@ -323,7 +322,7 @@ for (const { chunk, score } of results) {
 | `EmbeddedChunk` | Chunk extended with `embedding: EmbeddingVector` |
 | `RetrievalResult` | Query result with `chunk`, `score`, `distance` |
 | `QueryOptions` | Query options: `topK?`, `minScore?`, `filter?` |
-| `LoaderType` | `'text'` \| `'markdown'` \| `'html'` \| `'json'` \| `'csv'` |
+| `LoaderType` | `'text'` \| `'markdown'` \| `'html'` \| `'json'` \| `'csv'` \| `'pdf'` |
 | `ChunkingStrategy` | `'fixed-size'` \| `'recursive'` \| `'sentence'` |
 | `ChunkingConfig` | Chunking configuration |
 | `EmbeddingConfig` | Embedding provider configuration |

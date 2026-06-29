@@ -22,11 +22,17 @@ Creates a multi-provider LLM gateway. The gateway is the primary entry point for
 
 | Field | Type | Description |
 |---|---|---|
-| `providers` | `Record<string, ProviderConfig>` | Named provider configurations |
+| `provider` | `string` | Provider name (e.g. `'anthropic'`, `'openai'`, `'google'`, `'openai-compatible'`, or a registered name) |
+| `apiKey` | `string` | API key for the provider |
+| `model` | `string` | Default model identifier |
+| `baseUrl` | `string` | Override the provider base URL |
+| `timeout` | `number` | Request timeout in milliseconds |
+| `maxRetries` | `number` | Maximum retry attempts |
 | `middleware` | `Middleware[]` | Request middleware stack |
 | `streamMiddleware` | `StreamMiddleware[]` | Stream middleware stack |
-| `defaultModel` | `string` | Default model identifier |
-| `defaultProvider` | `string` | Default provider name |
+| `xray` | `boolean \| { maxHistory?: number }` | Enable X-Ray request tracing |
+| `maxMessages` | `number` | Maximum messages per request |
+| `maxInputTokens` | `number` | Maximum estimated input tokens per request |
 
 **Methods:**
 
@@ -34,18 +40,15 @@ Creates a multi-provider LLM gateway. The gateway is the primary entry point for
 |---|---|---|
 | `complete` | `complete(request: CompletionRequest): Promise<LLMResponse>` | Send a completion request |
 | `stream` | `stream(request: CompletionRequest): ElsiumStream` | Stream a completion response |
-| `completeWithStructuredOutput` | `completeWithStructuredOutput<T>(request, schema): Promise<T>` | Get structured output validated against a Zod schema |
+| `generateObject` | `generateObject<T>(request & { schema: z.ZodType<T> }): Promise<{ object: T; response: LLMResponse }>` | Get structured output validated against a Zod schema |
 
 ```ts
-import { gateway, createAnthropicProvider, createOpenAIProvider } from '@elsium-ai/gateway'
+import { gateway } from '@elsium-ai/gateway'
 
 const gw = gateway({
-  providers: {
-    anthropic: createAnthropicProvider({ apiKey: env('ANTHROPIC_API_KEY') }),
-    openai: createOpenAIProvider({ apiKey: env('OPENAI_API_KEY') }),
-  },
-  defaultProvider: 'anthropic',
-  defaultModel: 'claude-sonnet-4-20250514',
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  model: 'claude-sonnet-4-20250514',
 })
 
 // Standard completion
@@ -59,8 +62,8 @@ const stream = gw.stream({
 })
 
 for await (const event of stream) {
-  if (event.type === 'content-delta') {
-    process.stdout.write(event.delta)
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.text)
   }
 }
 
@@ -72,11 +75,11 @@ const schema = z.object({
   confidence: z.number(),
 })
 
-const result = await gw.completeWithStructuredOutput(
-  { messages: [{ role: 'user', content: 'Analyze: I love this product' }] },
+const { object } = await gw.generateObject({
+  messages: [{ role: 'user', content: 'Analyze: I love this product' }],
   schema,
-)
-// result: { sentiment: 'positive', confidence: 0.95 }
+})
+// object: { sentiment: 'positive', confidence: 0.95 }
 ```
 
 ---
@@ -86,7 +89,7 @@ const result = await gw.completeWithStructuredOutput(
 | Export | Signature | Description |
 |---|---|---|
 | `registerProviderFactory` | `registerProviderFactory(name: string, factory: ProviderFactory): void` | Register a provider factory globally |
-| `registerProvider` | `registerProvider(name: string, factory: ProviderFactory): void` | Alias for `registerProviderFactory` |
+| `registerProvider` | `registerProvider(name: string, factory: ProviderFactory): void` | Register a provider factory (or instance) in the provider registry |
 | `getProviderFactory` | `getProviderFactory(name: string): ProviderFactory \| undefined` | Retrieve a registered factory |
 | `listProviders` | `listProviders(): string[]` | List all registered provider names |
 | `registerProviderMetadata` | `registerProviderMetadata(name: string, meta: ProviderMetadata): void` | Register provider metadata (models, capabilities) |
@@ -110,7 +113,7 @@ const providers = listProviders() // ['anthropic', 'openai', 'google', 'custom']
 ### createAnthropicProvider
 
 ```ts
-createAnthropicProvider(config: ProviderConfig): Provider
+createAnthropicProvider(config: ProviderConfig): LLMProvider
 ```
 
 Creates a provider for Anthropic Claude models.
@@ -118,7 +121,7 @@ Creates a provider for Anthropic Claude models.
 ### createOpenAIProvider
 
 ```ts
-createOpenAIProvider(config: ProviderConfig): Provider
+createOpenAIProvider(config: ProviderConfig): LLMProvider
 ```
 
 Creates a provider for OpenAI GPT models.
@@ -126,7 +129,7 @@ Creates a provider for OpenAI GPT models.
 ### createGoogleProvider
 
 ```ts
-createGoogleProvider(config: ProviderConfig): Provider
+createGoogleProvider(config: ProviderConfig): LLMProvider
 ```
 
 Creates a provider for Google Gemini models.
@@ -140,17 +143,14 @@ import {
 
 const anthropic = createAnthropicProvider({
   apiKey: env('ANTHROPIC_API_KEY'),
-  defaultModel: 'claude-sonnet-4-20250514',
 })
 
 const openai = createOpenAIProvider({
   apiKey: env('OPENAI_API_KEY'),
-  defaultModel: 'gpt-4o',
 })
 
 const google = createGoogleProvider({
   apiKey: env('GOOGLE_API_KEY'),
-  defaultModel: 'gemini-2.0-flash',
 })
 ```
 
@@ -182,7 +182,7 @@ Composes multiple stream middlewares into a single stream middleware.
 | `costTrackingMiddleware` | Tracks token usage and calculates cost per request |
 | `xrayMiddleware` | Attaches detailed execution trace data to responses |
 | `bulkheadMiddleware(config)` | Limits concurrent requests per provider or globally |
-| `cacheMiddleware(cache)` | Caches responses using a provided cache implementation |
+| `cacheMiddleware(config?)` | Caches responses (in-memory by default; configurable adapter, TTL, and key function) |
 | `outputGuardrailMiddleware(guardrails)` | Validates outputs against guardrail rules |
 | `securityMiddleware(config)` | Scans inputs for prompt injection, jailbreak attempts, and secrets |
 
@@ -200,14 +200,15 @@ import {
 } from '@elsium-ai/gateway'
 
 const gw = gateway({
-  providers: { /* ... */ },
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
   middleware: [
     loggingMiddleware,
     costTrackingMiddleware,
     xrayMiddleware,
     securityMiddleware({ promptInjection: true, secretRedaction: true }),
     bulkheadMiddleware({ maxConcurrent: 10 }),
-    cacheMiddleware(createInMemoryCache({ ttlMs: 60000, maxSize: 100 })),
+    cacheMiddleware({ adapter: createInMemoryCache(100), ttlMs: 60000 }),
   ],
 })
 ```
@@ -233,18 +234,20 @@ const timingMiddleware: Middleware = async (ctx, next) => {
 ### createInMemoryCache
 
 ```ts
-createInMemoryCache(opts?: { ttlMs?: number; maxSize?: number }): Cache
+createInMemoryCache(maxSize?: number): CacheAdapter
 ```
 
-Creates an in-memory response cache with TTL expiration and bounded size (FIFO eviction).
+Creates an in-memory response cache with TTL expiration and bounded size (LRU eviction). The TTL is supplied per entry by `cacheMiddleware` via its `ttlMs` option.
 
 ```ts
 import { createInMemoryCache, cacheMiddleware } from '@elsium-ai/gateway'
 
-const cache = createInMemoryCache({ ttlMs: 300000, maxSize: 500 })
+const cache = createInMemoryCache(500)
 
 const gw = gateway({
-  middleware: [cacheMiddleware(cache)],
+  provider: 'anthropic',
+  apiKey: env('ANTHROPIC_API_KEY'),
+  middleware: [cacheMiddleware({ adapter: cache, ttlMs: 300000 })],
 })
 ```
 
@@ -318,8 +321,8 @@ That external-detector seam lives at the agent level: `@elsium-ai/agents` expose
 import { calculateCost, registerPricing } from '@elsium-ai/gateway'
 
 registerPricing('custom-model', {
-  inputPer1kTokens: 0.003,
-  outputPer1kTokens: 0.015,
+  inputPerMillion: 3,
+  outputPerMillion: 15,
 })
 
 const cost = calculateCost('claude-sonnet-4-20250514', {
@@ -337,15 +340,16 @@ const cost = calculateCost('claude-sonnet-4-20250514', {
 ### createBatch
 
 ```ts
-createBatch(gateway: Gateway, requests: CompletionRequest[]): Promise<LLMResponse[]>
+createBatch(gateway: Gateway, config?: BatchConfig): { execute(requests: CompletionRequest[]): Promise<BatchResult> }
 ```
 
-Processes multiple completion requests as a batch, handling concurrency and error collection.
+Creates a batch runner that processes multiple completion requests, handling concurrency and error collection.
 
 ```ts
 import { createBatch } from '@elsium-ai/gateway'
 
-const responses = await createBatch(gw, [
+const batch = createBatch(gw)
+const { results } = await batch.execute([
   { messages: [{ role: 'user', content: 'Summarize document A' }] },
   { messages: [{ role: 'user', content: 'Summarize document B' }] },
   { messages: [{ role: 'user', content: 'Summarize document C' }] },
@@ -359,7 +363,7 @@ const responses = await createBatch(gw, [
 ### createProviderMesh
 
 ```ts
-createProviderMesh(config: MeshConfig): ProviderMesh
+createProviderMesh(config: ProviderMeshConfig): ProviderMesh
 ```
 
 Creates a multi-provider router that distributes requests across providers using configurable strategies.
@@ -368,19 +372,19 @@ Creates a multi-provider router that distributes requests across providers using
 
 | Strategy | Description |
 |---|---|
-| `round-robin` | Distribute requests evenly across providers |
-| `lowest-cost` | Route to the cheapest provider for the requested model |
-| `fastest` | Route to the provider with the lowest observed latency |
+| `fallback` | Try providers in declared order, falling back to the next on error |
+| `cost-optimized` | Route between a cheaper and a more capable model based on estimated request complexity (requires `costOptimizer`) |
+| `latency-optimized` | Race available providers and return the fastest response |
+| `capability-aware` | Route to a provider that supports the capabilities the request requires |
 
 ```ts
 import { createProviderMesh } from '@elsium-ai/gateway'
 
 const mesh = createProviderMesh({
-  providers: {
-    anthropic: anthropicProvider,
-    openai: openaiProvider,
-  },
-  strategy: 'lowest-cost',
-  fallback: true,
+  providers: [
+    { name: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY') }, model: 'claude-sonnet-4-20250514' },
+    { name: 'openai', config: { apiKey: env('OPENAI_API_KEY') }, model: 'gpt-4o' },
+  ],
+  strategy: 'fallback',
 })
 ```

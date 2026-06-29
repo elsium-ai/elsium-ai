@@ -84,8 +84,7 @@ await client.disconnect()
 
 ```ts
 import { createMCPClient } from '@elsium-ai/mcp'
-import { createAgent } from '@elsium-ai/agents'
-import { gateway } from '@elsium-ai/gateway'
+import { defineAgent } from '@elsium-ai/agents'
 
 const client = createMCPClient({
   name: 'tools-server',
@@ -97,9 +96,11 @@ const client = createMCPClient({
 await client.connect()
 const tools = await client.toElsiumTools()
 
-const agent = createAgent({
+const agent = defineAgent({
   name: 'tool-user',
-  gateway: gateway({ provider: 'anthropic', apiKey: '...' }),
+  system: 'Use the available tools to help the user.',
+  provider: 'anthropic',
+  apiKey: '...',
   tools,
 })
 
@@ -148,7 +149,7 @@ const calculator = defineTool({
   parameters: z.object({
     expression: z.string().describe('Math expression to evaluate'),
   }),
-  execute: async ({ expression }) => {
+  handler: async ({ expression }) => {
     return { result: eval(expression) }
   },
 })

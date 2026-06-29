@@ -225,7 +225,7 @@ Multi-tenant isolation middleware for per-tenant rate limiting and budget enforc
 |---|---|---|
 | `tenantMiddleware` | `tenantMiddleware(config: TenantMiddlewareConfig): HonoMiddleware` | Resolve tenant from request context |
 | `tenantRateLimitMiddleware` | `tenantRateLimitMiddleware(): HonoMiddleware` | Per-tenant request rate limiting (uses `maxRequestsPerMinute` from tenant limits) |
-| `tenantBudgetMiddleware` | `tenantBudgetMiddleware(): HonoMiddleware` | Per-tenant token and cost budget enforcement (sliding window, 429 on exceed) |
+| `tenantBudgetMiddleware` | `tenantBudgetMiddleware(): HonoMiddleware` | Per-tenant token and cost budget enforcement (fixed/reset window, 429 on exceed) |
 
 ### TenantMiddlewareConfig
 
@@ -264,7 +264,7 @@ Server-Sent Events helpers for streaming responses.
 |---|---|---|
 | `sseHeaders` | `sseHeaders(): Record<string, string>` | Standard SSE response headers (`Content-Type`, `Cache-Control`, `Connection`, `X-Accel-Buffering`) |
 | `formatSSE` | `formatSSE(event: string, data: unknown): string` | Format a named SSE event with JSON data |
-| `streamResponse` | `streamResponse(c: Context, source: ElsiumStream): Response` | Convert an ElsiumStream to an SSE Response |
+| `streamResponse` | `streamResponse(c: Context, source: ElsiumStream \| AsyncIterable<unknown>): Response` | Convert an ElsiumStream to an SSE Response |
 
 ### Stream Event Types
 
