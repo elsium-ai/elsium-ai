@@ -1,3 +1,5 @@
+import { redactSecrets } from '@elsium-ai/gateway'
+
 // ─── Types ──────────────────────────────────────────────────────
 
 export interface AgentSecurityConfig {
@@ -5,6 +7,28 @@ export interface AgentSecurityConfig {
 	detectJailbreak?: boolean
 	redactSecrets?: boolean
 	blockedPatterns?: RegExp[]
+	/**
+	 * Redact secrets from user INPUT before it reaches the model. Off by default.
+	 * Enabling this (or `redactInputPii`) turns on input-side secret redaction.
+	 */
+	redactInputSecrets?: boolean
+	/**
+	 * PII categories to redact from user INPUT before it reaches the model.
+	 * Setting any category also redacts secrets from the input.
+	 */
+	redactInputPii?: Array<'email' | 'phone' | 'address' | 'passport' | 'all'>
+	/**
+	 * Optional async classifier (e.g. LLM-backed) run on the raw input. Return
+	 * `true` to reject the input as a prompt-injection attempt. Applied by the
+	 * agent on `run`/`chat`/`generate` (not on `stream`).
+	 */
+	injectionClassifier?: (input: string) => boolean | Promise<boolean>
+	/**
+	 * Redact secrets from tool-call arguments before they are executed and
+	 * recorded in the trace. Off by default. PII is intentionally NOT redacted
+	 * from arguments to avoid breaking tools that legitimately need it.
+	 */
+	redactToolArgSecrets?: boolean
 }
 
 export interface AgentSecurityResult {
@@ -139,6 +163,7 @@ function matchPatterns(
 
 export function createAgentSecurity(config: AgentSecurityConfig): {
 	validateInput(input: string): AgentSecurityResult
+	sanitizeInput(input: string): AgentSecurityResult
 	sanitizeOutput(output: string): AgentSecurityResult
 } {
 	function validateInput(input: string): AgentSecurityResult {
@@ -167,6 +192,21 @@ export function createAgentSecurity(config: AgentSecurityConfig): {
 		return { safe: violations.length === 0, violations }
 	}
 
+	function sanitizeInput(input: string): AgentSecurityResult {
+		const wantsPii = (config.redactInputPii?.length ?? 0) > 0
+		if (!config.redactInputSecrets && !wantsPii) {
+			return { safe: true, violations: [] }
+		}
+
+		const { redacted, found } = redactSecrets(input, config.redactInputPii)
+
+		return {
+			safe: found.length === 0,
+			violations: found.map((v) => ({ type: v.type, detail: v.detail, severity: v.severity })),
+			redactedOutput: found.length > 0 ? redacted : undefined,
+		}
+	}
+
 	function sanitizeOutput(output: string): AgentSecurityResult {
 		const violations: AgentSecurityResult['violations'] = []
 		let redactedOutput = output
@@ -191,5 +231,5 @@ export function createAgentSecurity(config: AgentSecurityConfig): {
 		}
 	}
 
-	return { validateInput, sanitizeOutput }
+	return { validateInput, sanitizeInput, sanitizeOutput }
 }

@@ -315,4 +315,49 @@ describe('securityMiddleware', () => {
 		const result = await mw(ctx, async () => responseWithSecret)
 		expect(result.message.content).toContain('sk-abcdefghijklmnopqrstuvwxyz')
 	})
+
+	it('redacts secrets from the outgoing request when redactInput is enabled', async () => {
+		const mw = securityMiddleware({ redactInput: true })
+		const ctx = createMockContext([
+			{ role: 'user', content: 'my key is sk-abcdefghijklmnopqrstuvwxyz' },
+		])
+
+		let sent: MiddlewareContext | undefined
+		await mw(ctx, async (c) => {
+			sent = c
+			return mockResponse
+		})
+
+		const text = sent?.request.messages[0].content
+		expect(text).toContain('[REDACTED_API_KEY]')
+		expect(text).not.toContain('sk-abcdefghijklmnopqrstuvwxyz')
+	})
+
+	it('redacts configured PII from the outgoing request', async () => {
+		const onViolation = vi.fn()
+		const mw = securityMiddleware({ redactInput: true, piiTypes: ['email'], onViolation })
+		const ctx = createMockContext([{ role: 'user', content: 'email jane@example.com' }])
+
+		let sent: MiddlewareContext | undefined
+		await mw(ctx, async (c) => {
+			sent = c
+			return mockResponse
+		})
+
+		expect(sent?.request.messages[0].content).toContain('[REDACTED_EMAIL]')
+		expect(onViolation).toHaveBeenCalled()
+	})
+
+	it('leaves the outgoing request untouched when redactInput is off', async () => {
+		const mw = securityMiddleware({})
+		const ctx = createMockContext([{ role: 'user', content: 'email jane@example.com' }])
+
+		let sent: MiddlewareContext | undefined
+		await mw(ctx, async (c) => {
+			sent = c
+			return mockResponse
+		})
+
+		expect(sent?.request.messages[0].content).toContain('jane@example.com')
+	})
 })

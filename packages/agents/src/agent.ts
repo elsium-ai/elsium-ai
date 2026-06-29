@@ -17,7 +17,7 @@ import {
 	replayFrom,
 } from '@elsium-ai/core'
 import { zodToJsonSchema } from '@elsium-ai/core'
-import { gateway } from '@elsium-ai/gateway'
+import { gateway, redactSecrets } from '@elsium-ai/gateway'
 import type { ToolExecutionResult } from '@elsium-ai/tools'
 import { formatToolResult } from '@elsium-ai/tools'
 import type { z } from 'zod'
@@ -205,6 +205,49 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 				)
 			}
 		}
+	}
+
+	/** Redact secrets / PII from input text before it reaches the model. */
+	function redactInputText(text: string): string {
+		if (!agentSecurity) return text
+		const result = agentSecurity.sanitizeInput(text)
+		return result.redactedOutput ?? text
+	}
+
+	/** Optional async (e.g. LLM-backed) injection classifier — throws on detection. */
+	async function runInjectionClassifier(text: string): Promise<void> {
+		const classifier = guardrails.security?.injectionClassifier
+		if (!classifier) return
+		if (await classifier(text)) {
+			throw ElsiumError.validation('Input rejected: flagged as prompt injection by classifier')
+		}
+	}
+
+	/**
+	 * Input guardrail pipeline: detection (throws) → async classifier (throws) →
+	 * redaction (transform). Returns the sanitized text to send to the model.
+	 */
+	async function prepareInput(text: string): Promise<string> {
+		validateInputText(text)
+		await runInjectionClassifier(text)
+		return redactInputText(text)
+	}
+
+	/** Recursively redact secrets from string values inside tool arguments. */
+	function redactArgValue(value: unknown): unknown {
+		if (typeof value === 'string') return redactSecrets(value).redacted
+		if (Array.isArray(value)) return value.map(redactArgValue)
+		if (value && typeof value === 'object') {
+			const out: Record<string, unknown> = {}
+			for (const [k, v] of Object.entries(value)) out[k] = redactArgValue(v)
+			return out
+		}
+		return value
+	}
+
+	function redactToolArguments(args: Record<string, unknown>): Record<string, unknown> {
+		if (!guardrails.security?.redactToolArgSecrets) return args
+		return redactArgValue(args) as Record<string, unknown>
 	}
 
 	function commitToMemory(
@@ -557,10 +600,12 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		const results = []
 
 		for (const tc of toolCalls) {
-			await safeHook(() => config.hooks?.onToolCall?.({ name: tc.name, arguments: tc.arguments }))
-			const result = await executeSingleToolCall(tc, options)
+			const safeArgs = redactToolArguments(tc.arguments)
+			const safeTc = safeArgs === tc.arguments ? tc : { ...tc, arguments: safeArgs }
+			await safeHook(() => config.hooks?.onToolCall?.({ name: safeTc.name, arguments: safeArgs }))
+			const result = await executeSingleToolCall(safeTc, options)
 			await safeHook(() => config.hooks?.onToolResult?.(result))
-			history.push({ name: tc.name, arguments: tc.arguments, result })
+			history.push({ name: safeTc.name, arguments: safeArgs, result })
 			results.push(formatToolResult(result))
 		}
 
@@ -633,19 +678,19 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		},
 
 		async run(input: string, options: AgentRunOptions = {}): Promise<AgentResult> {
-			validateInputText(input)
+			const prepared = await prepareInput(input)
 
 			if (config.states && config.initialState) {
 				return executeStateMachine(
 					config,
 					{ states: config.states, initialState: config.initialState },
 					resolvedDeps,
-					input,
+					prepared,
 					options,
 				)
 			}
 
-			const userMessage: Message = { role: 'user', content: input }
+			const userMessage: Message = { role: 'user', content: prepared }
 			return executeLoop([userMessage], options)
 		},
 
@@ -654,7 +699,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 			schema: z.ZodType<T>,
 			options: AgentRunOptions = {},
 		): Promise<AgentGenerateResult<T>> {
-			validateInputText(input)
+			const prepared = await prepareInput(input)
 
 			const jsonSchema = zodToJsonSchema(schema)
 			const schemaInstruction = [
@@ -663,7 +708,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 				'Respond ONLY with the JSON object, no markdown or explanation.',
 			].join('\n')
 
-			const augmentedInput = `${input}\n\n${schemaInstruction}`
+			const augmentedInput = `${prepared}\n\n${schemaInstruction}`
 			const userMessage: Message = { role: 'user', content: augmentedInput }
 			const agentResult = await executeLoop([userMessage], options)
 
@@ -686,6 +731,9 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 
 		stream(input: string, options: AgentRunOptions = {}): AgentStream {
 			validateInputText(input)
+			// Streaming applies synchronous input redaction only; the async
+			// injectionClassifier is skipped (it would block stream construction).
+			const prepared = redactInputText(input)
 
 			const streamDeps = resolvedDeps as StreamingAgentDependencies
 			if (!streamDeps.stream) {
@@ -695,7 +743,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 				)
 			}
 
-			const userMessage: Message = { role: 'user', content: input }
+			const userMessage: Message = { role: 'user', content: prepared }
 			return createAgentStream([userMessage], {
 				config,
 				deps: streamDeps,
@@ -708,15 +756,27 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 		},
 
 		async chat(messages: Message[], options: AgentRunOptions = {}): Promise<AgentResult> {
-			// Validate user-role messages
+			// Run the input guardrail pipeline on each user-role message. Redaction
+			// only replaces string content; multimodal (ContentPart[]) content is
+			// validated but left intact to avoid dropping non-text parts.
+			const preparedMessages: Message[] = []
 			for (const msg of messages) {
-				if (msg.role !== 'user') continue
-				validateInputText(extractText(msg.content))
+				if (msg.role !== 'user') {
+					preparedMessages.push(msg)
+					continue
+				}
+				const text = extractText(msg.content)
+				const prepared = await prepareInput(text)
+				if (typeof msg.content === 'string' && prepared !== text) {
+					preparedMessages.push({ ...msg, content: prepared })
+				} else {
+					preparedMessages.push(msg)
+				}
 			}
 
 			// State machine mode
 			if (config.states && config.initialState) {
-				const inputText = messages
+				const inputText = preparedMessages
 					.filter((m) => m.role === 'user')
 					.map((m) => extractText(m.content))
 					.join('\n')
@@ -729,7 +789,7 @@ export function defineAgent(config: AgentConfig, deps?: AgentDependencies): Agen
 				)
 			}
 
-			return executeLoop(messages, options)
+			return executeLoop(preparedMessages, options)
 		},
 
 		resetMemory() {

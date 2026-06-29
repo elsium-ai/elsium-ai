@@ -179,7 +179,7 @@ const llm = gateway({
 | **Jurisdiction Routing** | PII classifier → JurisdictionRouter intersects allowed providers per data class. EU email never reaches a US-only model. |
 | **Compliance Reporting** | Generate reports against OWASP Agentic, EU AI Act, Colorado AI Act frameworks |
 | **MCP Trust Framework** | Server allowlists, tool filtering, output validation, manifest integrity for MCP |
-| **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model |
+| **PII Detection** | Redacts emails, phones, addresses, API keys on both input (opt-in: `redactInput` / `redactInputPii`) and model output |
 
 ---
 
