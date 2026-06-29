@@ -15,9 +15,11 @@ gap. All of it is opt-in via `AgentSecurityConfig`.
 
 ## Self-sufficient by default, open to external tools
 
-The heuristic detector is **evasion-resistant out of the box** — it strips
+The heuristic detector resists common evasion out of the box — it strips
 zero-width characters, folds homoglyphs (`іgnоre` → `ignore`), and decodes
-base64 payloads before matching. No external install.
+base64 payloads before matching. No external install. Measured, not asserted:
+`bun benchmarks/guardrail-detection.ts` reports detection across evasion
+categories and false positives on benign near-misses (internal adversarial set).
 
 For higher precision, the built-in `createLLMGuardrail` uses the LLM you already
 configured — still nothing extra to install:

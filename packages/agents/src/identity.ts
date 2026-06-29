@@ -1,5 +1,18 @@
 import { hmacSha256Hex, randomHexString, sha256Hex, timingSafeEqualHex } from '@elsium-ai/core'
 
+/**
+ * SCOPE — this is **agent identity**, not user authentication.
+ *
+ * It gives an agent a signed, replay-protected identity for agent-to-agent /
+ * agent-to-service trust: HMAC-signed payloads with a nonce + time window. It is
+ * intentionally narrow.
+ *
+ * It is NOT user auth, SSO, OAuth/OIDC, or session management. Do not use it as
+ * your application's login/authorization layer — for that, integrate a dedicated
+ * provider (Auth0 for AI Agents, Microsoft Entra Agent ID, WorkOS, Okta) at your
+ * app boundary. Pairs with capability tokens (`@elsium-ai/core`) for scoped,
+ * delegatable permissions.
+ */
 export interface AgentIdentity {
 	readonly agentId: string
 	readonly publicKey: string

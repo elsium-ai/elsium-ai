@@ -73,7 +73,8 @@ const JAILBREAK_PATTERNS: Array<{ pattern: RegExp; detail: string }> = [
 		detail: 'Attempt to bypass safety filters',
 	},
 	{
-		pattern: /developer\s+mode\s+(?:enabled|activated|on)/i,
+		pattern:
+			/(?:enable|activate|turn\s+on)\s+developer\s+mode|developer\s+mode\s+(?:enabled|activated|on)/i,
 		detail: 'Developer mode jailbreak attempt',
 	},
 	{
