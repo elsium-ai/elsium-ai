@@ -160,6 +160,205 @@ const result = await router.run({ type: 'text', data: '...' })
 
 ---
 
+## DAG Workflow
+
+| Export | Signature | Description |
+|---|---|---|
+| `defineDagWorkflow` | `defineDagWorkflow(config: DagWorkflowConfig): Workflow` | Run steps as a dependency graph |
+
+Steps declare their dependencies via `dependsOn`. The workflow computes a topological order and executes independent steps concurrently in waves. A step receives the output of its first declared dependency as input (falling back to the workflow input when it has none). Execution stops after the first wave that contains a failed step. Unknown dependencies and cycles throw at run time.
+
+```ts
+import { step, defineDagWorkflow } from '@elsium-ai/workflows'
+
+const build = defineDagWorkflow({
+  name: 'build-pipeline',
+  steps: [
+    step('compile', { handler: async (src: { files: string[] }) => compile(src) }),
+    { ...step('test', { handler: async (artifact) => runTests(artifact) }), dependsOn: ['compile'] },
+    { ...step('lint', { handler: async (artifact) => runLint(artifact) }), dependsOn: ['compile'] },
+    { ...step('package', { handler: async (artifact) => bundle(artifact) }), dependsOn: ['test', 'lint'] },
+  ],
+  onStepComplete: (result) => console.log(`${result.name}: ${result.status}`),
+})
+
+const result = await build.run({ files: ['a.ts', 'b.ts'] })
+// 'compile' runs first; 'test' and 'lint' run in parallel; 'package' runs last.
+```
+
+### DagWorkflowConfig
+
+```ts
+interface DagWorkflowConfig {
+  name: string
+  steps: DagStepConfig[]
+  onStepComplete?: (result: StepResult) => void | Promise<void>
+  onStepError?: (error: Error, stepName: string) => void | Promise<void>
+  onComplete?: (result: WorkflowResult) => void | Promise<void>
+}
+```
+
+### DagStepConfig
+
+Extends `StepConfig` with a dependency list.
+
+```ts
+interface DagStepConfig<TInput, TOutput> extends StepConfig<TInput, TOutput> {
+  dependsOn?: string[]  // names of steps that must complete first
+}
+```
+
+---
+
+## Resumable Workflows
+
+| Export | Signature | Description |
+|---|---|---|
+| `defineResumableWorkflow` | `defineResumableWorkflow(config: ResumableWorkflowConfig): ResumableWorkflow` | Sequential workflow that checkpoints progress and can resume after a failure |
+| `createInMemoryCheckpointStore` | `createInMemoryCheckpointStore(): CheckpointStore` | In-memory checkpoint store (reference adapter) |
+
+A resumable workflow saves a `WorkflowCheckpoint` before each step. If a step fails, the checkpoint is persisted with `status: 'failed'` and the run returns. Calling `resume(workflowId)` reloads the checkpoint and continues from the step that failed; resuming an already-completed workflow returns its stored result. Provide your own `CheckpointStore` implementation for durable persistence — the package ships only the in-memory adapter.
+
+```ts
+import { step, defineResumableWorkflow, createInMemoryCheckpointStore } from '@elsium-ai/workflows'
+
+const store = createInMemoryCheckpointStore()
+
+const order = defineResumableWorkflow({
+  name: 'process-order',
+  checkpointStore: store,
+  steps: [
+    step('reserve', { handler: async (o: { id: string }) => reserveStock(o) }),
+    step('charge', { handler: async (o) => chargeCard(o) }),
+    step('ship', { handler: async (o) => createShipment(o) }),
+  ],
+})
+
+const first = await order.run({ id: 'ord-42' }, { workflowId: 'ord-42' })
+
+if (first.status === 'failed') {
+  // ...fix the underlying issue, then continue from the failed step
+  const final = await order.resume('ord-42')
+}
+
+const checkpoint = await order.getCheckpoint('ord-42')
+const all = await order.listCheckpoints()
+```
+
+### ResumableWorkflowConfig
+
+Extends `WorkflowConfig` with a checkpoint store.
+
+```ts
+interface ResumableWorkflowConfig extends WorkflowConfig {
+  checkpointStore: CheckpointStore
+}
+```
+
+### ResumableWorkflowRunOptions
+
+Extends `WorkflowRunOptions`. Pass a `workflowId` to use a stable identifier (so the run can be resumed by that id); one is generated when omitted.
+
+```ts
+interface ResumableWorkflowRunOptions extends WorkflowRunOptions {
+  workflowId?: string  // defaults to a generated id
+}
+```
+
+### ResumableWorkflow
+
+```ts
+interface ResumableWorkflow {
+  readonly name: string
+  run(input: unknown, options?: ResumableWorkflowRunOptions): Promise<WorkflowResult>
+  resume(workflowId: string, options?: WorkflowRunOptions): Promise<WorkflowResult>
+  getCheckpoint(workflowId: string): Promise<WorkflowCheckpoint | null>
+  listCheckpoints(): Promise<WorkflowCheckpoint[]>
+}
+```
+
+### CheckpointStore
+
+The port a backend must implement to persist checkpoints.
+
+```ts
+interface CheckpointStore {
+  save(checkpoint: WorkflowCheckpoint): Promise<void>
+  load(workflowId: string): Promise<WorkflowCheckpoint | null>
+  delete(workflowId: string): Promise<void>
+  list(workflowName?: string): Promise<WorkflowCheckpoint[]>
+}
+```
+
+### WorkflowCheckpoint
+
+```ts
+interface WorkflowCheckpoint {
+  workflowId: string
+  workflowName: string
+  status: 'running' | 'completed' | 'failed' | 'paused'
+  input: unknown
+  currentStepIndex: number
+  stepResults: StepResult[]
+  outputs: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+```
+
+---
+
+## Idempotent Steps
+
+Step-level deduplication for side-effectful workflows (POST to an external API, DB writes, sending email). When a workflow is resumed after a crash, an idempotent step that already ran is served from the store instead of re-executing. The package ships only the in-memory adapter; implement `IdempotentCheckpointStore` against your backend for durability.
+
+| Export | Signature | Description |
+|---|---|---|
+| `createInMemoryIdempotentCheckpointStore` | `createInMemoryIdempotentCheckpointStore(): IdempotentCheckpointStore` | In-memory store extending `CheckpointStore` with per-step records |
+| `executeIdempotentStep` | `executeIdempotentStep<TInput, TOutput>(args): Promise<StepResult<TOutput>>` | Run a step, returning the cached result if one exists for its idempotency key |
+| `resolveIdempotencyKey` | `resolveIdempotencyKey<TInput>(step, input): Promise<string \| null>` | Compute a step's idempotency key, or `null` when the step is not idempotent |
+| `defaultIdempotencyKey` | `defaultIdempotencyKey(input): Promise<string>` | Default key: a stable SHA-256 over the input JSON |
+
+A step opts in by setting `idempotent: true` (see `IdempotentStepConfig`). `executeIdempotentStep` resolves the key; if the step is not idempotent it falls through to a normal `executeStep`. Otherwise it checks the store for an existing record under `(workflowId, stepName, idempotencyKey)` and returns it as a `StepResult` (with `durationMs: 0`) on a hit, or runs the step and records the outcome on a miss.
+
+```ts
+import {
+  step,
+  executeIdempotentStep,
+  createInMemoryIdempotentCheckpointStore,
+} from '@elsium-ai/workflows'
+
+const store = createInMemoryIdempotentCheckpointStore()
+
+const charge: IdempotentStepConfig<{ orderId: string }, { receiptId: string }> = {
+  ...step('charge', { handler: async (o) => chargeCard(o) }),
+  idempotent: true,
+  idempotencyKey: (o) => o.orderId,  // optional; defaults to a hash of the input
+}
+
+const result = await executeIdempotentStep({
+  workflowId: 'ord-42',
+  step: charge,
+  input: { orderId: 'ord-42' },
+  context: { workflowName: 'process-order', stepIndex: 1, previousOutputs: {} },
+  store,
+})
+// A second call with the same input returns the recorded result without re-charging.
+```
+
+### IdempotentStepConfig
+
+Extends `StepConfig` with idempotency opt-in.
+
+```ts
+interface IdempotentStepConfig<TInput, TOutput> extends StepConfig<TInput, TOutput> {
+  readonly idempotent?: boolean
+  readonly idempotencyKey?: (input: TInput) => string  // defaults to defaultIdempotencyKey
+}
+```
+
+---
+
 ## Workflow Interface
 
 All workflow types return a `Workflow` instance.
@@ -209,6 +408,14 @@ interface WorkflowResult {
 | `WorkflowStatus` | `'pending'` \| `'running'` \| `'completed'` \| `'failed'` \| `'paused'` |
 | `WorkflowRunOptions` | Run options: `signal?` |
 | `Workflow` | Workflow instance: `name`, `run(input, options?)` |
+| `DagWorkflowConfig` | DAG config: `name`, `steps[]`, `onStepComplete?`, `onStepError?`, `onComplete?` |
+| `DagStepConfig` | DAG step: `StepConfig` plus `dependsOn?` (dependency step names) |
+| `ResumableWorkflowConfig` | Resumable config: `WorkflowConfig` plus `checkpointStore` |
+| `ResumableWorkflowRunOptions` | Run options: `signal?`, `workflowId?` |
+| `ResumableWorkflow` | Resumable instance: `name`, `run`, `resume`, `getCheckpoint`, `listCheckpoints` |
+| `CheckpointStore` | Checkpoint persistence port: `save`, `load`, `delete`, `list` |
+| `WorkflowCheckpoint` | Saved progress: `workflowId`, `workflowName`, `status`, `input`, `currentStepIndex`, `stepResults[]`, `outputs`, `createdAt`, `updatedAt` |
+| `IdempotentStepConfig` | Step: `StepConfig` plus `idempotent?`, `idempotencyKey?` |
 
 ---
 
