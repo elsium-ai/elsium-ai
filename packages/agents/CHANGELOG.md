@@ -1,5 +1,60 @@
 # @elsium-ai/agents
 
+## 0.18.0
+
+### Minor Changes
+
+- 8317afe: Propagate a reproducibility seed from the agent to every LLM request.
+
+  `CompletionRequest` already supported `seed`, but the agent never forwarded one —
+  callers had to inject it into each request by hand, which made `assertDeterministic`
+  and bit-exact proof comparison impractical.
+
+  - `AgentConfig.seed` — set once, forwarded to every `CompletionRequest` in the
+    loop (and in streaming).
+  - `AgentRunOptions.seed` — per-run override; falls back to `AgentConfig.seed`.
+
+  Because the seed now travels in every request, it is captured in the request hash
+  of signed `ExecutionProof`s and can be fixed across runs for `assertDeterministic`.
+  Honored by providers that support seeding; backward-compatible (no seed → unchanged).
+
+- f8a7320: Add input-side guardrails: redact secrets and PII from prompts before they reach the model.
+
+  Previously secret/PII redaction only ran on model responses. Input was scanned for
+  prompt injection/jailbreak but never sanitized, so secrets and PII in user input were
+  sent verbatim to the provider.
+
+  - **`@elsium-ai/gateway`** — `securityMiddleware` gains a `redactInput` option that
+    redacts secrets (and any configured `piiTypes`) from the outgoing system prompt and
+    input messages before the provider call.
+  - **`@elsium-ai/agents`** — `AgentSecurityConfig` gains `redactInputSecrets`,
+    `redactInputPii`, `injectionClassifier` (optional async/LLM-backed detector), and
+    `redactToolArgSecrets`. `createAgentSecurity` exposes a new `sanitizeInput` method.
+    The agent now runs an ordered input pipeline — detection (throws) → async classifier
+    (throws) → redaction (transform) — on `run`, `chat`, and `generate`. `stream` applies
+    synchronous redaction only. Tool-call arguments can optionally have secrets redacted
+    before execution and trace recording.
+
+  All new behavior is opt-in; existing agents are unaffected.
+
+- c7cfb32: Strengthen built-in guardrails so the framework is self-sufficient without external tools, while keeping an open port for external integrations.
+
+  - **Evasion-resistant detection** (`@elsium-ai/gateway`) — `detectPromptInjection`/`detectJailbreak` now normalize input before matching: strip zero-width characters, fold common Cyrillic/Greek homoglyphs to ASCII, collapse whitespace, and decode embedded base64 payloads to scan them too. Pure, dependency-free, edge-safe. Exposed via `normalizeForDetection` and `expandForDetection` for reuse. The agent-level detector (`createAgentSecurity`) uses the same normalization.
+  - **Built-in LLM guardrail** (`@elsium-ai/agents`) — `createLLMGuardrail({ complete })` returns an `InputGuardrail` backed by the LLM you already use through the gateway, giving higher-precision injection/jailbreak detection with no extra install (configurable `onError` fail-open/closed). It plugs directly into `AgentSecurityConfig.injectionClassifier`.
+  - **Open extension port** — `injectionClassifier` (type `InputGuardrail`) is the integration point: use the built-in heuristic, the built-in LLM guardrail, or your own function wrapping Lakera/NeMo/Rebuff/Presidio. Self-sufficient by default; external integration is the caller's choice, not a dependency.
+
+  All changes are backward-compatible.
+
+### Patch Changes
+
+- Updated dependencies [94c2e36]
+- Updated dependencies [f8a7320]
+- Updated dependencies [c7cfb32]
+  - @elsium-ai/gateway@0.18.0
+  - @elsium-ai/core@0.18.0
+  - @elsium-ai/observe@0.18.0
+  - @elsium-ai/tools@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes
