@@ -1,5 +1,68 @@
 # @elsium-ai/testing
 
+## 0.18.0
+
+### Minor Changes
+
+- d8f7ec3: Add dataset provenance — make the eval data itself auditable.
+
+  Eval results are only as trustworthy as their labels and the dataset they ran
+  against. New, dependency-free:
+
+  - `summarizeAnnotations(cases)` — multi-annotator labels → gold label, per-case
+    agreement, disputed cases, and **Fleiss' kappa** (chance-corrected multi-rater
+    agreement) when rater counts are uniform.
+  - `hashDataset(dataset)` / `createDatasetManifest(dataset)` — deterministic,
+    order-independent SHA-256 content hash, so a signed eval proof can pin the exact
+    dataset used.
+
+  Completes the "evals are proof, not opinion" trilogy with judge-alignment (trust
+  the judge) and eval proofs (tamper-evident results): now the labels and the
+  dataset are auditable too.
+
+- c4e7853: Add Ed25519-signed eval proofs — third-party-verifiable eval results.
+
+  `attestEvalSuite` uses HMAC-SHA256, so eval integrity can only be checked by
+  whoever holds the shared secret. New `proveEvalSuite` signs an eval suite result
+  as a standard Ed25519 `ExecutionProof` (from `@elsium-ai/observe`): each case is a
+  hash-chained event and the chain head is signed once.
+
+  - `proveEvalSuite(result, { signer })` → signed `ExecutionProof`.
+  - `verifyEvalProof(proof, registry)` → verifies offline with only the public key;
+    the existing `elsium verify` CLI verifies it too.
+
+  This bridges eval results and the signed-proof chain, so eval outcomes become
+  evidence anyone can verify independently — no secret shared. `@elsium-ai/testing`
+  now depends on `@elsium-ai/observe`.
+
+- d5d3778: Add judge alignment — measure whether an LLM-judge can be trusted.
+
+  An LLM-as-judge produced only a score, with no way to know if it agrees with
+  human ground-truth or with itself. New, dependency-free:
+
+  - `computeJudgeAlignment(pairs)` — agreement rate, **Cohen's kappa** (chance-corrected),
+    mean absolute error, Pearson correlation, confusion matrix, and a Landis–Koch
+    strength label.
+  - `runJudgeAlignment(cases, scorer)` — run a judge/scorer over human-labeled cases
+    and report alignment; plugs straight into `createRubricJudge(...).evaluate`.
+  - `assessJudgeConsistency(scorer)` — re-run the judge on the same input N times and
+    measure self-disagreement (range / std dev).
+
+  This makes "evals are proof, not opinion" apply to the judge itself: a judge with
+  a measured kappa against human labels is an instrument, not a guess.
+
+### Patch Changes
+
+- Updated dependencies [8317afe]
+- Updated dependencies [94c2e36]
+- Updated dependencies [f8a7320]
+- Updated dependencies [c7cfb32]
+  - @elsium-ai/agents@0.18.0
+  - @elsium-ai/gateway@0.18.0
+  - @elsium-ai/core@0.18.0
+  - @elsium-ai/observe@0.18.0
+  - @elsium-ai/tools@0.18.0
+
 ## 0.17.0
 
 ### Minor Changes
