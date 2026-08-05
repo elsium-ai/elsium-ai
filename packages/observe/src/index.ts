@@ -178,9 +178,15 @@ export {
 	formatSimulation,
 	formatComparison,
 	flowPolicyProbe,
+	capabilityProbe,
+	verifyCorpus,
 } from './simulate'
 export type {
+	CapabilityProbeOptions,
 	FlowProbeOptions,
+	RejectedTrace,
+	SimulateOptions,
+	VerifiedCorpus,
 	PolicyComparison,
 	PolicyProbe,
 	PolicySimulation,

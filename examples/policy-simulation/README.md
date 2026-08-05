@@ -44,6 +44,20 @@ Three runs. Named. Exactly the ones that mattered.
 Plan: 3 newly denied, 0 newly allowed, 197 unchanged
 ```
 
+**And when someone edits history to make the rule look safe:**
+
+```
+Evidence: 97 verified run(s), 3 REJECTED — plan computed without them
+  ! proof_… — chainHead does not match recomputed chain
+
+No verified run would have been affected — but 3 run(s) could not be verified,
+so this plan is incomplete.
+```
+
+Dropping the offending tool calls is the obvious way to produce a friendly
+plan. It breaks the hash chain, so those runs are rejected instead of quietly
+believed — and the summary refuses to call the result clean.
+
 ## API
 
 ```ts
@@ -65,9 +79,20 @@ controls erode without anyone noticing.
 ## Why proofs make good input
 
 `ExecutionProof`s are hash-chained and signed, so the corpus cannot be edited to
-produce a friendlier plan. The simulation is read-only: nothing is executed and
-no side effect is replayed. A tool call denied in simulation still happened in
-the recording — learning that is the point.
+produce a friendlier plan — provided something checks. Pass `verifyWith` and it
+does:
+
+```ts
+simulatePolicy(traces, probe, { verifyWith: registry })
+```
+
+Without it the plan is still computed, but the output says
+`Evidence: UNVERIFIED`. A plan over unverified history looks exactly as
+authoritative as a real one, and that is the failure mode worth naming.
+
+The simulation is read-only: nothing is executed and no side effect is
+replayed. A tool call denied in simulation still happened in the recording —
+learning that is the point.
 
 Proofs store hashes rather than content, so they can be shared without leaking
 what was processed. Sensitivity classes therefore come from a `classify` hook
@@ -81,9 +106,28 @@ flowPolicyProbe({
 })
 ```
 
-## Beyond flow policies
+## Two probes, two questions
 
-`PolicyProbe` is a port. `flowPolicyProbe` ships with it; capability tokens,
-declarative policy documents or a custom engine plug in the same way — a probe
-is just a function from a recorded run to the decisions a policy would make
-over it.
+`PolicyProbe` is a port — a function from a recorded run to the decisions a
+policy would make over it. Two ship with the package:
+
+| Probe | Question |
+|---|---|
+| `flowPolicyProbe` | May this **data** travel to this sink? |
+| `capabilityProbe` | Was this **caller** permitted to do what it did? |
+
+They are not interchangeable. A run can satisfy a capability token and still be
+an exfiltration path, or be a clean data flow made by a caller with no
+authority. Simulating one tells half the story.
+
+`capabilityProbe` also answers a question that could not be asked before
+minting a token: would it have allowed what the agent actually did? Scope it too
+tightly and the agent breaks in production; too loosely and the token is
+decoration. It feeds recorded figures back in, so `maxTokens` is checked against
+tokens really consumed:
+
+```ts
+simulatePolicy(traces, capabilityProbe({ token: proposedToken }), { verifyWith: registry })
+```
+
+Declarative policy documents or a custom engine plug in the same way.

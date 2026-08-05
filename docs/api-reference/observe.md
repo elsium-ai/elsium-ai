@@ -1124,10 +1124,23 @@ Same shape as `terraform plan` or `opa eval`: decide against history, then commi
 ### simulatePolicy
 
 ```ts
-simulatePolicy(traces: readonly ExecutionProof[], probe: PolicyProbe): PolicySimulation
+simulatePolicy(
+  traces: readonly ExecutionProof[],
+  probe: PolicyProbe,
+  options?: { verifyWith?: KeyRegistry },
+): PolicySimulation
 ```
 
 Read-only. Nothing is executed and no side effect is replayed — a tool call denied in simulation still happened in the recording.
+
+**Pass `verifyWith` whenever the corpus came from anywhere but this process.** Signatures and hash chains are checked first and failing runs are excluded, with the outcome reported on `evidence`:
+
+```ts
+const result = simulatePolicy(traces, probe, { verifyWith: registry })
+// result.evidence = { verified: 97, rejected: [{ proofId: '…', reason: 'chainHead does not match recomputed chain' }] }
+```
+
+Without it, `evidence` is absent and the rendered plan says `Evidence: UNVERIFIED`. That matters: a plan computed over unverified history looks exactly as authoritative as one computed over real history. Delete the runs where a rule would have fired and the plan declares the rule safe to ship.
 
 ```ts
 import { simulatePolicy, flowPolicyProbe } from '@elsium-ai/observe'
@@ -1179,6 +1192,32 @@ Replays information flow over a recorded run: walks events in order, accumulates
 | `initial` | `TaintLabel` | Starting label, e.g. an agent already holding a credential |
 
 Defaults mirror the live enforcement points: `rag.retrieve` and `tool.call` results are `untrusted`, `llm.call` output is `model`.
+
+### verifyCorpus
+
+```ts
+verifyCorpus(traces: readonly ExecutionProof[], registry: KeyRegistry): VerifiedCorpus
+```
+
+Filters a corpus to the runs that can be trusted as evidence. Returns `{ traces, rejected, complete }` rather than throwing — a corpus with tampered entries is itself a finding, and hiding the rest of the history behind an exception helps nobody.
+
+### capabilityProbe
+
+```ts
+capabilityProbe(options: { token: CapabilityToken; dataClasses?: string[] }): PolicyProbe
+```
+
+Replays a capability token over a recorded run, answering a question that could not be asked before minting one: **would this token have allowed what the agent actually did?** Scope it too tightly and the agent breaks in production; too loosely and the token is decoration. Both were previously only discoverable by shipping.
+
+It checks every decision point in the run — `tool.call` via `canCallTool`, `llm.call` via `canCallLLM`, `rag.retrieve` via `canQueryRag` — and feeds the recorded figures back in, so `maxTokens` on an LLM capability is checked against the tokens the run really consumed and `maxResults` against the documents really returned.
+
+Complements `flowPolicyProbe` rather than duplicating it: a capability check asks whether the *caller* is permitted, a flow check whether the *data* may travel. A run can pass one and fail the other, which is why simulating only one tells half the story.
+
+```ts
+const plan = simulatePolicy(traces, capabilityProbe({ token: proposedToken }), {
+  verifyWith: registry,
+})
+```
 
 ### PolicyProbe
 

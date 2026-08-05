@@ -17,6 +17,7 @@
 import {
 	createEd25519Signer,
 	createFlowPolicy,
+	createKeyRegistry,
 	createLabel,
 	generateEd25519KeyPair,
 	lethalTrifectaRule,
@@ -37,6 +38,7 @@ const pair = generateEd25519KeyPair()
 const recorder = createProofRecorder({
 	signer: createEd25519Signer({ privateKey: pair.privateKey, keyId: 'k1' }),
 })
+const registry = createKeyRegistry({ trustRoots: [{ keyId: 'k1', publicKey: pair.publicKey }] })
 
 async function record(
 	id: string,
@@ -111,7 +113,15 @@ const narrowed = createFlowPolicy([
 	lethalTrifectaRule({ sinks: ['network:*', 'tool:send_*', 'mcp:*'] }),
 ])
 
-const refined = simulatePolicy(traces, flowPolicyProbe({ policy: narrowed, initial: holdsSecret }))
+const refined = simulatePolicy(
+	traces,
+	flowPolicyProbe({ policy: narrowed, initial: holdsSecret }),
+	{
+		// Verify every signature and hash chain first: a plan computed over
+		// unverified history looks exactly as authoritative as a real one.
+		verifyWith: registry,
+	},
+)
 
 console.log(formatSimulation(refined))
 
@@ -131,6 +141,27 @@ const plan = comparePolicies(traces, {
 })
 
 console.log(formatComparison(plan))
+
+// ─── A tampered corpus cannot buy a friendlier plan ─────────────
+
+console.log(`\n${'─'.repeat(68)}`)
+console.log('\n4. Someone edits history to make the rule look safe\n')
+
+// Drop the offending tool from the three risky runs — the obvious way to make
+// a plan say "nothing to see here".
+const doctored = traces.map((t, i) =>
+	i >= 97 ? { ...t, events: t.events.filter((e) => e.type !== 'tool.call') } : t,
+)
+
+const audited = simulatePolicy(
+	doctored,
+	flowPolicyProbe({ policy: narrowed, initial: holdsSecret }),
+	{ verifyWith: registry },
+)
+
+console.log(formatSimulation(audited))
+console.log('\n   → The edit breaks the hash chain, so those runs are rejected')
+console.log('     rather than silently believed.\n')
 
 console.log(`\n${'─'.repeat(68)}`)
 console.log('\nThe point:\n')
