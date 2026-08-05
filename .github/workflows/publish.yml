@@ -27,18 +27,21 @@ jobs:
         with:
           bun-version: latest
 
+      # Node 22, not 20: npm 12 requires ^22.22.2 and this job needs a modern
+      # npm for OIDC. Only the publish tooling runs here — packages are built
+      # by bun and still declare `engines: node >= 20` for consumers.
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      # Node 20 ships npm 10, which predates OIDC trusted publishing.
-      # npm >= 11.5.1 detects the Actions OIDC environment and authenticates
-      # against the registry without a token.
+      # The npm bundled with Node predates OIDC trusted publishing. Pinned to a
+      # major so a future npm release cannot silently outrun the Node version
+      # above — that is exactly how this step broke the first time.
       - name: Upgrade npm for trusted publishing
         run: |
-          npm install -g npm@latest
-          echo "npm $(npm --version)"
+          npm install -g npm@12
+          echo "npm $(npm --version) on node $(node --version)"
 
       # The changesets bot commits the version bump. Unsigned commits cannot
       # satisfy the signed-commits rule on main, which previously forced an
