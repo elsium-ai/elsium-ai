@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { createRequire } from 'node:module'
+import { bomCommand } from './commands/bom'
 import { costCommand } from './commands/cost'
 import { devCommand } from './commands/dev'
 import { evalCommand } from './commands/eval'
@@ -34,6 +35,7 @@ const HELP = `
     proxy             Start AI proxy server
     verify <proof>    Verify a signed ExecutionProof offline
     replay <a> <b>    Compare two ExecutionProofs
+    bom <sub>         Verify or diff an AI-BOM (agent composition manifest)
 
   Options:
     --help, -h        Show this help message
@@ -51,6 +53,8 @@ const HELP = `
     elsium proxy --port 4000 --audit --cache
     elsium verify ./proofs/proof_abc.json --public-key ./org-aperion.pub
     elsium replay ./proofs/run-1.json ./proofs/run-2.json --strategy structural
+    elsium bom verify ./aibom.json --public-key ./release.pub
+    elsium bom diff ./approved-bom.json ./aibom.json --fail-on critical
 `
 
 async function main() {
@@ -100,6 +104,9 @@ async function main() {
 			break
 		case 'replay':
 			await replayCommand(args.slice(1))
+			break
+		case 'bom':
+			await bomCommand(args.slice(1))
 			break
 		default:
 			console.error(`Unknown command: ${command}`)

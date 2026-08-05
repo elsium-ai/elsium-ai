@@ -30,6 +30,7 @@ npx @elsium-ai/cli init my-ai-app
 | `elsium prompt <subcommand>` | Manage versioned prompts (list, show, diff, history) |
 | `elsium verify <proof.json>` | Verify a signed `ExecutionProof` offline (Ed25519 + hash chain) |
 | `elsium replay <a.json> <b.json>` | Compare two `ExecutionProof`s for reproducibility (bit-exact or structural) |
+| `elsium bom verify\|diff` | Verify an AI-BOM offline, or gate CI on agent composition drift |
 
 Global options:
 
@@ -498,6 +499,39 @@ elsium replay <proof-a.json> <proof-b.json> [--strategy <bit-exact|structural>]
 | `--json` | Machine-readable JSON result |
 
 Exit code is `0` when the proofs match under the chosen strategy and `1` otherwise.
+
+---
+
+### `elsium bom`
+
+Works with AI-BOMs — signed manifests of what an agent is made of (models, prompts, tools and their sandbox capabilities, MCP servers, eval datasets, policies, thresholds).
+
+**Usage**
+
+```
+elsium bom verify <bom.json> --public-key <pem-or-path>
+elsium bom verify <bom.json> --trust-roots <path>
+elsium bom diff <approved.json> <current.json> [--fail-on <critical|major|minor>]
+```
+
+**`verify`** checks three layers offline: the components still hash to `componentsHash`, the header still hashes to `digest`, and `digest` carries a signature from a trusted key. Checks that never ran are reported as `not checked` rather than as failures.
+
+**`diff`** is the release gate — it compares the shipped BOM against the approved one and exits non-zero when drift lands at or above `--fail-on`.
+
+| Flag | Description |
+| --- | --- |
+| `--fail-on critical` (default) | Fail only when the action surface grew or a control weakened |
+| `--fail-on major` | Also fail on prompt revisions, retuned thresholds, changed tool schemas |
+| `--fail-on minor` | Fail on any change at all |
+| `--verify` | Verify both BOMs' signatures before comparing (requires `--public-key` or `--trust-roots`) |
+| `--json` | Machine-readable JSON result |
+| `--quiet` | Exit code only |
+
+```bash
+elsium bom diff ./approved-bom.json ./aibom.json --fail-on critical
+# ✗ [critical] tool "wire_transfer" is present in the current BOM but was never approved
+# ✗ 3 change(s): 1 critical, 1 major, 1 minor — gate --fail-on=critical FAILED
+```
 
 ---
 

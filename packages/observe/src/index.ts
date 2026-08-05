@@ -170,6 +170,43 @@ export type {
 	EventDeltaKind,
 } from './proof'
 
+// AI-BOM — signed declaration of what an agent is made of.
+// A proof records one run; a BOM records the composition every run inherits.
+export {
+	generateAiBom,
+	verifyAiBom,
+	diffAiBom,
+	passesGate,
+	serializeAiBom,
+	bomSigningPayload,
+	AIBOM_VERSION,
+} from './aibom'
+export type {
+	AiBom,
+	AiBomComponents,
+	AiBomDiff,
+	AiBomInput,
+	ComponentDrift,
+	ComponentKind,
+	DatasetComponent,
+	DatasetSource,
+	DriftKind,
+	DriftSeverity,
+	GenerateAiBomOptions,
+	McpServerComponent,
+	ModelComponent,
+	PolicyComponent,
+	PolicySource,
+	PromptComponent,
+	PromptSource,
+	RuntimeComponent,
+	ThresholdValue,
+	ToolComponent,
+	ToolLike,
+	ToolSource,
+	VerifyAiBomResult,
+} from './aibom'
+
 // OpenTelemetry GenAI Semantic Conventions (in Development per OTel spec).
 // Dual emission policy controlled by OTEL_SEMCONV_STABILITY_OPT_IN.
 export {
