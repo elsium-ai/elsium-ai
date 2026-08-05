@@ -23,8 +23,8 @@
 <p align="center">
   <a href="https://github.com/elsium-ai/elsium-ai/actions"><img src="https://github.com/elsium-ai/elsium-ai/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/elsium-ai/elsium-ai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-2430%20passing-brightgreen" alt="Tests">
-  <img src="https://img.shields.io/badge/bundle-470KB%20minified-blue" alt="Bundle Size">
+  <img src="https://img.shields.io/badge/tests-2620%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/bundle-504KB%20minified-blue" alt="Bundle Size">
   <img src="https://img.shields.io/badge/runtime-Node%20%C2%B7%20Bun%20%C2%B7%20Deno%20%C2%B7%20Workers%20%C2%B7%20Edge-blueviolet" alt="Cross-runtime">
 </p>
 
@@ -96,7 +96,9 @@ Since **0.13.0**, every governance and reliability primitive in ElsiumAI loads o
 | **Vercel Edge** | ✅ supported | Same caveats as Workers |
 | **Browser** | ✅ supported for non-server modules | Use the gateway behind your own proxy for API-key safety |
 
-The published `elsium-ai` umbrella tarball is **412 KB** (-67% vs 0.12.x — see #35) and contains zero `node:*` imports across the governance pillar. Edge deployments work out of the box.
+The published `elsium-ai` umbrella bundle is **504 KB** minified (548 KB unpacked) and contains zero `node:*` imports across the governance pillar. Edge deployments work out of the box.
+
+The umbrella re-exports every package, so it grows with the framework; import the individual packages and tree-shaking keeps only what you use.
 
 ---
 
@@ -360,7 +362,7 @@ Measured with zero-latency mock provider to isolate framework cost. Full methodo
 | Metric | Value |
 |---|---|
 | Cold start | <3ms |
-| Bundle size (minified) | 349 KB |
+| Bundle size (minified, umbrella) | 504 KB |
 | Memory per 10K requests | ~10 MB (full stack + tracing + audit, all in-memory, capped) |
 | Per-request heap growth | ~1 KB |
 | Circuit breaker throughput | >5M ops/sec |
