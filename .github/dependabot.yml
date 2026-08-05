@@ -1,0 +1,42 @@
+version: 2
+
+updates:
+  # npm dependencies across the workspace.
+  #
+  # Grouped so routine patch noise arrives as one reviewable PR, while anything
+  # that crosses a major stays on its own — a major bump is where breaking
+  # changes and, historically, compromised releases arrive.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-patches:
+        dependency-type: production
+        update-types:
+          - patch
+    ignore:
+      # Majors land as individual PRs so each gets its own review.
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-major
+
+  # Pinned action versions are a supply-chain surface of their own: a compromised
+  # action runs with the workflow's token.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
