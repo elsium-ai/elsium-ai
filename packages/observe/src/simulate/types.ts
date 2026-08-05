@@ -43,6 +43,17 @@ export type PolicyProbe = (trace: ExecutionProof) => SimulatedDecision[]
 export interface PolicySimulation {
 	/** Runs examined. */
 	traces: number
+	/**
+	 * Evidence the plan rests on.
+	 *
+	 * Present only when the corpus was verified. Absent means signatures were
+	 * never checked — the numbers may still be right, but nothing rules out a
+	 * corpus edited to produce a friendlier plan.
+	 */
+	evidence?: {
+		verified: number
+		rejected: readonly { proofId: string; reason: string }[]
+	}
 	/** Decision points evaluated across all runs. */
 	evaluated: number
 	allowed: number

@@ -1,4 +1,6 @@
+import type { KeyRegistry } from '@elsium-ai/core'
 import type { ExecutionProof } from '../proof/types'
+import { verifyCorpus } from './corpus'
 import type { PolicyComparison, PolicyProbe, PolicySimulation, SimulatedDecision } from './types'
 
 /** Identity of a decision point, so two policies can be compared position by position. */
@@ -31,6 +33,18 @@ function summarize(
 	}
 }
 
+export interface SimulateOptions {
+	/**
+	 * Verify signatures and hash chains before simulating, and exclude any run
+	 * that fails.
+	 *
+	 * Strongly recommended when the corpus came from anywhere but this process.
+	 * A plan computed over unverified history looks exactly as authoritative as
+	 * one computed over real history.
+	 */
+	verifyWith?: KeyRegistry
+}
+
 /**
  * Run a policy over recorded runs and report what it would have decided.
  *
@@ -41,10 +55,24 @@ function summarize(
 export function simulatePolicy(
 	traces: readonly ExecutionProof[],
 	probe: PolicyProbe,
+	options: SimulateOptions = {},
 ): PolicySimulation {
+	const corpus = options.verifyWith ? verifyCorpus(traces, options.verifyWith) : undefined
+	const usable = corpus?.traces ?? traces
+
 	const decisions: SimulatedDecision[] = []
-	for (const trace of traces) decisions.push(...probe(trace))
-	return summarize(traces, decisions)
+	for (const trace of usable) decisions.push(...probe(trace))
+
+	const summary = summarize(usable, decisions)
+	if (!corpus) return summary
+
+	return {
+		...summary,
+		evidence: {
+			verified: corpus.traces.length,
+			rejected: corpus.rejected.map((r) => ({ proofId: r.proofId, reason: r.reason })),
+		},
+	}
 }
 
 /**
@@ -97,17 +125,49 @@ export function comparePolicies(
 	}
 }
 
+/**
+ * The evidence header.
+ *
+ * Stated before the numbers, because a plan is only as good as the history it
+ * was computed over and a reader cannot judge one without the other.
+ */
+function evidenceLines(simulation: PolicySimulation): string[] {
+	if (!simulation.evidence) {
+		return ['Evidence: UNVERIFIED — signatures were not checked', '']
+	}
+
+	const { verified, rejected } = simulation.evidence
+	const lines = [
+		rejected.length === 0
+			? `Evidence: ${verified} verified run(s), all signatures and hash chains intact`
+			: `Evidence: ${verified} verified run(s), ${rejected.length} REJECTED — plan computed without them`,
+	]
+
+	for (const r of rejected.slice(0, 5)) lines.push(`  ! ${r.proofId} — ${r.reason}`)
+	if (rejected.length > 5) lines.push(`  … and ${rejected.length - 5} more`)
+	lines.push('')
+
+	return lines
+}
+
 /** Human-readable plan, in the spirit of `terraform plan`. */
 export function formatSimulation(simulation: PolicySimulation): string {
-	const lines: string[] = []
 	const pct = (simulation.affectedTraceRatio * 100).toFixed(2)
+	const lines: string[] = evidenceLines(simulation)
 
 	lines.push(
 		`${simulation.evaluated} decision point(s) across ${simulation.traces} run(s): ${simulation.allowed} allowed, ${simulation.denied} denied`,
 	)
 
 	if (simulation.denied === 0) {
-		lines.push('No run would have been affected.')
+		const rejected = simulation.evidence?.rejected.length ?? 0
+		// A clean plan over an incomplete corpus is not a clean plan. Saying
+		// only "nothing affected" here is how a doctored history gets believed.
+		lines.push(
+			rejected === 0
+				? 'No run would have been affected.'
+				: `No verified run would have been affected — but ${rejected} run(s) could not be verified, so this plan is incomplete.`,
+		)
 		return lines.join('\n')
 	}
 
