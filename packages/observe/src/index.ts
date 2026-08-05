@@ -170,6 +170,23 @@ export type {
 	EventDeltaKind,
 } from './proof'
 
+// Policy simulation — what a policy would have done, before it decides
+// anything for real. `terraform plan` for governance.
+export {
+	simulatePolicy,
+	comparePolicies,
+	formatSimulation,
+	formatComparison,
+	flowPolicyProbe,
+} from './simulate'
+export type {
+	FlowProbeOptions,
+	PolicyComparison,
+	PolicyProbe,
+	PolicySimulation,
+	SimulatedDecision,
+} from './simulate'
+
 // AI-BOM — signed declaration of what an agent is made of.
 // A proof records one run; a BOM records the composition every run inherits.
 export {

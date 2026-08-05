@@ -181,6 +181,7 @@ const llm = gateway({
 | **Jurisdiction Routing** | PII classifier → JurisdictionRouter intersects allowed providers per data class. EU email never reaches a US-only model. |
 | **Compliance Reporting** | Generate reports against OWASP Agentic, EU AI Act, Colorado AI Act frameworks |
 | **AI-BOM** | Signed manifest of what the agent is made of — models, prompts, tools, MCP servers, datasets, policies, thresholds. `elsium bom diff` fails CI when composition drifts from what was approved. |
+| **Policy Simulation** | Replay a candidate policy over recorded `ExecutionProof`s and see what it would have blocked — with traceIds — before enabling it. `terraform plan` for governance. |
 | **Information-Flow Control** | Provenance labels travel with the data and join as it merges; sinks are checked against the accumulated label. Blocks the *lethal trifecta* — sensitive data + untrusted content + an outbound channel — so a prompt injection can succeed and still fail to exfiltrate. |
 | **MCP Trust Framework** | Server allowlists, tool filtering, output validation, manifest integrity for MCP |
 | **PII Detection** | Redacts emails, phones, addresses, API keys on both input (opt-in: `redactInput` / `redactInputPii`) and model output |
@@ -313,7 +314,7 @@ Three Pillars — where each feature lives:
 | [`@elsium-ai/tools`](./packages/tools) | Tool definitions with Zod validation |
 | [`@elsium-ai/rag`](./packages/rag) | Document loading, PDF loading, chunking, embeddings, BM25, hybrid search, vector search, PgVector store, plugin registries |
 | [`@elsium-ai/workflows`](./packages/workflows) | DAG workflows, sequential, parallel, branching, checkpointing, resumable workflows |
-| [`@elsium-ai/observe`](./packages/observe) | Tracing, cost intelligence, audit trail, provenance tracking, A/B experiments, **AI-BOM (signed agent composition + release gate)** |
+| [`@elsium-ai/observe`](./packages/observe) | Tracing, cost intelligence, audit trail, provenance tracking, A/B experiments, **AI-BOM (signed agent composition + release gate)**, **policy simulation** |
 | [`@elsium-ai/mcp`](./packages/mcp) | Bidirectional MCP client and server, resources, prompts |
 | [`@elsium-ai/app`](./packages/app) | HTTP server, CORS, auth, rate limiting, RBAC, SSE streaming, multi-tenant |
 | [`@elsium-ai/client`](./packages/client) | TypeScript HTTP client with SSE parsing for consuming ElsiumAI servers |
@@ -329,7 +330,7 @@ Beyond agents, tools, RAG, and multi-provider routing, ElsiumAI ships production
 | Category | Feature |
 |----------|---------|
 | **Reliability** | Circuit Breaker, Bulkhead Isolation, Request Dedup, Graceful Shutdown, Retry with Backoff, Stream Failover |
-| **Governance** | Policy Engine, Runtime Policy Enforcement, RBAC, Approval Gates, Agent Identity, Memory Integrity, Hash-Chained Audit, Compliance Reporting, Ed25519 Eval Proofs, AI-BOM + Release Gate, Information-Flow Control (taint labels + lethal-trifecta blocking), MCP Trust Framework, PII Detection (input + output), Input/Output Guardrails, Multi-Tenant |
+| **Governance** | Policy Engine, Runtime Policy Enforcement, RBAC, Approval Gates, Agent Identity, Memory Integrity, Hash-Chained Audit, Compliance Reporting, Ed25519 Eval Proofs, AI-BOM + Release Gate, Information-Flow Control (taint labels + lethal-trifecta blocking), Policy Simulation, MCP Trust Framework, PII Detection (input + output), Input/Output Guardrails, Multi-Tenant |
 | **Determinism** | Seed Propagation, Output Pinning, Determinism Assertions, Judge Alignment (kappa), Dataset Provenance, Provenance Tracking, A/B Experiments |
 | **Performance** | Response Caching, Batch Processing, Token Counting, Context Management |
 | **Multimodal** | Text, Image, Audio, Document across Anthropic, OpenAI, Google |
