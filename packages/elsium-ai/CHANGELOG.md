@@ -1,5 +1,24 @@
 # elsium-ai
 
+## 0.19.0
+
+### Patch Changes
+
+- Updated dependencies [c80ee8c]
+- Updated dependencies [38e9030]
+- Updated dependencies [8bf8ecb]
+  - @elsium-ai/observe@0.19.0
+  - @elsium-ai/app@0.19.0
+  - @elsium-ai/core@0.19.0
+  - @elsium-ai/gateway@0.19.0
+  - @elsium-ai/tools@0.19.0
+  - @elsium-ai/agents@0.19.0
+  - @elsium-ai/testing@0.19.0
+  - @elsium-ai/client@0.19.0
+  - @elsium-ai/mcp@0.19.0
+  - @elsium-ai/rag@0.19.0
+  - @elsium-ai/workflows@0.19.0
+
 ## 0.18.0
 
 ### Patch Changes
