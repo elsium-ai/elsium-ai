@@ -697,3 +697,52 @@ describe('createApp', () => {
 		expect(json.error).toBe('Not found')
 	})
 })
+
+// Every other test drives `app.hono.fetch` directly, which never touches
+// @hono/node-server. These bind a real socket, so a breaking change in the
+// adapter surfaces here instead of in production.
+describe('createApp — listen() over a real socket', () => {
+	const PORT = 3987
+
+	it('serves requests and releases the port on stop', async () => {
+		const app = createApp({
+			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
+			server: { port: PORT, cors: true },
+		})
+
+		const server = app.listen()
+		expect(server.port).toBe(PORT)
+
+		try {
+			const health = await fetch(`http://127.0.0.1:${PORT}/health`)
+			expect(health.status).toBe(200)
+			expect(await health.json()).toMatchObject({ status: 'ok' })
+
+			const preflight = await fetch(`http://127.0.0.1:${PORT}/health`, {
+				method: 'OPTIONS',
+				headers: { Origin: 'http://example.com', 'Access-Control-Request-Method': 'GET' },
+			})
+			expect(preflight.headers.get('access-control-allow-origin')).toBe('*')
+		} finally {
+			await server.stop()
+		}
+
+		await expect(fetch(`http://127.0.0.1:${PORT}/health`)).rejects.toThrow()
+	})
+
+	it('honours the port passed to listen() over the configured one', async () => {
+		const app = createApp({
+			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
+			server: { port: PORT },
+		})
+
+		const server = app.listen(PORT + 1)
+		try {
+			expect(server.port).toBe(PORT + 1)
+			const res = await fetch(`http://127.0.0.1:${PORT + 1}/health`)
+			expect(res.status).toBe(200)
+		} finally {
+			await server.stop()
+		}
+	})
+})

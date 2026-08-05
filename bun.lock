@@ -22,7 +22,7 @@
     },
     "examples/integration-test": {
       "name": "@elsium-ai/integration-test",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/app": "workspace:*",
@@ -44,7 +44,7 @@
     },
     "packages/agents": {
       "name": "@elsium-ai/agents",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/gateway": "workspace:*",
@@ -58,7 +58,7 @@
     },
     "packages/app": {
       "name": "@elsium-ai/app",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
@@ -67,8 +67,8 @@
         "@elsium-ai/rag": "workspace:*",
         "@elsium-ai/tools": "workspace:*",
         "@elsium-ai/workflows": "workspace:*",
-        "@hono/node-server": "^1.19.14",
-        "hono": "^4.12.21",
+        "@hono/node-server": "^2.1.0",
+        "hono": "^4.13.0",
         "zod": "^3.24.0",
       },
       "devDependencies": {
@@ -77,7 +77,7 @@
     },
     "packages/cli": {
       "name": "@elsium-ai/cli",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "bin": {
         "elsium": "./dist/cli.js",
       },
@@ -92,7 +92,7 @@
     },
     "packages/client": {
       "name": "@elsium-ai/client",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -102,7 +102,7 @@
     },
     "packages/core": {
       "name": "@elsium-ai/core",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "zod": "^3.24.0",
         "zod-to-json-schema": "^3.25.2",
@@ -113,7 +113,7 @@
     },
     "packages/elsium-ai": {
       "name": "elsium-ai",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/app": "workspace:*",
@@ -133,7 +133,7 @@
     },
     "packages/gateway": {
       "name": "@elsium-ai/gateway",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -144,7 +144,7 @@
     },
     "packages/mcp": {
       "name": "@elsium-ai/mcp",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "@elsium-ai/tools": "workspace:*",
@@ -155,7 +155,7 @@
     },
     "packages/observe": {
       "name": "@elsium-ai/observe",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -165,7 +165,7 @@
     },
     "packages/rag": {
       "name": "@elsium-ai/rag",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
       },
@@ -175,7 +175,7 @@
     },
     "packages/testing": {
       "name": "@elsium-ai/testing",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/agents": "workspace:*",
         "@elsium-ai/core": "workspace:*",
@@ -189,7 +189,7 @@
     },
     "packages/tools": {
       "name": "@elsium-ai/tools",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -200,7 +200,7 @@
     },
     "packages/workflows": {
       "name": "@elsium-ai/workflows",
-      "version": "0.17.0",
+      "version": "0.18.0",
       "dependencies": {
         "@elsium-ai/core": "workspace:*",
         "zod": "^3.24.0",
@@ -214,11 +214,11 @@
     "@babel/core": ">=7.29.7 <8",
     "brace-expansion": ">=5.0.6",
     "esbuild": ">=0.28.1",
-    "fast-uri": ">=3.1.2",
-    "hono": ">=4.12.21",
-    "js-yaml": ">=4.2.0 <5",
+    "fast-uri": ">=3.1.5 <4",
+    "hono": ">=4.12.34",
+    "js-yaml": ">=4.3.0 <5",
     "picomatch": ">=2.3.2",
-    "postcss": ">=8.5.10",
+    "postcss": ">=8.5.23",
     "vite": ">=8.0.16",
     "yaml": ">=2.8.3",
   },
@@ -377,7 +377,7 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
-    "@hono/node-server": ["@hono/node-server@1.19.14", "", { "peerDependencies": { "hono": "^4" } }, "sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw=="],
+    "@hono/node-server": ["@hono/node-server@2.1.0", "", { "peerDependencies": { "hono": "^4" } }, "sha512-XovyyCCnBzW+zKu+z/zq8hwNs4KOR5rEMAOxo2f40Q5xoOI37IMm6MIg2COOUtUApo0i6850MTBKH2u4QLGIqg=="],
 
     "@inquirer/external-editor": ["@inquirer/external-editor@1.0.3", "", { "dependencies": { "chardet": "^2.1.1", "iconv-lite": "^0.7.0" }, "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA=="],
 
@@ -581,7 +581,7 @@
 
     "fast-glob": ["fast-glob@3.3.3", "", { "dependencies": { "@nodelib/fs.stat": "^2.0.2", "@nodelib/fs.walk": "^1.2.3", "glob-parent": "^5.1.2", "merge2": "^1.3.0", "micromatch": "^4.0.8" } }, "sha512-7MptL8U0cqcFdzIzwOTHoilX9x5BrNqye7Z/LuC7kCMRio1EMSyqRK3BEAUD7sXRq4iT4AzTVuZdhgQ2TCvYLg=="],
 
-    "fast-uri": ["fast-uri@3.1.2", "", {}, "sha512-rVjf7ArG3LTk+FS6Yw81V1DLuZl1bRbNrev6Tmd/9RaroeeRRJhAt7jg/6YFxbvAQXUCavSoZhPPj6oOx+5KjQ=="],
+    "fast-uri": ["fast-uri@3.1.5", "", {}, "sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw=="],
 
     "fastq": ["fastq@1.20.1", "", { "dependencies": { "reusify": "^1.0.4" } }, "sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw=="],
 
@@ -615,7 +615,7 @@
 
     "has-flag": ["has-flag@4.0.0", "", {}, "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="],
 
-    "hono": ["hono@4.12.27", "", {}, "sha512-1yrb/+w6HWQJrUCLkJ2IF5jNIPvvFkblV5RNOYl6bV+OA6p9GLcMpHFFGTosSvHvcAUibuUukRqhlYI4z32C7Q=="],
+    "hono": ["hono@4.13.0", "", {}, "sha512-jhunvfHWxd7J5EFfSgH4xsYJzSe/lfqbUCxiyyeaQasUsXeEHXtzVid+7EOGByc5JnFa23SSFL3Y2RV/z1T+eQ=="],
 
     "html-escaper": ["html-escaper@2.0.2", "", {}, "sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg=="],
 
@@ -663,7 +663,7 @@
 
     "js-tokens": ["js-tokens@10.0.0", "", {}, "sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q=="],
 
-    "js-yaml": ["js-yaml@4.2.0", "", { "dependencies": { "argparse": "^2.0.1" }, "bin": { "js-yaml": "bin/js-yaml.js" } }, "sha512-ePWsvanv0DWuDRsW8dnt+R4jQ31SCRCQ7hhNcPXZPsoBZiemuZNYGf7adZdqX2D86j6rvKp3RpCxVTSb8WQlOw=="],
+    "js-yaml": ["js-yaml@4.3.1", "", { "dependencies": { "argparse": "^2.0.1" }, "bin": { "js-yaml": "bin/js-yaml.js" } }, "sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ=="],
 
     "jsesc": ["jsesc@3.1.0", "", { "bin": { "jsesc": "bin/jsesc" } }, "sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA=="],
 
@@ -745,7 +745,7 @@
 
     "nano-spawn": ["nano-spawn@2.0.0", "", {}, "sha512-tacvGzUY5o2D8CBh2rrwxyNojUsZNU2zjNTzKQrkgGJQTbGAfArVWXSKMBokBeeg6C7OLRGUEyoFlYbfeWQIqw=="],
 
-    "nanoid": ["nanoid@3.3.11", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w=="],
+    "nanoid": ["nanoid@3.3.17", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g=="],
 
     "node-releases": ["node-releases@2.0.44", "", {}, "sha512-5WUyunoPMsvvEhS8AxHtRzP+oA8UCkJ7YRxatWKjngndhDGLiqEVAQKWjFAiAiuL8zMRGzGSJxFnLetoa43qGQ=="],
 
@@ -785,7 +785,7 @@
 
     "pify": ["pify@4.0.1", "", {}, "sha512-uB80kBFb/tfd68bVleG9T5GGsGPjJrLAUpR5PZIrhBnIaRTQRjqdJSsIKkOP6OAIFbj7GOrcudc5pNjZ+geV2g=="],
 
-    "postcss": ["postcss@8.5.14", "", { "dependencies": { "nanoid": "^3.3.11", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg=="],
+    "postcss": ["postcss@8.5.25", "", { "dependencies": { "nanoid": "^3.3.16", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-DTPx3RWSSnWyzLxQnlH0rJP+EW5ekl16ZU4/psbIhA0e53kJfdgaN5vKM+xP7yJtXVu+nfdVFmlgFDEKAe4Pyw=="],
 
     "prettier": ["prettier@2.8.8", "", { "bin": { "prettier": "bin-prettier.js" } }, "sha512-tdN8qQGvNjw4CHbY+XXk0JgCXn9QiF21a55rBe5LJAU+kDyC4WQn4+awm2Xfk2lQMk5fKup9XgzTZtGkjBdP9Q=="],
 
