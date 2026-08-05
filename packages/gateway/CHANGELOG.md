@@ -1,5 +1,11 @@
 # @elsium-ai/gateway
 
+## 0.21.0
+
+### Patch Changes
+
+- @elsium-ai/core@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes
