@@ -62,6 +62,45 @@ builtins for exactly this reason.
 The scanner is dependency-free and portable — copy `scripts/security-scan.ts`
 into another repository and wire it to `pre-commit` and CI the same way.
 
+### Publishing
+
+Releases authenticate to npm through **OIDC trusted publishing**, not a
+long-lived token. The `Publish` workflow requests a short-lived credential
+using its `id-token: write` permission, so no publish-capable secret is stored
+in the repository at all.
+
+This also tracks where npm is heading: from January 2027, 2FA-bypass granular
+access tokens lose the ability to publish directly.
+
+Every published package carries [SLSA provenance](https://slsa.dev/provenance/v1),
+which ties a tarball on npm back to the exact commit and workflow run that
+produced it:
+
+```bash
+npm view elsium-ai dist.attestations
+```
+
+Release commits are signed, so the signed-commits rule on `main` holds for
+automation as well as for people.
+
+**Operator setup** — required once per package, and interactive because npm
+demands 2FA:
+
+1. On npmjs.com, for each `@elsium-ai/*` package and `elsium-ai`:
+   *Settings → Trusted publishers → GitHub Actions*, with repository
+   `elsium-ai/elsium-ai` and workflow `publish.yml`.
+2. Generate a signing key for release automation:
+   `ssh-keygen -t ed25519 -C "release@elsiumai.com" -f release_signing_key`
+3. Register the **public** key on the account that authors release commits
+   (*Settings → SSH and GPG keys → New SSH key*, key type **Signing Key**).
+4. Add repository secrets `RELEASE_SIGNING_KEY` (the private key) and
+   `RELEASE_SIGNING_EMAIL` (the address on the key).
+5. Delete the `NPM_TOKEN` secret — nothing reads it any more.
+
+Until step 1 is done, publishing fails: there is no token to fall back to, by
+design. Until steps 2–4 are done, release commits are unsigned and merging them
+needs an admin bypass; the workflow warns rather than failing in that case.
+
 ### If the scanner fires
 
 1. **Do not build or run the tree.** Building is what detonates this class of payload.
