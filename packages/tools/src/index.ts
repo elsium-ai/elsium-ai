@@ -23,6 +23,11 @@ export type { RetrievalToolConfig, RetrievalResult, RetrieveFn } from './retriev
 export { withCapability } from './capability-guard'
 export type { CapabilityGuardOptions, CapabilityDenialEvent } from './capability-guard'
 
+// Information-flow guard — gates a tool on the provenance of the context it
+// runs in, complementing the capability check on the caller.
+export { withFlowControl } from './flow-guard'
+export type { FlowGuardOptions } from './flow-guard'
+
 // Tool contracts — sideEffectLevel, preconditions, idempotency, dry-run, approval
 export { createInMemoryIdempotencyStore } from './contracts'
 export type {

