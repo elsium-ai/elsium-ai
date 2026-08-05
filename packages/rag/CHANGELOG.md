@@ -1,5 +1,11 @@
 # @elsium-ai/rag
 
+## 0.20.0
+
+### Patch Changes
+
+- @elsium-ai/core@0.20.0
+
 ## 0.19.0
 
 ### Patch Changes

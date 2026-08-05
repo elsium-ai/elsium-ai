@@ -1,5 +1,14 @@
 # @elsium-ai/cli
 
+## 0.20.0
+
+### Patch Changes
+
+- Updated dependencies [5d32579]
+  - @elsium-ai/observe@0.20.0
+  - elsium-ai@0.20.0
+  - @elsium-ai/core@0.20.0
+
 ## 0.19.0
 
 ### Minor Changes
