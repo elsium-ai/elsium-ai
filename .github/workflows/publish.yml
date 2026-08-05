@@ -47,16 +47,30 @@ jobs:
       # satisfy the signed-commits rule on main, which previously forced an
       # administrative bypass on every release (#121).
       #
-      # Skips cleanly when the secret is absent so a repository without it
+      # Identity is configured unconditionally because `setupGitUser: false`
+      # below stops the action from providing one. Signing is layered on top
+      # only when the key is available, so a repository without the secret
       # still releases — unsigned, as before, rather than not at all.
-      - name: Configure commit signing
+      - name: Configure git identity and commit signing
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           RELEASE_SIGNING_EMAIL: ${{ secrets.RELEASE_SIGNING_EMAIL }}
         run: |
+          git config --global user.name "elsium-ai-release"
+          git config --global user.email "${RELEASE_SIGNING_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+
           if [ -z "$RELEASE_SIGNING_KEY" ]; then
-            echo "::warning::RELEASE_SIGNING_KEY is not set — the release commit will be unsigned and the merge will need an admin bypass (see issue #121)"
+            echo "::warning::RELEASE_SIGNING_KEY is not set — the release commit will be unsigned and merging it will need an admin bypass (see issue #121)"
             exit 0
+          fi
+
+          # The signing key and the commit author must belong to the same
+          # GitHub account. Mismatch verifies as `no_user` (unknown address) or
+          # `unknown_key` (address belongs to someone else) — signed either way,
+          # and still not "Verified", which the ruleset treats as unsigned.
+          if [ -z "$RELEASE_SIGNING_EMAIL" ]; then
+            echo "::error::RELEASE_SIGNING_EMAIL is required when signing. It must be an address verified on the account that owns the signing key, or the signature buys nothing."
+            exit 1
           fi
 
           KEY_PATH="$RUNNER_TEMP/release_signing_key"
@@ -66,17 +80,6 @@ jobs:
           git config --global gpg.format ssh
           git config --global user.signingkey "$KEY_PATH"
           git config --global commit.gpgsign true
-          git config --global user.name "elsium-ai-release"
-          # Must be an address verified on the GitHub account that owns the
-          # signing key. A signed commit from an unrecognised address verifies
-          # as `no_user` — signed, but still not "Verified", so the ruleset
-          # rejects it exactly as if it had never been signed. A `noreply`
-          # address is always verified, which is why it is the safe default.
-          if [ -z "$RELEASE_SIGNING_EMAIL" ]; then
-            echo "::error::RELEASE_SIGNING_EMAIL is required when signing. It must be an email verified on the account holding the signing key — otherwise the commit verifies as no_user and the signature buys nothing."
-            exit 1
-          fi
-          git config --global user.email "$RELEASE_SIGNING_EMAIL"
           echo "Commit signing configured"
 
       - name: Install dependencies
@@ -92,6 +95,12 @@ jobs:
           publish: bun run release
           commit: "chore: version packages"
           title: "chore: version packages"
+          # Keep the git identity configured above. Left at its default, the
+          # action overwrites it with `github-actions[bot]`, and the commit then
+          # verifies as `unknown_key`: signed with our key, but authored by an
+          # account that key does not belong to. Signed and still not "Verified"
+          # is the same outcome as unsigned as far as the ruleset is concerned.
+          setupGitUser: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No NPM_TOKEN / NODE_AUTH_TOKEN: npm authenticates via OIDC using the
