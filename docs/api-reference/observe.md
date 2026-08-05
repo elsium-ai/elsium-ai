@@ -965,6 +965,125 @@ Each `ProofEvent` is `{ sequence, type, timestamp, data, hashPrev, hashSelf }` w
 
 ---
 
+## AI-BOM (agent composition manifest)
+
+A proof records one run. An AI-BOM records the composition every run inherits: which models, prompts, tools, MCP servers, eval datasets, policies and thresholds the agent is built from — signed, so composition cannot change without detection.
+
+### generateAiBom
+
+```ts
+generateAiBom(input: AiBomInput, options: GenerateAiBomOptions): Promise<AiBom>
+```
+
+```ts
+import { createEd25519Signer, generateEd25519KeyPair } from '@elsium-ai/core'
+import { generateAiBom } from '@elsium-ai/observe'
+
+const pair = generateEd25519KeyPair()
+const signer = createEd25519Signer({ privateKey: pair.privateKey, keyId: 'release-key' })
+
+const bom = await generateAiBom(
+  {
+    agentId: 'loan-underwriter',
+    agentVersion: '2.3.1',
+    environment: 'production',
+    models: [
+      { provider: 'anthropic', model: 'claude-sonnet-4-6', role: 'primary', region: 'eu-west-1' },
+    ],
+    prompts: [{ name: 'system', version: '7', content: SYSTEM_PROMPT }],
+    tools: [creditCheck],                 // a real Tool is accepted by shape
+    datasets: [goldenSetManifest],        // a real DatasetManifest is too
+    policies: [{ name: 'lending', version: '3', mode: 'enforce', document: bundle }],
+    thresholds: { confidenceFloor: 0.8, maxCostUsd: 5 },
+    runtime: { framework: 'elsium-ai', frameworkVersion: '0.18.0' },
+  },
+  { signer },
+)
+```
+
+`AiBomInput` fields are all optional except `agentId`. Components may be supplied either pre-hashed (`{ name, sha256 }`) or as raw content (`{ name, content }` / `{ name, document }`) for the framework to hash.
+
+Component sources are matched **structurally**, not by import: `@elsium-ai/observe` depends on `core` alone, so passing a `Tool` from `@elsium-ai/tools` or a `DatasetManifest` from `@elsium-ai/testing` works without coupling the packages.
+
+Generation is deterministic and order-independent — components are sorted by identity before hashing, so moving a `defineTool` call does not read as drift. Pass `bomId` and `clock` for byte-identical fixtures.
+
+### verifyAiBom
+
+```ts
+verifyAiBom(bom: AiBom, registry: KeyRegistry): Promise<VerifyAiBomResult>
+```
+
+Verifies three layers inner-to-outer: `components` still hashes to `componentsHash`, the header still hashes to `digest`, and `digest` carries a signature from a trusted key.
+
+```ts
+const result = await verifyAiBom(bom, registry)
+// {
+//   valid: true, signatureValid: true, componentsHashValid: true, digestValid: true,
+//   checked: { componentsHash: true, digest: true, signature: true },
+// }
+```
+
+Verification stops at the innermost failure, so a `false` verdict may mean "failed" or "never evaluated". Read `checked` to tell them apart rather than reporting an unevaluated signature as an invalid one.
+
+### diffAiBom / passesGate
+
+```ts
+diffAiBom(approved: AiBom, current: AiBom): AiBomDiff
+passesGate(diff: AiBomDiff, failOn?: DriftSeverity): boolean   // default 'critical'
+```
+
+```ts
+const diff = diffAiBom(approvedBom, shippedBom)
+// diff.drifts:    ComponentDrift[]  — kind, componentKind, id, field, severity, reason
+// diff.counts:    { critical, major, minor }
+// diff.identical: true when the shipped agent matches what was approved
+
+if (!passesGate(diff)) throw new Error('composition drift')
+```
+
+Severity answers one question: did the blast radius grow, or a control weaken?
+
+| Severity | Examples |
+|---|---|
+| `critical` | tool added · sandbox capability widened · approval requirement dropped · handler source changed · model or region changed · policy removed or demoted to monitor · MCP server added or manifest changed |
+| `major` | prompt revised · tool schema changed · threshold retuned · provider reshipped the same model name (`fingerprint`) · dataset content changed |
+| `minor` | framework version bumped · tool description edited · prompt version relabelled with identical content |
+
+A removal is rarely critical — losing a capability is a correctness problem. Losing a *control* is a security one, which is why a removed policy ranks `critical` while a removed tool ranks `major`.
+
+`diffAiBom` is purely structural and does not verify signatures. Verify both BOMs first: a diff against an unverified baseline proves nothing.
+
+### AiBom
+
+```ts
+interface AiBom {
+  version: 'elsium-aibom/v1'
+  bomId: string
+  agentId: string
+  agentVersion?: string
+  generatedAt: string      // ISO 8601
+  environment?: string
+  components: AiBomComponents
+  componentsHash: string   // SHA-256 over the canonical components
+  digest: string           // SHA-256 over the header + componentsHash — what is signed
+  signature: Signature     // Ed25519, carries keyId
+  metadata?: Record<string, unknown>
+}
+```
+
+`AiBomComponents` holds `models`, `prompts`, `tools`, `mcpServers`, `datasets`, `policies`, `thresholds` and `runtime`. `serializeAiBom(bom)` emits canonical JSON — stable bytes regardless of key insertion order — for the file you commit as the approved BOM. `AIBOM_VERSION` is exported as a constant.
+
+### CI usage
+
+```bash
+elsium bom verify ./aibom.json --public-key ./release.pub
+elsium bom diff ./approved-bom.json ./aibom.json --fail-on critical
+```
+
+See [`examples/ai-bom`](../../examples/ai-bom) for a runnable end-to-end walkthrough.
+
+---
+
 ## Studio Exporter
 
 ### createStudioExporter

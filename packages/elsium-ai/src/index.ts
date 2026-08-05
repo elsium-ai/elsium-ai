@@ -830,6 +830,14 @@ export {
 	compareProofs,
 	PROOF_SESSION_METADATA_KEY,
 	PROOF_VERSION,
+	// AI-BOM — signed agent composition manifest + release gate
+	generateAiBom,
+	verifyAiBom,
+	diffAiBom,
+	passesGate,
+	serializeAiBom,
+	bomSigningPayload,
+	AIBOM_VERSION,
 } from '@elsium-ai/observe'
 
 export type {
@@ -961,6 +969,30 @@ export type {
 	ReplayDiff,
 	EventDelta,
 	EventDeltaKind,
+	// AI-BOM types
+	AiBom,
+	AiBomComponents,
+	AiBomDiff,
+	AiBomInput,
+	ComponentDrift,
+	ComponentKind,
+	DatasetComponent,
+	DatasetSource,
+	DriftKind,
+	DriftSeverity,
+	GenerateAiBomOptions,
+	McpServerComponent,
+	ModelComponent,
+	PolicyComponent,
+	PolicySource,
+	PromptComponent,
+	PromptSource,
+	RuntimeComponent,
+	ThresholdValue,
+	ToolComponent,
+	ToolLike,
+	ToolSource,
+	VerifyAiBomResult,
 } from '@elsium-ai/observe'
 
 // ─── App ────────────────────────────────────────────────────────
