@@ -30,6 +30,7 @@ Runnable examples that show how to use each piece of the framework. Most run wit
 | [`dataset-provenance/`](./dataset-provenance/) | Trust the eval labels — inter-annotator agreement, Fleiss' kappa, dataset content hash | no |
 | [`ai-bom/`](./ai-bom/) | Sign what the agent is made of — models, prompts, tools, policies — and fail CI on composition drift | no |
 | [`information-flow-control/`](./information-flow-control/) | Survive a **successful** prompt injection — provenance labels block the exfiltration even when the model obeys | no |
+| [`policy-simulation/`](./policy-simulation/) | `terraform plan` for governance — what a rule would have blocked, over recorded runs, before shipping it | no |
 
 ## Streaming & routing
 

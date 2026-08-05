@@ -1112,3 +1112,89 @@ const tracer = observe({ output: [studio] })
 
 studio.writeCostReport(tracer.getCostReport())
 ```
+
+---
+
+## Policy Simulation
+
+Governance controls fail on adoption, not on design. Nobody enables a rule in production without knowing what it breaks, so policies sit in monitor-only mode indefinitely and protect nothing. Recorded `ExecutionProof`s already hold what happened — replaying a candidate policy over them turns "what will this block?" into an answer with traceIds attached.
+
+Same shape as `terraform plan` or `opa eval`: decide against history, then commit.
+
+### simulatePolicy
+
+```ts
+simulatePolicy(traces: readonly ExecutionProof[], probe: PolicyProbe): PolicySimulation
+```
+
+Read-only. Nothing is executed and no side effect is replayed — a tool call denied in simulation still happened in the recording.
+
+```ts
+import { simulatePolicy, flowPolicyProbe } from '@elsium-ai/observe'
+import { createFlowPolicy, createLabel, lethalTrifectaRule } from '@elsium-ai/core'
+
+const result = simulatePolicy(
+  traces,
+  flowPolicyProbe({
+    policy: createFlowPolicy([lethalTrifectaRule()]),
+    initial: createLabel({ classes: ['secret'], origin: 'trusted', source: 'vault' }),
+  }),
+)
+
+// {
+//   traces: 100, evaluated: 200, allowed: 197, denied: 3,
+//   denials: [{ traceId: 'proof_…', sequence: 2, subject: 'tool:send_email', rule: 'lethal-trifecta' }],
+//   byRule: { 'lethal-trifecta': 3 },
+//   affectedTraces: ['proof_…'], affectedTraceRatio: 0.03,
+// }
+```
+
+`affectedTraceRatio` is the number that decides whether a rule ships: it counts *runs* touched, not decision points, because one run breaking is what a user experiences.
+
+### comparePolicies
+
+```ts
+comparePolicies(traces, { baseline: PolicyProbe; candidate: PolicyProbe }): PolicyComparison
+```
+
+```ts
+const plan = comparePolicies(traces, { baseline: current, candidate: proposed })
+// { newlyDenied: [...], newlyAllowed: [...], unchanged: 197, baseline: {...}, candidate: {...} }
+```
+
+`newlyDenied` is the blast radius everyone asks about. `newlyAllowed` is the one people forget — a relaxed policy silently permitting what used to be blocked is how controls erode.
+
+### flowPolicyProbe
+
+```ts
+flowPolicyProbe(options: FlowProbeOptions): PolicyProbe
+```
+
+Replays information flow over a recorded run: walks events in order, accumulates provenance as the live tracker would, and checks each sink at the point it was reached. A tool is checked **before** its own output joins the context — otherwise every tool would appear to taint itself.
+
+| Field | Type | Description |
+|---|---|---|
+| `policy` | `FlowPolicy` | The candidate policy |
+| `classify` | `(event: ProofEvent) => LabelInit \| undefined` | Assign sensitivity classes. Necessary because proofs store hashes, not content — by design, so a proof can be shared without leaking what it processed |
+| `initial` | `TaintLabel` | Starting label, e.g. an agent already holding a credential |
+
+Defaults mirror the live enforcement points: `rag.retrieve` and `tool.call` results are `untrusted`, `llm.call` output is `model`.
+
+### PolicyProbe
+
+```ts
+type PolicyProbe = (trace: ExecutionProof) => SimulatedDecision[]
+```
+
+A port, not a closed set. Policy engines differ in what they decide over — flows to a sink, authorization requests, budgets — and simulation should not need to know. `flowPolicyProbe` ships with the package; other engines plug in the same way.
+
+### Formatting
+
+```ts
+formatSimulation(simulation: PolicySimulation): string
+formatComparison(comparison: PolicyComparison): string
+```
+
+Plan-style output for a terminal or a CI comment.
+
+See [`examples/policy-simulation`](../../examples/policy-simulation) for a runnable corpus where the default rule would have blocked 100% of traffic and the narrowed one blocks 3%.
