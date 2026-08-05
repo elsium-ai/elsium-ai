@@ -90,11 +90,27 @@ demands 2FA:
    *Settings → Trusted publishers → GitHub Actions*, with repository
    `elsium-ai/elsium-ai` and workflow `publish.yml`.
 2. Generate a signing key for release automation:
-   `ssh-keygen -t ed25519 -C "release@elsiumai.com" -f release_signing_key`
+   `ssh-keygen -t ed25519 -C "release automation" -f release_signing_key -N ""`
+   No passphrase — CI cannot answer a prompt.
 3. Register the **public** key on the account that authors release commits
    (*Settings → SSH and GPG keys → New SSH key*, key type **Signing Key**).
 4. Add repository secrets `RELEASE_SIGNING_KEY` (the private key) and
-   `RELEASE_SIGNING_EMAIL` (the address on the key).
+   `RELEASE_SIGNING_EMAIL`.
+
+   `RELEASE_SIGNING_EMAIL` **must be an address verified on that account** —
+   the `noreply` address is the safe choice:
+   `<id>+<username>@users.noreply.github.com`
+
+   This is not cosmetic. A commit signed with a valid key but authored from an
+   unrecognised address verifies as `no_user`: signed, yet still not
+   "Verified", so a signed-commits rule rejects it exactly as if it had never
+   been signed. Confirm with:
+
+   ```bash
+   gh api repos/<owner>/<repo>/commits/<sha> --jq .commit.verification
+   # { "verified": true, "reason": "valid" }
+   ```
+
 5. Delete the `NPM_TOKEN` secret — nothing reads it any more.
 
 Until step 1 is done, publishing fails: there is no token to fall back to, by
