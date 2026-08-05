@@ -1,5 +1,16 @@
 # @elsium-ai/agents
 
+## 0.19.0
+
+### Patch Changes
+
+- Updated dependencies [c80ee8c]
+- Updated dependencies [8bf8ecb]
+  - @elsium-ai/observe@0.19.0
+  - @elsium-ai/core@0.19.0
+  - @elsium-ai/gateway@0.19.0
+  - @elsium-ai/tools@0.19.0
+
 ## 0.18.0
 
 ### Minor Changes
