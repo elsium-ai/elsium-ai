@@ -10,9 +10,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Gates every other job. Installing or building a tampered tree is what
+  # detonates it, so this runs before any dependency is fetched — the scanner
+  # depends only on node builtins and needs no install.
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Scan for source-level tampering
+        run: bun scripts/security-scan.ts
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    needs: [security]
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +46,7 @@ jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
+    needs: [security]
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +63,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: [security]
     steps:
       - uses: actions/checkout@v4
 
@@ -78,6 +97,7 @@ jobs:
   audit:
     name: Audit
     runs-on: ubuntu-latest
+    needs: [security]
     steps:
       - uses: actions/checkout@v4
 
@@ -94,6 +114,7 @@ jobs:
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
+    needs: [security]
     concurrency:
       group: benchmark-${{ github.ref }}
       cancel-in-progress: true

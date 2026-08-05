@@ -31,6 +31,7 @@
     "bench:freeze": "bun benchmarks/check-regression.ts --freeze",
     "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "test:coverage": "vitest run --coverage",
+    "scan:security": "bun scripts/security-scan.ts",
     "metrics": "bun scripts/metrics.ts",
     "stats": "bun scripts/stats.ts",
     "prepare": "husky"

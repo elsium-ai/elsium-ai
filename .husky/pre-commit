@@ -1,2 +1,10 @@
 export PATH="$HOME/.bun/bin:$PATH"
+
+# Runs before lint-staged: a tampered file should never reach a commit, and
+# never reach a formatter that might normalise the evidence away.
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -n "$STAGED" ]; then
+	echo "$STAGED" | xargs bun scripts/security-scan.ts || exit 1
+fi
+
 bunx lint-staged
