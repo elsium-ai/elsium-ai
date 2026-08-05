@@ -29,6 +29,7 @@ Runnable examples that show how to use each piece of the framework. Most run wit
 | [`eval-proof/`](./eval-proof/) | Sign eval results as an Ed25519 `ExecutionProof`; verify offline with only the public key | no |
 | [`dataset-provenance/`](./dataset-provenance/) | Trust the eval labels — inter-annotator agreement, Fleiss' kappa, dataset content hash | no |
 | [`ai-bom/`](./ai-bom/) | Sign what the agent is made of — models, prompts, tools, policies — and fail CI on composition drift | no |
+| [`information-flow-control/`](./information-flow-control/) | Survive a **successful** prompt injection — provenance labels block the exfiltration even when the model obeys | no |
 
 ## Streaming & routing
 

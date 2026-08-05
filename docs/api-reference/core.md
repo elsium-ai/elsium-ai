@@ -784,3 +784,112 @@ await revocations.revoke(token.tokenId, { reason: 'compromised' })
 const verifier = createCapabilityVerifier({ resolver: registry, revocationStore: revocations })
 const result = await verifier.verifyTokenAsync(token) // { valid: false, reason: 'revoked', ... }
 ```
+
+---
+
+## Information-Flow Control
+
+Capability tokens govern the **caller**: may this agent call this tool? Once a retrieved document or a tool result enters the context, it becomes undifferentiated text and every downstream decision is made blind.
+
+Information-flow control keeps provenance attached to the **data**. Labels travel with values, join as values merge, and a sink is checked against the accumulated label before anything leaves.
+
+### taint / createLabel
+
+```ts
+taint<T>(value: T, init?: LabelInit): Tainted<T>
+createLabel(init?: LabelInit): TaintLabel
+```
+
+A `TaintLabel` carries sensitivity `classes`, an `origin`, and `sources` for audit. `origin` defaults to `'untrusted'` — safe by omission.
+
+| Origin | Meaning |
+|---|---|
+| `trusted` | Operator-authored: system prompts, hardcoded config |
+| `model` | LLM output. Derived from whatever was in context, so it cannot launder untrusted input into trusted standing |
+| `untrusted` | Everything from outside: user input, retrieved documents, tool results, MCP responses |
+
+`DataClass` is the same free-form string type capability tokens use, so a token permitting `dataClasses: ['pii']` and a rule denying `pii` at the network are talking about the same thing.
+
+```ts
+import { taint } from '@elsium-ai/core'
+
+const key = taint('sk-live-…', { classes: ['secret'], origin: 'trusted', source: 'vault' })
+```
+
+### joinLabels / joinAll
+
+```ts
+joinLabels(a: TaintLabel, b: TaintLabel): TaintLabel
+joinAll(labels: readonly TaintLabel[]): TaintLabel
+```
+
+Least upper bound: classes and sources union, `origin` becomes the **least trusted** of the two. Joins are commutative, associative, idempotent, and monotonic — a join is never weaker than either input, so no sequence of merges can wash a taint out. That property is what the guarantee rests on.
+
+### createFlowPolicy
+
+```ts
+createFlowPolicy(rules: readonly FlowRule[]): FlowPolicy
+```
+
+Rules are **deny-only** and evaluated in order; first match wins; no match allows. Deny-only is deliberate — an allow/deny mix forces authors to reason about precedence, and precedence bugs in a security control fail open.
+
+```ts
+const policy = createFlowPolicy([
+  {
+    name: 'eu-pii-stays-in-eu',
+    sink: ['llm:openai', 'llm:anthropic-us'],
+    deny: { hasClasses: ['pii:eu'] },
+    reason: 'EU personal data may not reach a US-hosted model',
+  },
+])
+```
+
+A sink is `kind:name` — `llm:anthropic`, `tool:send_email`, `network:api.stripe.com` — matched with `*` globs. Conditions: `hasClasses` (all of), `hasAnyClass` (at least one), `origin`. All present fields must match. A rule with no conditions throws at construction rather than silently blocking every flow to its sink.
+
+### lethalTrifectaRule
+
+```ts
+lethalTrifectaRule(options?: { sensitiveClasses?, sinks?, name? }): FlowRule
+```
+
+An agent is exploitable when three things share one context: sensitive data, untrusted content, and an outbound sink. Any two are safe. This rule blocks the combination.
+
+```ts
+const policy = createFlowPolicy([lethalTrifectaRule()])
+// denies ['secret','pii'] + untrusted origin reaching network:* / tool:* / mcp:*
+```
+
+Prompt injection is the trigger, not the vulnerability, so this blocks the channel instead of trying to detect the phrasing.
+
+### createFlowTracker
+
+```ts
+createFlowTracker(config: FlowTrackerConfig): FlowTracker
+```
+
+Accumulates provenance across a run — `record(label)`, `unwrap(tainted)`, `check(sink)`, `reset()`. Trackers are **per-run**: sharing one across independent requests leaks taint between them.
+
+```ts
+const tracker = createFlowTracker({ policy, onDeny: (d) => audit.record(d) })
+
+const apiKey = tracker.unwrap(key)           // context: trusted + [secret]
+await guardedInvoice.execute({ id: '882' })  // context: untrusted + [secret]
+tracker.check('tool:send_email')             // { allowed: false, rule: 'lethal-trifecta', … }
+```
+
+### declassify
+
+```ts
+declassify<T>(tainted: Tainted<T>, options: { to: LabelInit; reason: string; by: string }): Tainted<T>
+```
+
+The only way to weaken a label, and deliberately awkward: explicit call, mandatory reason, recorded actor. `label.sources` gains `declassified-by:<by>`, so every hole in the guarantee is greppable.
+
+### Enforcement points
+
+| Layer | API | Sink |
+|---|---|---|
+| Gateway | [`flowMiddleware`](./gateway.md#flowmiddleware) | `llm:<provider>` |
+| Tools | [`withFlowControl`](./tools.md#withflowcontrol) | `tool:<name>` or a custom sink |
+
+See [`examples/information-flow-control`](../../examples/information-flow-control) for a runnable injection that succeeds while the exfiltration fails.

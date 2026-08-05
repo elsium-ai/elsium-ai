@@ -145,6 +145,36 @@ export type {
 	VerificationIssue,
 } from './policy-document'
 
+// Information-flow control — provenance labels that travel with the data,
+// checked at every sink. Capability tokens govern the caller; this governs
+// what ends up inside the prompt.
+export {
+	createFlowPolicy,
+	createFlowTracker,
+	createLabel,
+	declassify,
+	dominates,
+	emptyLabel,
+	formatLabel,
+	joinAll,
+	joinLabels,
+	lethalTrifectaRule,
+	taint,
+} from './flow'
+export type {
+	FlowCondition,
+	FlowDecision,
+	FlowPolicy,
+	FlowRule,
+	FlowTracker,
+	FlowTrackerConfig,
+	LabelInit,
+	Origin,
+	Sink,
+	Tainted,
+	TaintLabel,
+} from './flow'
+
 // Shutdown
 export { createShutdownManager } from './shutdown'
 export type { ShutdownConfig, ShutdownManager } from './shutdown'

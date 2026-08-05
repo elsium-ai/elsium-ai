@@ -127,6 +127,11 @@ export type {
 	CapabilityDenialEvent as CapabilityLLMDenialEvent,
 } from './capability-middleware'
 
+// Information-flow middleware — labels messages by provenance and checks the
+// accumulated label against the provider sink before the request leaves.
+export { flowMiddleware } from './flow-middleware'
+export type { FlowMiddlewareConfig, MessageClassifier } from './flow-middleware'
+
 // CARG — Cost-Aware Routed Generation
 export {
 	createCascadeRouter,

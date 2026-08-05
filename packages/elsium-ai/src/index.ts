@@ -88,6 +88,18 @@ export {
 	delegateToken,
 	createInMemoryRevocationStore,
 	CAPABILITY_TOKEN_VERSION,
+	// Information-flow control — provenance that travels with the data
+	createFlowPolicy,
+	createFlowTracker,
+	createLabel,
+	declassify,
+	dominates,
+	emptyLabel,
+	formatLabel,
+	joinAll,
+	joinLabels,
+	lethalTrifectaRule,
+	taint,
 	// State store
 	createInMemoryStateStore,
 	// Pause / resume signaling
@@ -225,6 +237,18 @@ export type {
 	RagCapability,
 	ToolCapability,
 	WorkflowCapability,
+	// Information-flow control types (DataClass is shared with capability tokens)
+	FlowCondition,
+	FlowDecision,
+	FlowPolicy,
+	FlowRule,
+	FlowTracker,
+	FlowTrackerConfig,
+	LabelInit,
+	Origin,
+	Sink,
+	Tainted,
+	TaintLabel,
 	DelegateOptions,
 	RevocationStore,
 	RevocationEntry,
@@ -282,6 +306,7 @@ export {
 	bulkheadMiddleware,
 	// Capability middleware (β-2)
 	capabilityMiddleware,
+	flowMiddleware,
 	// CARG — Cost-Aware Routed Generation
 	createCascadeRouter,
 	createHeuristicClassifier,
@@ -350,6 +375,8 @@ export type {
 	Bulkhead,
 	// Capability middleware types (β-2)
 	CapabilityMiddlewareOptions,
+	FlowMiddlewareConfig,
+	MessageClassifier,
 	CapabilityLLMDenialEvent,
 	// CARG types
 	Tier,
@@ -634,6 +661,7 @@ export {
 	createRetrievalTool,
 	// Capability guard (β-1)
 	withCapability,
+	withFlowControl,
 } from '@elsium-ai/tools'
 
 export type {
@@ -651,6 +679,7 @@ export type {
 	SandboxRunner,
 	// Capability guard types (β-1)
 	CapabilityGuardOptions,
+	FlowGuardOptions,
 	CapabilityDenialEvent,
 } from '@elsium-ai/tools'
 
