@@ -1,5 +1,18 @@
 # @elsium-ai/app
 
+## 0.21.0
+
+### Patch Changes
+
+- Updated dependencies [5005f9e]
+  - @elsium-ai/observe@0.21.0
+  - @elsium-ai/agents@0.21.0
+  - @elsium-ai/core@0.21.0
+  - @elsium-ai/gateway@0.21.0
+  - @elsium-ai/rag@0.21.0
+  - @elsium-ai/tools@0.21.0
+  - @elsium-ai/workflows@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes
