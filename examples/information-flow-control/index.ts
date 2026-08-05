@@ -80,10 +80,12 @@ const guardedInvoice = withFlowControl(readInvoice, { tracker })
 const apiKey = tracker.unwrap(
 	taint('sk-live-deploy-9f3a', { classes: ['secret'], origin: 'trusted', source: 'vault' }),
 )
-// Never print the value — not even a prefix. CodeQL's clear-text-logging rule
-// flagged an earlier version of this line, which is the correct call: an
-// example about not leaking secrets has no business writing one to stdout.
-console.log(`1. Secret loaded into context (${apiKey.length} chars, not shown)`)
+// Nothing derived from the secret reaches the log — not a prefix, not even its
+// length. CodeQL's clear-text-logging rule flagged both earlier attempts, and
+// it was right twice: data-flow analysis does not care that `.length` looks
+// harmless, and an example about not leaking secrets should not be arguing the
+// point. The label below is what matters here anyway.
+console.log('1. Secret loaded into context')
 console.log(`   context label: ${JSON.stringify(tracker.label)}\n`)
 
 // The agent retrieves the invoice. Its content is attacker-controlled.
