@@ -67,7 +67,16 @@ jobs:
           git config --global user.signingkey "$KEY_PATH"
           git config --global commit.gpgsign true
           git config --global user.name "elsium-ai-release"
-          git config --global user.email "${RELEASE_SIGNING_EMAIL:-release@elsiumai.com}"
+          # Must be an address verified on the GitHub account that owns the
+          # signing key. A signed commit from an unrecognised address verifies
+          # as `no_user` — signed, but still not "Verified", so the ruleset
+          # rejects it exactly as if it had never been signed. A `noreply`
+          # address is always verified, which is why it is the safe default.
+          if [ -z "$RELEASE_SIGNING_EMAIL" ]; then
+            echo "::error::RELEASE_SIGNING_EMAIL is required when signing. It must be an email verified on the account holding the signing key — otherwise the commit verifies as no_user and the signature buys nothing."
+            exit 1
+          fi
+          git config --global user.email "$RELEASE_SIGNING_EMAIL"
           echo "Commit signing configured"
 
       - name: Install dependencies
