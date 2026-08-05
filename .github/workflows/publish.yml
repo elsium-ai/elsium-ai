@@ -12,6 +12,8 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  # Mints the OIDC token npm exchanges for short-lived publish credentials.
+  # This is what removes the need for a long-lived NPM_TOKEN in the repository.
   id-token: write
 
 jobs:
@@ -25,10 +27,45 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
+
+      # Node 20 ships npm 10, which predates OIDC trusted publishing.
+      # npm >= 11.5.1 detects the Actions OIDC environment and authenticates
+      # against the registry without a token.
+      - name: Upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@latest
+          echo "npm $(npm --version)"
+
+      # The changesets bot commits the version bump. Unsigned commits cannot
+      # satisfy the signed-commits rule on main, which previously forced an
+      # administrative bypass on every release (#121).
+      #
+      # Skips cleanly when the secret is absent so a repository without it
+      # still releases — unsigned, as before, rather than not at all.
+      - name: Configure commit signing
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          RELEASE_SIGNING_EMAIL: ${{ secrets.RELEASE_SIGNING_EMAIL }}
+        run: |
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::warning::RELEASE_SIGNING_KEY is not set — the release commit will be unsigned and the merge will need an admin bypass (see issue #121)"
+            exit 0
+          fi
+
+          KEY_PATH="$RUNNER_TEMP/release_signing_key"
+          install -m 600 /dev/null "$KEY_PATH"
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$KEY_PATH"
+
+          git config --global gpg.format ssh
+          git config --global user.signingkey "$KEY_PATH"
+          git config --global commit.gpgsign true
+          git config --global user.name "elsium-ai-release"
+          git config --global user.email "${RELEASE_SIGNING_EMAIL:-release@elsiumai.com}"
+          echo "Commit signing configured"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -45,8 +82,9 @@ jobs:
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No NPM_TOKEN / NODE_AUTH_TOKEN: npm authenticates via OIDC using the
+          # id-token permission above. Each package must have this repository and
+          # workflow registered as a trusted publisher on npmjs.com.
           NPM_CONFIG_PROVENANCE: true
 
       - name: Create GitHub Release
