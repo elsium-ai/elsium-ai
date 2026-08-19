@@ -19,8 +19,13 @@
 
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const DIST = new URL('../dist/', import.meta.url).pathname
+// Use fileURLToPath rather than URL.pathname: on Windows the latter yields
+// "/C:/…/dist/", which Node re-resolves against the current drive into an
+// invalid "C:\C:\…" path. fileURLToPath produces the correct native path on
+// every platform.
+const DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const CHUNK_RX = /^index-[a-z0-9]{8}\.js$/
 
 let prunedDirs = 0
