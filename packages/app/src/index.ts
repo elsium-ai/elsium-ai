@@ -2,6 +2,12 @@
 export { createApp } from './app'
 export type { ElsiumApp } from './app'
 
+// Server adapters
+export { createServer } from './adapters/hono'
+export type { HonoServerInstance } from './adapters/hono'
+export { isServerAdapter } from './adapter'
+export type { ServerAdapter, ServerInstance, ServerHandle, AppRuntime } from './adapter'
+
 // Types
 export type {
 	AppConfig,

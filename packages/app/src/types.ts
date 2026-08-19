@@ -1,5 +1,6 @@
 import type { Agent } from '@elsium-ai/agents'
 import type { RAGPipeline } from '@elsium-ai/rag'
+import type { ServerAdapter } from './adapter'
 
 export interface AppConfig {
 	gateway: {
@@ -14,7 +15,13 @@ export interface AppConfig {
 		costTracking?: boolean
 		export?: string
 	}
-	server?: ServerConfig
+	/**
+	 * Server adapter that owns the HTTP layer. Use `createServer({...})` (the
+	 * built-in Hono adapter) or any other {@link ServerAdapter} implementation.
+	 * A bare {@link ServerConfig} object is also accepted and wrapped in the
+	 * default adapter.
+	 */
+	server?: ServerAdapter | ServerConfig
 	version?: string
 }
 

@@ -5,6 +5,7 @@ import { registerProviderFactory } from '@elsium-ai/gateway'
 import { observe } from '@elsium-ai/observe'
 import { Hono } from 'hono'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createServer } from './adapters/hono'
 import { createApp } from './app'
 import {
 	authMiddleware,
@@ -550,7 +551,7 @@ describe('createApp', () => {
 		}))
 	})
 
-	it('creates an app with hono, gateway, and tracer', () => {
+	it('creates an app with a server, gateway, and tracer', () => {
 		const app = createApp({
 			gateway: {
 				providers: {
@@ -560,7 +561,8 @@ describe('createApp', () => {
 			},
 		})
 
-		expect(app.hono).toBeInstanceOf(Hono)
+		expect(app.fetch).toBeTypeOf('function')
+		expect(app.server).toBeDefined()
 		expect(app.gateway).toBeDefined()
 		expect(app.gateway.complete).toBeTypeOf('function')
 		expect(app.gateway.stream).toBeTypeOf('function')
@@ -599,7 +601,7 @@ describe('createApp', () => {
 		})
 
 		// Test health endpoint through the Hono instance
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(200)
@@ -638,7 +640,7 @@ describe('createApp', () => {
 			agents: [agent],
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/agents', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/agents', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(200)
@@ -664,7 +666,7 @@ describe('createApp', () => {
 			version: '1.2.3',
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(json.version).toBe('1.2.3')
@@ -677,7 +679,7 @@ describe('createApp', () => {
 			},
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(json.version).toBe('0.2.2')
@@ -690,7 +692,7 @@ describe('createApp', () => {
 			},
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/nonexistent', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/nonexistent', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(404)
@@ -698,7 +700,7 @@ describe('createApp', () => {
 	})
 })
 
-// Every other test drives `app.hono.fetch` directly, which never touches
+// Every other test drives `app.fetch` directly, which never touches
 // @hono/node-server. These bind a real socket, so a breaking change in the
 // adapter surfaces here instead of in production.
 describe('createApp — listen() over a real socket', () => {
@@ -707,7 +709,7 @@ describe('createApp — listen() over a real socket', () => {
 	it('serves requests and releases the port on stop', async () => {
 		const app = createApp({
 			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
-			server: { port: PORT, cors: true },
+			server: createServer({ port: PORT, cors: true }),
 		})
 
 		const server = app.listen()
@@ -733,7 +735,7 @@ describe('createApp — listen() over a real socket', () => {
 	it('honours the port passed to listen() over the configured one', async () => {
 		const app = createApp({
 			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
-			server: { port: PORT },
+			server: createServer({ port: PORT }),
 		})
 
 		const server = app.listen(PORT + 1)

@@ -1027,6 +1027,9 @@ export type {
 // ─── App ────────────────────────────────────────────────────────
 export {
 	createApp,
+	// Server adapter
+	createServer,
+	isServerAdapter,
 	// SSE
 	sseHeaders,
 	formatSSE,
@@ -1038,7 +1041,13 @@ export {
 
 export type {
 	AppConfig,
+	ElsiumApp,
 	ServerConfig,
+	ServerAdapter,
+	ServerInstance,
+	ServerHandle,
+	AppRuntime,
+	HonoServerInstance,
 	CorsConfig,
 	AuthConfig,
 	RateLimitConfig,
