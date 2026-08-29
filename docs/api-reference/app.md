@@ -13,17 +13,26 @@ import { createApp, createRoutes, authMiddleware, createRBAC } from '@elsium-ai/
 | Export | Signature | Description |
 |---|---|---|
 | `createApp` | `createApp(config: AppConfig): ElsiumApp` | Bootstrap a complete HTTP server with gateway, agents, observability, and middleware |
+| `createServer` | `createServer(config?: ServerConfig): ServerAdapter` | Build the default (Hono) server adapter to pass as `config.server` |
+| `isServerAdapter` | `isServerAdapter(value: unknown): value is ServerAdapter` | Type guard distinguishing a `ServerAdapter` from a bare `ServerConfig` |
 
 ### ElsiumApp Interface
 
 ```ts
 interface ElsiumApp {
-  readonly hono: Hono                // Underlying Hono instance
   readonly gateway: Gateway          // Configured gateway
+  readonly mesh: ProviderMesh | undefined
   readonly tracer: Tracer            // Observability tracer
+  readonly server: ServerInstance    // Bound server from the configured adapter
+  fetch(request: Request): Response | Promise<Response>  // Web-standard handler
   listen(port?: number): { port: number; stop: () => Promise<void> }
 }
 ```
+
+> The HTTP framework is isolated behind a pluggable `ServerAdapter`. `ElsiumApp`
+> no longer exposes a `hono` property — use `fetch` for the web-standard handler,
+> or `server` for the bound instance. The Hono adapter's instance
+> (`HonoServerInstance`) still exposes `.hono` for advanced mounting.
 
 ### AppConfig
 
@@ -40,9 +49,21 @@ interface AppConfig {
     costTracking?: boolean
     export?: string
   }
-  server?: ServerConfig
+  server?: ServerAdapter | ServerConfig  // Adapter (createServer({...})) or bare config
   version?: string
 }
+```
+
+Pass a server adapter built with `createServer(...)`, or a bare `ServerConfig`
+object which is wrapped in the default adapter:
+
+```ts
+import { createApp, createServer } from '@elsium-ai/app'
+
+const app = createApp({
+  gateway: { providers: { openai: { apiKey: process.env.OPENAI_API_KEY! } }, defaultModel: 'gpt-4o' },
+  server: createServer({ port: 3000, cors: true }),
+})
 ```
 
 ### ServerConfig
@@ -406,7 +427,12 @@ app.get('/config', rbac.middleware('config:read'), configHandler)
 | `MetricsResponse` | Metrics endpoint response |
 | `StreamChatEvent` | SSE event types for chat streaming |
 | `StreamCompleteEvent` | SSE event types for completion streaming |
-| `ElsiumApp` | App instance: `hono`, `gateway`, `tracer`, `listen()` |
+| `ElsiumApp` | App instance: `gateway`, `mesh`, `tracer`, `server`, `fetch()`, `listen()` |
+| `ServerAdapter` | Pluggable server adapter contract (`config`, `bind()`) |
+| `ServerInstance` | Bound server: `fetch()`, `listen()` |
+| `ServerHandle` | Running server handle: `port`, `stop()` |
+| `AppRuntime` | Framework-neutral runtime passed to `ServerAdapter.bind()` |
+| `HonoServerInstance` | Hono adapter's `ServerInstance`, also exposing `.hono` |
 | `RoutesDeps` | Dependencies for `createRoutes` |
 | `Permission` | Permission string type |
 | `Role` | Role definition: `name`, `permissions`, `inherits?` |

@@ -2,13 +2,13 @@ import { defineAgent } from '@elsium-ai/agents'
 import { createApp } from '@elsium-ai/app'
 /**
  * Test 03: Building a Server
- * Verifies: createApp, HTTP routes (via hono)
+ * Verifies: createApp, HTTP routes (via the server adapter's fetch handler)
  */
 import { describe, expect, it } from 'vitest'
 import { assertNonEmptyString, createTestComplete, describeWithLLM } from '../lib/helpers'
 
 describe('03 — Building a Server', () => {
-	it('createApp returns hono, gateway, tracer, and listen', () => {
+	it('createApp returns fetch, gateway, tracer, and listen', () => {
 		const app = createApp({
 			gateway: {
 				providers: { openai: { apiKey: 'sk-fake-key' } },
@@ -16,23 +16,23 @@ describe('03 — Building a Server', () => {
 			},
 		})
 
-		expect(app.hono).toBeDefined()
+		expect(typeof app.fetch).toBe('function')
 		expect(app.gateway).toBeDefined()
 		expect(app.tracer).toBeDefined()
 		expect(typeof app.listen).toBe('function')
 	})
 
-	it('createApp hono has /health route', async () => {
+	it('createApp serves the /health route', async () => {
 		const app = createApp({
 			gateway: {
 				providers: { openai: { apiKey: 'sk-fake-key' } },
 			},
 		})
 
-		const res = await app.hono.request('/health')
+		const res = await app.fetch(new Request('http://localhost/health'))
 		expect(res.status).toBe(200)
 
-		const body = await res.json()
+		const body = (await res.json()) as { status: string }
 		expect(body.status).toBe('ok')
 	})
 
@@ -51,7 +51,7 @@ describe('03 — Building a Server', () => {
 			},
 		})
 
-		expect(app.hono).toBeDefined()
+		expect(typeof app.fetch).toBe('function')
 		expect(app.gateway).toBeDefined()
 	})
 })
@@ -67,17 +67,19 @@ describeWithLLM('03 — Building a Server (Real LLM)', () => {
 			},
 		})
 
-		const res = await app.hono.request('/complete', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				messages: [{ role: 'user', content: 'Say hi in one word.' }],
-				maxTokens: 10,
+		const res = await app.fetch(
+			new Request('http://localhost/complete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					messages: [{ role: 'user', content: 'Say hi in one word.' }],
+					maxTokens: 10,
+				}),
 			}),
-		})
+		)
 
 		expect(res.status).toBe(200)
-		const body = await res.json()
+		const body = (await res.json()) as { message: unknown }
 		expect(body.message).toBeDefined()
 	})
 
@@ -99,14 +101,16 @@ describeWithLLM('03 — Building a Server (Real LLM)', () => {
 			agents: [agent],
 		})
 
-		const res = await app.hono.request('/chat', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ message: 'Hello!' }),
-		})
+		const res = await app.fetch(
+			new Request('http://localhost/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ message: 'Hello!' }),
+			}),
+		)
 
 		expect(res.status).toBe(200)
-		const body = await res.json()
+		const body = (await res.json()) as { message: string }
 		expect(typeof body.message).toBe('string')
 		assertNonEmptyString(body.message)
 	})
