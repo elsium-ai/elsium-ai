@@ -85,7 +85,7 @@ Anthropic goes down at 3 AM? Traffic reroutes to OpenAI. No pages. No code chang
 | Feature | What it does | Source |
 |---------|-------------|--------|
 | **Policy Engine** | Declarative rules — deny by model, cost, token count, or content pattern | [`createPolicySet`](../packages/core/src/policy.ts) |
-| **RBAC** | Role-based permissions with inheritance and wildcard matching | [`createRBAC`](../packages/app/src/rbac.ts) |
+| **RBAC** | Role-based permissions with inheritance and wildcard matching | [`createRBAC`](../packages/app/src/hono/rbac.ts) |
 | **Approval Gates** | Human-in-the-loop for high-stakes tool calls or expensive operations | [`createApprovalGate`](../packages/agents/src/approval.ts) |
 | **Audit Trail** | SHA-256 hash-chained events with tamper-proof integrity verification | [`createAuditTrail`](../packages/observe/src/audit.ts) |
 | **PII Detection** | Auto-redacts emails, phones, addresses, API keys before they reach the model | [`createAgentSecurity`](../packages/agents/src/security.ts) |
@@ -210,7 +210,7 @@ ElsiumAI is the production layer. Use it with whatever orchestration and gateway
 | Feature | What it does | Source |
 |---------|-------------|--------|
 | Policy engine | Declarative rules — deny by model, cost, token count, or content pattern | [`createPolicySet`](../packages/core/src/policy.ts) |
-| RBAC | Role-based permissions with inheritance and wildcard matching | [`createRBAC`](../packages/app/src/rbac.ts) |
+| RBAC | Role-based permissions with inheritance and wildcard matching | [`createRBAC`](../packages/app/src/hono/rbac.ts) |
 | Approval gates | Human-in-the-loop for high-stakes tool calls or expensive operations | [`createApprovalGate`](../packages/agents/src/approval.ts) |
 | Hash-chained audit trail | SHA-256 hash-chained events with tamper-proof integrity verification | [`createAuditTrail`](../packages/observe/src/audit.ts) |
 | PII detection & redaction | Auto-redacts emails, phones, addresses, API keys before they reach the model | [`createAgentSecurity`](../packages/agents/src/security.ts) |

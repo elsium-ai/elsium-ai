@@ -27,7 +27,7 @@ const GOVERNANCE_FILES = [
 	'packages/core/src/utils.ts',
 	'packages/agents/src/identity.ts',
 	'packages/agents/src/stores/integrity.ts',
-	'packages/app/src/middleware.ts',
+	'packages/app/src/hono/middleware.ts',
 	'packages/observe/src/audit.ts',
 	'packages/testing/src/replay-audit.ts',
 	'packages/workflows/src/idempotent-checkpoint.ts',

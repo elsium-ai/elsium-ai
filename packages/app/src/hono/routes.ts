@@ -4,14 +4,14 @@ import type { Gateway, ProviderMesh } from '@elsium-ai/gateway'
 import type { Tracer } from '@elsium-ai/observe'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
-import { streamResponse } from './sse'
 import type {
 	ChatRequest,
 	ChatResponse,
 	CompleteRequest,
 	HealthResponse,
 	MetricsResponse,
-} from './types'
+} from '../types'
+import { streamResponse } from './sse'
 
 function parseJsonBody<T>(raw: string): { ok: true; data: T } | { ok: false } {
 	try {

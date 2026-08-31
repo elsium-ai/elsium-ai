@@ -1,92 +1,71 @@
 import type { Agent } from '@elsium-ai/agents'
-import {
-	ElsiumError,
-	type ShutdownManager,
-	createLogger,
-	createShutdownManager,
-} from '@elsium-ai/core'
+import { type Logger, createLogger } from '@elsium-ai/core'
 import { type Gateway, type ProviderMesh, createProviderMesh, gateway } from '@elsium-ai/gateway'
 import { type Tracer, observe } from '@elsium-ai/observe'
-
-const log = createLogger()
-import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
 import {
-	authMiddleware,
-	corsMiddleware,
-	rateLimitMiddleware,
-	requestIdMiddleware,
-	requestLoggerMiddleware,
-} from './middleware'
-import { createRoutes } from './routes'
+	type ServerAdapter,
+	type ServerHandle,
+	type ServerInstance,
+	isServerAdapter,
+} from './adapter'
+import { type HonoServerInstance, createServer } from './hono/adapter'
 import type { AppConfig } from './types'
 
-export interface ElsiumApp {
-	readonly hono: Hono
+const DEFAULT_VERSION = '0.2.2'
+
+export interface ElsiumApp<S extends ServerInstance = HonoServerInstance> {
 	readonly gateway: Gateway
 	readonly mesh: ProviderMesh | undefined
 	readonly tracer: Tracer
-	listen(port?: number): { port: number; stop: () => Promise<void> }
+	/** The bound server instance produced by the configured adapter. */
+	readonly server: S
+	/** Web-standard request handler, delegated to the server adapter. */
+	fetch(request: Request): Response | Promise<Response>
+	listen(port?: number): ServerHandle
 }
 
-export function createApp(config: AppConfig): ElsiumApp {
-	const app = new Hono()
+function buildGateway(config: AppConfig['gateway']): {
+	gateway: Gateway
+	mesh: ProviderMesh | undefined
+	providers: string[]
+} {
+	const providers = Object.keys(config.providers)
+	const primary = providers[0]
+	const primaryConfig = config.providers[primary]
 
-	// ─── Global Error Handler ─────────────────────────────────
-
-	app.onError((err, c) => {
-		const statusCode = err instanceof ElsiumError ? (err.statusCode ?? 500) : 500
-		const code = err instanceof ElsiumError ? err.code : 'UNKNOWN'
-		log.error('Unhandled error', { error: err.message, code, path: c.req.path })
-		return c.json({ error: err.message, code }, statusCode as 500)
+	const gw = gateway({
+		provider: primary,
+		model: config.defaultModel,
+		apiKey: primaryConfig.apiKey,
+		baseUrl: primaryConfig.baseUrl,
 	})
 
-	// ─── Not Found Handler ────────────────────────────────────
+	let mesh: ProviderMesh | undefined
+	if (providers.length > 1) {
+		mesh = createProviderMesh({
+			providers: providers.map((name) => ({
+				name,
+				config: {
+					apiKey: config.providers[name].apiKey,
+					baseUrl: config.providers[name].baseUrl,
+				},
+				model: config.providers[name].model,
+			})),
+			strategy: config.strategy ?? 'fallback',
+		})
+	}
 
-	app.notFound((c) => {
-		return c.json({ error: 'Not found' }, 404)
-	})
+	return { gateway: gw, mesh, providers }
+}
+
+export function createApp<S extends ServerInstance = HonoServerInstance>(
+	config: AppConfig<S>,
+): ElsiumApp<S> {
+	const logger: Logger = createLogger()
 
 	// ─── Gateway ──────────────────────────────────────────────
 
-	const providerNames = Object.keys(config.gateway.providers)
-
-	let gw: Gateway
-	let mesh: ProviderMesh | undefined
-
-	if (providerNames.length > 1) {
-		const entries = providerNames.map((name) => ({
-			name,
-			config: {
-				apiKey: config.gateway.providers[name].apiKey,
-				baseUrl: config.gateway.providers[name].baseUrl,
-			},
-			model: config.gateway.providers[name].model,
-		}))
-
-		mesh = createProviderMesh({
-			providers: entries,
-			strategy: config.gateway.strategy ?? 'fallback',
-		})
-
-		const primaryProvider = providerNames[0]
-		const primaryConfig = config.gateway.providers[primaryProvider]
-		gw = gateway({
-			provider: primaryProvider,
-			model: config.gateway.defaultModel,
-			apiKey: primaryConfig.apiKey,
-			baseUrl: primaryConfig.baseUrl,
-		})
-	} else {
-		const primaryProvider = providerNames[0]
-		const primaryConfig = config.gateway.providers[primaryProvider]
-		gw = gateway({
-			provider: primaryProvider,
-			model: config.gateway.defaultModel,
-			apiKey: primaryConfig.apiKey,
-			baseUrl: primaryConfig.baseUrl,
-		})
-	}
+	const { gateway: gw, mesh, providers } = buildGateway(config.gateway)
 
 	// ─── Tracer ───────────────────────────────────────────────
 
@@ -95,96 +74,44 @@ export function createApp(config: AppConfig): ElsiumApp {
 		costTracking: config.observe?.costTracking ?? true,
 	})
 
-	// ─── Middleware ────────────────────────────────────────────
-
-	const serverConfig = config.server ?? {}
-
-	app.use('*', requestIdMiddleware())
-	app.use('*', requestLoggerMiddleware(log))
-
-	if (serverConfig.cors) {
-		app.use('*', corsMiddleware(serverConfig.cors))
-	}
-
-	if (serverConfig.auth) {
-		app.use('*', authMiddleware(serverConfig.auth))
-	}
-
-	if (serverConfig.rateLimit) {
-		app.use('*', rateLimitMiddleware(serverConfig.rateLimit))
-	}
-
 	// ─── Agents ───────────────────────────────────────────────
 
-	const agentMap = new Map<string, Agent>()
+	const agents = new Map<string, Agent>()
 	if (config.agents) {
-		for (const agent of config.agents) {
-			agentMap.set(agent.name, agent)
-		}
+		for (const agent of config.agents) agents.set(agent.name, agent)
 	}
-
 	const defaultAgent = config.agents?.[0]
 
-	// ─── Routes ───────────────────────────────────────────────
+	// ─── Server Adapter ───────────────────────────────────────
+	// Accept an adapter (new API: `server: createServer({...})`) or a bare
+	// HonoServerConfig, which we wrap in the default Hono adapter for convenience.
 
-	const routes = createRoutes({
+	// `isServerAdapter` only narrows to the erased `ServerAdapter<ServerInstance>`
+	// — generics don't exist at runtime — so this cast trusts the caller's own
+	// `S` type argument to match what their adapter's `bind()` actually returns,
+	// the same trust boundary as any other TS generic factory (e.g. JSON.parse<T>()).
+	const adapter = (
+		isServerAdapter(config.server) ? config.server : createServer(config.server ?? {})
+	) as ServerAdapter<S>
+
+	const server = adapter.bind({
 		gateway: gw,
 		mesh,
-		agents: agentMap,
+		agents,
 		defaultAgent,
 		tracer,
+		logger,
+		version: config.version ?? DEFAULT_VERSION,
+		providers,
 		startTime: Date.now(),
-		version: config.version ?? '0.2.2',
-		providers: providerNames,
 	})
 
-	app.route('/', routes)
-
-	// ─── Return ───────────────────────────────────────────────
-
 	return {
-		hono: app,
 		gateway: gw,
 		mesh,
 		tracer,
-
-		listen(port?: number): { port: number; stop: () => Promise<void> } {
-			const listenPort = port ?? serverConfig.port ?? 3000
-			const hostname = serverConfig.hostname ?? '0.0.0.0'
-
-			const server = serve({
-				fetch: app.fetch,
-				port: listenPort,
-				hostname,
-			})
-
-			let shutdownManager: ShutdownManager | undefined
-			if (serverConfig.gracefulShutdown) {
-				const drainTimeoutMs =
-					typeof serverConfig.gracefulShutdown === 'object'
-						? serverConfig.gracefulShutdown.drainTimeoutMs
-						: undefined
-				shutdownManager = createShutdownManager({
-					drainTimeoutMs,
-					onDrainStart: () => log.info('Draining connections...'),
-					onDrainComplete: () => log.info('Drain complete'),
-				})
-			}
-
-			log.info('ElsiumAI server started', {
-				url: `http://${hostname}:${listenPort}`,
-				routes: ['POST /chat', 'POST /complete', 'GET /health', 'GET /metrics', 'GET /agents'],
-			})
-
-			return {
-				port: listenPort,
-				stop: async () => {
-					if (shutdownManager) {
-						await shutdownManager.shutdown()
-					}
-					server.close()
-				},
-			}
-		},
+		server,
+		fetch: (request) => server.fetch(request),
+		listen: (port) => server.listen(port),
 	}
 }

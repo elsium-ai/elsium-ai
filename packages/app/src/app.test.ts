@@ -5,15 +5,17 @@ import { registerProviderFactory } from '@elsium-ai/gateway'
 import { observe } from '@elsium-ai/observe'
 import { Hono } from 'hono'
 import { beforeEach, describe, expect, it } from 'vitest'
+import type { AppRuntime, ServerAdapter, ServerHandle, ServerInstance } from './adapter'
 import { createApp } from './app'
+import { createServer } from './hono/adapter'
 import {
 	authMiddleware,
 	corsMiddleware,
 	rateLimitMiddleware,
 	requestIdMiddleware,
 	requestLoggerMiddleware,
-} from './middleware'
-import { type RoutesDeps, createRoutes } from './routes'
+} from './hono/middleware'
+import { type RoutesDeps, createRoutes } from './hono/routes'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -550,7 +552,7 @@ describe('createApp', () => {
 		}))
 	})
 
-	it('creates an app with hono, gateway, and tracer', () => {
+	it('creates an app with a server, gateway, and tracer', () => {
 		const app = createApp({
 			gateway: {
 				providers: {
@@ -560,7 +562,8 @@ describe('createApp', () => {
 			},
 		})
 
-		expect(app.hono).toBeInstanceOf(Hono)
+		expect(app.fetch).toBeTypeOf('function')
+		expect(app.server).toBeDefined()
 		expect(app.gateway).toBeDefined()
 		expect(app.gateway.complete).toBeTypeOf('function')
 		expect(app.gateway.stream).toBeTypeOf('function')
@@ -599,7 +602,7 @@ describe('createApp', () => {
 		})
 
 		// Test health endpoint through the Hono instance
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(200)
@@ -638,7 +641,7 @@ describe('createApp', () => {
 			agents: [agent],
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/agents', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/agents', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(200)
@@ -664,7 +667,7 @@ describe('createApp', () => {
 			version: '1.2.3',
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(json.version).toBe('1.2.3')
@@ -677,7 +680,7 @@ describe('createApp', () => {
 			},
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/health', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/health', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(json.version).toBe('0.2.2')
@@ -690,15 +693,58 @@ describe('createApp', () => {
 			},
 		})
 
-		const res = await app.hono.fetch(new Request('http://localhost/nonexistent', { method: 'GET' }))
+		const res = await app.fetch(new Request('http://localhost/nonexistent', { method: 'GET' }))
 		const json = await res.json()
 
 		expect(res.status).toBe(404)
 		expect(json.error).toBe('Not found')
 	})
+
+	// Exercises the `isServerAdapter(config.server)` true branch: everything
+	// above passes either a bare HonoServerConfig object or nothing, which
+	// only ever hits the `createServer(...)` fallback branch in app.ts.
+	it('accepts a hand-rolled ServerAdapter instead of the built-in Hono one', async () => {
+		interface CustomServerInstance extends ServerInstance {
+			readonly boundRuntime: AppRuntime
+		}
+
+		let capturedRuntime: AppRuntime | undefined
+		const customAdapter: ServerAdapter<CustomServerInstance> = {
+			bind(runtime: AppRuntime): CustomServerInstance {
+				capturedRuntime = runtime
+				return {
+					boundRuntime: runtime,
+					fetch: async () => new Response('custom adapter response'),
+					listen(port?: number): ServerHandle {
+						return { port: port ?? 9999, stop: async () => {} }
+					},
+				}
+			},
+		}
+
+		const app = createApp({
+			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
+			server: customAdapter,
+		})
+
+		// The adapter's own bind() ran, with no Hono involved.
+		expect(capturedRuntime).toBeDefined()
+		expect(capturedRuntime?.providers).toContain('mock-app')
+
+		// app.server is the custom instance, typed and accessible without a cast.
+		expect(app.server.boundRuntime).toBe(capturedRuntime)
+
+		// app.fetch/listen delegate to the custom instance, not to Hono.
+		const res = await app.fetch(new Request('http://localhost/anything'))
+		expect(await res.text()).toBe('custom adapter response')
+
+		const handle = app.listen(1234)
+		expect(handle.port).toBe(1234)
+		await handle.stop()
+	})
 })
 
-// Every other test drives `app.hono.fetch` directly, which never touches
+// Every other test drives `app.fetch` directly, which never touches
 // @hono/node-server. These bind a real socket, so a breaking change in the
 // adapter surfaces here instead of in production.
 describe('createApp — listen() over a real socket', () => {
@@ -707,7 +753,7 @@ describe('createApp — listen() over a real socket', () => {
 	it('serves requests and releases the port on stop', async () => {
 		const app = createApp({
 			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
-			server: { port: PORT, cors: true },
+			server: createServer({ port: PORT, cors: true }),
 		})
 
 		const server = app.listen()
@@ -733,7 +779,7 @@ describe('createApp — listen() over a real socket', () => {
 	it('honours the port passed to listen() over the configured one', async () => {
 		const app = createApp({
 			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
-			server: { port: PORT },
+			server: createServer({ port: PORT }),
 		})
 
 		const server = app.listen(PORT + 1)

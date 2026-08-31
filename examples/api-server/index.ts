@@ -16,7 +16,7 @@
  */
 
 import { defineAgent } from '@elsium-ai/agents'
-import { createApp } from '@elsium-ai/app'
+import { createApp, createServer } from '@elsium-ai/app'
 import { env } from '@elsium-ai/core'
 import { gateway } from '@elsium-ai/gateway'
 import { createToolkit, defineTool } from '@elsium-ai/tools'
@@ -171,7 +171,7 @@ const app = createApp({
 		tracing: true,
 		costTracking: true,
 	},
-	server: {
+	server: createServer({
 		port: 3000,
 		cors: {
 			origin: '*',
@@ -179,9 +179,9 @@ const app = createApp({
 		},
 		rateLimit: {
 			windowMs: 60_000,
-			max: 100,
+			maxRequests: 100,
 		},
-	},
+	}),
 })
 
 console.log(`
