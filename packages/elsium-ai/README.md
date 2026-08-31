@@ -223,7 +223,7 @@ Every value and type listed below is available directly from `'elsium-ai'`.
 | Values | Types |
 |--------|-------|
 | `createApp` | `AppConfig` |
-| `sseHeaders` | `ServerConfig` |
+| `sseHeaders` | `HonoServerConfig` |
 | `formatSSE` | `CorsConfig` |
 | `streamResponse` | `AuthConfig` |
 | `tenantMiddleware` | `RateLimitConfig` |

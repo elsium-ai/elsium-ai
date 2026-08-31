@@ -2,7 +2,6 @@ import type { Agent } from '@elsium-ai/agents'
 import type { Logger } from '@elsium-ai/core'
 import type { Gateway, ProviderMesh } from '@elsium-ai/gateway'
 import type { Tracer } from '@elsium-ai/observe'
-import type { ServerConfig } from './types'
 
 /**
  * Framework-neutral runtime that the app module resolves and hands to a server
@@ -48,17 +47,27 @@ export interface ServerInstance {
  * behind this boundary, so it can later live in a dedicated package and be
  * swapped in through the `server` field of `AppConfig` without touching the
  * app module.
+ *
+ * The type parameter carries the concrete {@link ServerInstance} an adapter
+ * binds to, so an adapter that returns a richer instance (e.g. the Hono
+ * adapter's `HonoServerInstance`) keeps that type through `bind()` without a
+ * cast.
  */
-export interface ServerAdapter {
-	readonly config: ServerConfig
+export interface ServerAdapter<S extends ServerInstance = ServerInstance> {
 	/** Bind the app runtime and return a ready-to-serve instance. */
-	bind(runtime: AppRuntime): ServerInstance
+	bind(runtime: AppRuntime): S
 }
 
 /**
- * Distinguishes a {@link ServerAdapter} from a plain {@link ServerConfig}. Lets
- * `createApp` accept either the new adapter API (`server: createServer({...})`)
- * or a bare config object for convenience.
+ * Distinguishes a {@link ServerAdapter} from a plain config object (e.g. the
+ * Hono adapter's `HonoServerConfig`). Lets `createApp` accept either the
+ * adapter API (`server: createServer({...})`) or a bare config object for
+ * convenience.
+ *
+ * This is structural (checks for a callable `bind`), not a branded check, so
+ * it stays accurate only as long as no adapter config type ever defines its
+ * own `bind` field. If one needs to, give `ServerAdapter` a brand instead of
+ * adding a naming convention here.
  */
 export function isServerAdapter(value: unknown): value is ServerAdapter {
 	return (

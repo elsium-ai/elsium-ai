@@ -8,17 +8,17 @@ import {
 	type ServerInstance,
 	isServerAdapter,
 } from './adapter'
-import { createServer } from './adapters/hono'
+import { type HonoServerInstance, createServer } from './hono/adapter'
 import type { AppConfig } from './types'
 
 const DEFAULT_VERSION = '0.2.2'
 
-export interface ElsiumApp {
+export interface ElsiumApp<S extends ServerInstance = HonoServerInstance> {
 	readonly gateway: Gateway
 	readonly mesh: ProviderMesh | undefined
 	readonly tracer: Tracer
 	/** The bound server instance produced by the configured adapter. */
-	readonly server: ServerInstance
+	readonly server: S
 	/** Web-standard request handler, delegated to the server adapter. */
 	fetch(request: Request): Response | Promise<Response>
 	listen(port?: number): ServerHandle
@@ -58,7 +58,9 @@ function buildGateway(config: AppConfig['gateway']): {
 	return { gateway: gw, mesh, providers }
 }
 
-export function createApp(config: AppConfig): ElsiumApp {
+export function createApp<S extends ServerInstance = HonoServerInstance>(
+	config: AppConfig<S>,
+): ElsiumApp<S> {
 	const logger: Logger = createLogger()
 
 	// ─── Gateway ──────────────────────────────────────────────
@@ -82,11 +84,15 @@ export function createApp(config: AppConfig): ElsiumApp {
 
 	// ─── Server Adapter ───────────────────────────────────────
 	// Accept an adapter (new API: `server: createServer({...})`) or a bare
-	// ServerConfig, which we wrap in the default Hono adapter for convenience.
+	// HonoServerConfig, which we wrap in the default Hono adapter for convenience.
 
-	const adapter: ServerAdapter = isServerAdapter(config.server)
-		? config.server
-		: createServer(config.server ?? {})
+	// `isServerAdapter` only narrows to the erased `ServerAdapter<ServerInstance>`
+	// — generics don't exist at runtime — so this cast trusts the caller's own
+	// `S` type argument to match what their adapter's `bind()` actually returns,
+	// the same trust boundary as any other TS generic factory (e.g. JSON.parse<T>()).
+	const adapter = (
+		isServerAdapter(config.server) ? config.server : createServer(config.server ?? {})
+	) as ServerAdapter<S>
 
 	const server = adapter.bind({
 		gateway: gw,

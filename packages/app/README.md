@@ -11,32 +11,62 @@ App bootstrap, HTTP server, and API routes for [ElsiumAI](https://github.com/els
 npm install @elsium-ai/app
 ```
 
+## How this package is put together
+
+`createApp` builds the parts that have nothing to do with HTTP -- the gateway, tracer, and agent registry -- and hands them to a **server adapter**, which is the only piece that knows how to turn that into a running web server. The app core never imports an HTTP framework directly.
+
+This package ships one adapter out of the box, built on [Hono](https://hono.dev), so `createApp` works immediately without any extra setup. But it's just the default: the adapter contract (`ServerAdapter`) is small and documented below, so you can write your own for Express, Fastify, a Cloudflare Worker, or anything else that speaks HTTP, without needing any of the built-in adapter's CORS, auth, or rate-limiting code.
+
+This README follows that split: [App](#app) and [Server Adapters](#server-adapters) cover the framework-neutral core and how to bring your own adapter, and everything under [Built-in Hono Adapter](#built-in-hono-adapter) documents the specifics of the default one.
+
 ## What's Inside
 
-| Category | Export | Kind |
-| --- | --- | --- |
-| **App** | `createApp` | Function |
-| | `ElsiumApp` | Interface |
-| **Types** | `AppConfig` | Interface |
-| | `ServerConfig` | Interface |
-| | `CorsConfig` | Interface |
-| | `AuthConfig` | Interface |
-| | `RateLimitConfig` | Interface |
-| | `ChatRequest` | Interface |
-| | `ChatResponse` | Interface |
-| | `CompleteRequest` | Interface |
-| | `HealthResponse` | Interface |
-| | `MetricsResponse` | Interface |
-| **Middleware** | `corsMiddleware` | Function |
-| | `authMiddleware` | Function |
-| | `rateLimitMiddleware` | Function |
-| **Routes** | `createRoutes` | Function |
-| | `RoutesDeps` | Interface |
-| **RBAC** | `createRBAC` | Function |
-| | `Permission` | Type |
-| | `Role` | Interface |
-| | `RBACConfig` | Interface |
-| | `RBAC` | Interface |
+**Framework-neutral core**
+
+| Export | Kind |
+| --- | --- |
+| `createApp` | Function |
+| `ElsiumApp` | Interface |
+| `AppConfig` | Interface |
+| `ServerAdapter` | Interface |
+| `ServerInstance` | Interface |
+| `ServerHandle` | Interface |
+| `AppRuntime` | Interface |
+| `isServerAdapter` | Function |
+| `ChatRequest` | Interface |
+| `ChatResponse` | Interface |
+| `CompleteRequest` | Interface |
+| `HealthResponse` | Interface |
+| `MetricsResponse` | Interface |
+
+**Built-in Hono adapter**
+
+| Export | Kind |
+| --- | --- |
+| `createServer` | Function |
+| `HonoServerInstance` | Interface |
+| `HonoServerConfig` | Interface |
+| `CorsConfig` | Interface |
+| `AuthConfig` | Interface |
+| `RateLimitConfig` | Interface |
+| `corsMiddleware` | Function |
+| `authMiddleware` | Function |
+| `rateLimitMiddleware` | Function |
+| `requestIdMiddleware` | Function |
+| `requestLoggerMiddleware` | Function |
+| `sseHeaders` | Function |
+| `formatSSE` | Function |
+| `streamResponse` | Function |
+| `tenantMiddleware` | Function |
+| `tenantRateLimitMiddleware` | Function |
+| `tenantBudgetMiddleware` | Function |
+| `createRoutes` | Function |
+| `RoutesDeps` | Interface |
+| `createRBAC` | Function |
+| `Permission` | Type |
+| `Role` | Interface |
+| `RBACConfig` | Interface |
+| `RBAC` | Interface |
 
 ---
 
@@ -44,20 +74,20 @@ npm install @elsium-ai/app
 
 ### `createApp`
 
-Creates and returns a fully configured ElsiumAI application with a gateway, tracer, middleware stack, agent registry, and HTTP routes.
+Creates and returns a fully configured ElsiumAI application with a gateway, tracer, agent registry, and a bound HTTP server produced by a pluggable server adapter.
 
 ```ts
-function createApp(config: AppConfig): ElsiumApp
+function createApp<S extends ServerInstance = HonoServerInstance>(config: AppConfig<S>): ElsiumApp<S>
 ```
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `config` | `AppConfig` | Full application configuration including gateway, agents, observability, and server settings. |
+| `config` | `AppConfig<S>` | Full application configuration including gateway, agents, observability, and a `server` adapter or config. |
 
-**Returns** `ElsiumApp` -- the application handle exposing the Hono instance, gateway, tracer, and a `listen` method to start the HTTP server.
+**Returns** `ElsiumApp<S>` -- the application handle exposing the bound server instance (typed as `S`), gateway, tracer, and `fetch`/`listen`.
 
 ```ts
-import { createApp } from '@elsium-ai/app'
+import { createApp, createServer } from '@elsium-ai/app'
 
 const app = createApp({
   gateway: {
@@ -66,48 +96,64 @@ const app = createApp({
     },
     defaultModel: 'gpt-4o',
   },
-  server: {
+  // createServer is the built-in Hono adapter -- see "Built-in Hono Adapter"
+  // below for its config. Pass any other ServerAdapter here instead to use
+  // a different framework.
+  server: createServer({
     port: 3000,
     cors: { origin: ['http://localhost:5173'], credentials: true },
     auth: { type: 'bearer', token: process.env.API_TOKEN! },
     rateLimit: { windowMs: 60_000, maxRequests: 100 },
-  },
+  }),
 })
 
 const { port, stop } = app.listen()
 console.log(`Listening on port ${port}`)
 ```
 
-### `ElsiumApp`
-
-The object returned by `createApp`. Provides access to the underlying Hono app, gateway, tracer, and a method to start the HTTP server.
+A bare Hono `HonoServerConfig` object (no `createServer` call) is also accepted for convenience and is wrapped in the default adapter:
 
 ```ts
-interface ElsiumApp {
-  readonly hono: Hono
+const app = createApp({
+  gateway: { providers: { openai: { apiKey: process.env.OPENAI_API_KEY! } } },
+  server: { port: 3000 }, // shorthand for server: createServer({ port: 3000 })
+})
+```
+
+### `ElsiumApp`
+
+The object returned by `createApp`. Provides access to the bound server instance, gateway, tracer, and methods to serve requests.
+
+```ts
+interface ElsiumApp<S extends ServerInstance = HonoServerInstance> {
   readonly gateway: Gateway
+  readonly mesh: ProviderMesh | undefined
   readonly tracer: Tracer
-  listen(port?: number): { port: number; stop: () => void }
+  readonly server: S
+  fetch(request: Request): Response | Promise<Response>
+  listen(port?: number): ServerHandle
 }
 ```
 
 | Property / Method | Type | Description |
 | --- | --- | --- |
-| `hono` | `Hono` | The underlying Hono application instance. Use it to add custom routes or middleware. |
+| `server` | `S` | The bound instance produced by the configured adapter's `bind()`. Its shape depends entirely on the adapter -- with the built-in one it's `HonoServerInstance`, which additionally exposes `.hono` for custom routes/middleware. |
 | `gateway` | `Gateway` | The configured LLM gateway. |
+| `mesh` | `ProviderMesh \| undefined` | The multi-provider mesh, if more than one provider is configured. |
 | `tracer` | `Tracer` | The observability tracer for cost and latency tracking. |
-| `listen(port?)` | `(port?: number) => { port: number; stop: () => void }` | Starts the HTTP server. Falls back to `server.port` from config, then `3000`. Returns the resolved port and a `stop` function to shut down the server. |
+| `fetch(request)` | `(request: Request) => Response \| Promise<Response>` | The web-standard request handler, delegated to the server adapter. |
+| `listen(port?)` | `(port?: number) => ServerHandle` | Starts the HTTP server. Falls back to `server.port` from config, then `3000`. Returns `{ port, stop }`. |
 
 ---
 
-## Types
+## AppConfig & API Types
 
 ### `AppConfig`
 
-Top-level configuration object passed to `createApp`.
+Top-level configuration object passed to `createApp`. Framework-neutral except for the `server` field's bare-config shorthand described above.
 
 ```ts
-interface AppConfig {
+interface AppConfig<S extends ServerInstance = HonoServerInstance> {
   gateway: {
     providers: Record<string, { apiKey: string; baseUrl?: string }>
     defaultModel?: string
@@ -119,62 +165,13 @@ interface AppConfig {
     costTracking?: boolean
     export?: string
   }
-  server?: ServerConfig
-}
-```
-
-### `ServerConfig`
-
-HTTP server and middleware configuration.
-
-```ts
-interface ServerConfig {
-  port?: number
-  hostname?: string
-  cors?: boolean | CorsConfig
-  auth?: AuthConfig
-  rateLimit?: RateLimitConfig
-}
-```
-
-### `CorsConfig`
-
-Fine-grained CORS settings. When `cors` in `ServerConfig` is set to `true`, sensible defaults are used.
-
-```ts
-interface CorsConfig {
-  origin?: string | string[]
-  methods?: string[]
-  headers?: string[]
-  credentials?: boolean
-}
-```
-
-### `AuthConfig`
-
-Bearer-token authentication configuration. The middleware uses timing-safe comparison to validate tokens.
-
-```ts
-interface AuthConfig {
-  type: 'bearer'
-  token: string
-}
-```
-
-### `RateLimitConfig`
-
-Per-client sliding-window rate limiting configuration.
-
-```ts
-interface RateLimitConfig {
-  windowMs: number
-  maxRequests: number
+  server?: ServerAdapter<S> | HonoServerConfig
 }
 ```
 
 ### `ChatRequest`
 
-Request body for the `POST /chat` endpoint.
+Request body for the `POST /chat` endpoint (served by the built-in routes).
 
 ```ts
 interface ChatRequest {
@@ -246,13 +243,160 @@ interface MetricsResponse {
 
 ---
 
-## Middleware
+## Server Adapters
 
-All middleware functions return a Hono-compatible handler `(c: Context, next: Next) => Promise<...>`. They are applied automatically when the corresponding `ServerConfig` field is set, but they can also be used standalone on any Hono app.
+A server adapter is the only thing that stands between `createApp` and an actual running HTTP server. `createApp` builds an `AppRuntime` (gateway, tracer, agents, logger, ...) that describes everything the app needs to serve requests, then calls `bind()` on whichever adapter you gave it.
 
-### `corsMiddleware`
+```ts
+interface ServerAdapter<S extends ServerInstance = ServerInstance> {
+  bind(runtime: AppRuntime): S
+}
 
-Returns a Hono middleware that sets CORS headers and handles preflight `OPTIONS` requests.
+interface ServerInstance {
+  fetch(request: Request): Response | Promise<Response>
+  listen(port?: number): ServerHandle
+}
+
+interface ServerHandle {
+  readonly port: number
+  stop(): Promise<void>
+}
+```
+
+`isServerAdapter(value)` is the runtime type guard `createApp` uses to distinguish a `ServerAdapter` from a bare config object.
+
+### Bringing your own framework
+
+Implement `ServerAdapter` yourself to swap in another framework -- there's no need to reuse anything documented under [Built-in Hono Adapter](#built-in-hono-adapter). Its config type, CORS/auth/rate-limit middleware, and routes are all implementation details of that one adapter, not a contract other adapters must satisfy:
+
+```ts
+import type { AppRuntime, ServerAdapter, ServerHandle, ServerInstance } from '@elsium-ai/app'
+import express from 'express'
+
+interface ExpressServerInstance extends ServerInstance {
+  readonly express: express.Express
+}
+
+// Define whatever config shape makes sense for your framework -- it does not
+// need to look anything like the built-in adapter's config.
+interface ExpressServerConfig {
+  trustProxy?: boolean
+}
+
+function createExpressServer(config: ExpressServerConfig = {}): ServerAdapter<ExpressServerInstance> {
+  return {
+    bind(runtime: AppRuntime): ExpressServerInstance {
+      const app = express()
+      if (config.trustProxy) app.set('trust proxy', true)
+
+      app.get('/health', (_req, res) => res.json({ status: 'ok', version: runtime.version }))
+      // ... wire up your own cors/auth/rate-limit middleware here, using
+      // whatever Express ecosystem packages you prefer.
+
+      return {
+        express: app,
+        fetch: async (request) => new Response('not implemented'), // adapt Express to fetch()
+        listen(port?: number): ServerHandle {
+          const server = app.listen(port ?? 3000)
+          return { port: port ?? 3000, stop: async () => server.close() }
+        },
+      }
+    },
+  }
+}
+
+const app = createApp({
+  gateway: { providers: { openai: { apiKey: process.env.OPENAI_API_KEY! } } },
+  server: createExpressServer({ trustProxy: true }),
+})
+
+app.server.express.get('/custom', (_req, res) => res.send('hi'))
+```
+
+---
+
+## Built-in Hono Adapter
+
+Everything in this section is specific to the default adapter this package ships (`createServer`, built on Hono) and is entirely optional -- skip it if you're bringing your own adapter as shown above.
+
+### `createServer`
+
+Creates the built-in Hono server adapter. Pass its result (or a bare `HonoServerConfig`) to `createApp({ server })`.
+
+```ts
+function createServer(config?: HonoServerConfig): ServerAdapter<HonoServerInstance>
+```
+
+### `HonoServerInstance`
+
+The Hono adapter's `ServerInstance`, additionally exposing the underlying Hono app for advanced mounting, sub-routing, or testing.
+
+```ts
+interface HonoServerInstance extends ServerInstance {
+  readonly hono: Hono
+}
+```
+
+### `HonoServerConfig`
+
+HTTP server and middleware configuration for the built-in adapter.
+
+```ts
+interface HonoServerConfig {
+  port?: number
+  hostname?: string
+  cors?: boolean | CorsConfig
+  auth?: AuthConfig
+  rateLimit?: RateLimitConfig
+  gracefulShutdown?: boolean | { drainTimeoutMs?: number }
+}
+```
+
+### `CorsConfig`
+
+Fine-grained CORS settings. When `cors` in `HonoServerConfig` is set to `true`, sensible defaults are used.
+
+```ts
+interface CorsConfig {
+  origin?: string | string[]
+  methods?: string[]
+  headers?: string[]
+  credentials?: boolean
+}
+```
+
+### `AuthConfig`
+
+Bearer-token authentication configuration. The middleware uses timing-safe comparison to validate tokens.
+
+```ts
+interface AuthConfig {
+  type: 'bearer'
+  token: string
+}
+```
+
+### `RateLimitConfig`
+
+Per-client sliding-window rate limiting configuration.
+
+```ts
+interface RateLimitConfig {
+  windowMs: number
+  maxRequests: number
+  trustedProxyHeaders?: string[]
+}
+```
+
+`trustedProxyHeaders` defaults to `['CF-Connecting-IP']` and is tried in order to identify each client; requests without any of the listed headers share the `anonymous` bucket.
+
+### Middleware
+
+`corsMiddleware`, `authMiddleware`, and `rateLimitMiddleware` are Hono handlers `(c: Context, next: Next) => Promise<...>`. They're applied automatically by `createServer` when the corresponding `HonoServerConfig` field is set, but they can also be used standalone on any Hono app.
+
+#### `corsMiddleware`
+
+Sets CORS headers and handles preflight `OPTIONS` requests.
 
 ```ts
 function corsMiddleware(config?: CorsConfig | boolean): (c: Context, next: Next) => Promise<Response | void>
@@ -275,9 +419,9 @@ app.use('*', corsMiddleware({
 }))
 ```
 
-### `authMiddleware`
+#### `authMiddleware`
 
-Returns a Hono middleware that validates `Authorization: Bearer <token>` headers using timing-safe comparison. The `/health` endpoint is always excluded from auth checks.
+Validates `Authorization: Bearer <token>` headers using timing-safe comparison. The `/health` endpoint is always excluded from auth checks.
 
 ```ts
 function authMiddleware(config: AuthConfig): (c: Context, next: Next) => Promise<Response | void>
@@ -303,9 +447,9 @@ app.use('*', authMiddleware({
 }))
 ```
 
-### `rateLimitMiddleware`
+#### `rateLimitMiddleware`
 
-Returns a Hono middleware that enforces per-client rate limiting using an in-memory sliding window. Client identity is determined from the `CF-Connecting-IP` header, then `X-Real-IP`, falling back to `'anonymous'`. Sets `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` response headers.
+Enforces per-client rate limiting using an in-memory sliding window. Sets `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` response headers.
 
 ```ts
 function rateLimitMiddleware(config: RateLimitConfig): (c: Context, next: Next) => Promise<Response | void>
@@ -330,22 +474,24 @@ app.use('*', rateLimitMiddleware({
 }))
 ```
 
----
+#### `requestIdMiddleware` / `requestLoggerMiddleware`
 
-## SSE Utilities
+Applied automatically by `createServer` on every request. `requestIdMiddleware` assigns (or forwards, if `X-Request-ID` is already set and well-formed) a request ID and echoes it back in the response headers. `requestLoggerMiddleware(logger?)` logs method, path, status, and duration for each request.
 
-Helper functions for building Server-Sent Events responses in Hono handlers.
+### SSE Utilities
 
-### `sseHeaders`
+Helpers for building Server-Sent Events responses from a Hono handler.
 
-A constant object containing the standard HTTP headers for SSE responses.
+#### `sseHeaders`
+
+Returns the standard HTTP headers for an SSE response.
 
 ```ts
-const sseHeaders: Record<string, string>
-// { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' }
+function sseHeaders(): Record<string, string>
+// { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' }
 ```
 
-### `formatSSE`
+#### `formatSSE`
 
 Formats an event name and data payload into the SSE wire format.
 
@@ -360,79 +506,65 @@ function formatSSE(event: string, data: unknown): string
 
 **Returns:** A formatted SSE string (e.g., `event: text_delta\ndata: {"text":"Hello"}\n\n`).
 
-### `streamResponse`
+#### `streamResponse`
 
-Converts a `ReadableStream` into a Hono `Response` with the correct SSE headers.
+Streams an async source (an `ElsiumStream` or any `AsyncIterable`) to the client as `message` SSE events, converting a thrown error into an `error` event, and returns the resulting Hono `Response`.
 
 ```ts
-function streamResponse(stream: ReadableStream): Response
+function streamResponse(c: Context, source: ElsiumStream | AsyncIterable<unknown>): Response
 ```
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `stream` | `ReadableStream` | The stream to send as the response body. |
+| `c` | `Context` | The Hono request context to stream the response through. |
+| `source` | `ElsiumStream \| AsyncIterable<unknown>` | The events to send, one SSE `message` event per item. |
 
 **Returns:** A `Response` object with SSE headers.
 
 ```ts
-import { sseHeaders, formatSSE, streamResponse } from '@elsium-ai/app'
-
-// In a Hono route handler
-app.post('/my-stream', (c) => {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(formatSSE('text_delta', { text: 'Hello' })))
-      controller.enqueue(new TextEncoder().encode(formatSSE('message_end', { done: true })))
-      controller.close()
-    },
-  })
-  return streamResponse(stream)
-})
-```
-
----
-
-## Tenant Budget Middleware
-
-### `tenantBudgetMiddleware`
-
-Creates a Hono middleware that enforces per-tenant token and cost budgets using sliding windows. Each tenant is identified from the request context and tracked independently.
-
-```ts
-function tenantBudgetMiddleware(config?: {
-  windowMs?: number
-  maxTokensPerWindow?: number
-  maxCostPerWindow?: number
-}): (c: Context, next: Next) => Promise<Response | void>
-```
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `config.windowMs` | `number` | `60_000` | Sliding window duration in milliseconds. |
-| `config.maxTokensPerWindow` | `number` | `undefined` | Maximum tokens allowed per tenant per window. |
-| `config.maxCostPerWindow` | `number` | `undefined` | Maximum cost (USD) allowed per tenant per window. |
-
-**Responses on failure:**
-- `429` with `{ error: 'Tenant budget exceeded' }` when the tenant's usage exceeds the configured limits.
-
-```ts
-import { tenantBudgetMiddleware } from '@elsium-ai/app'
+import { streamResponse } from '@elsium-ai/app'
 import { Hono } from 'hono'
 
 const app = new Hono()
 
-app.use('*', tenantBudgetMiddleware({
-  windowMs: 60_000,
-  maxTokensPerWindow: 100_000,
-  maxCostPerWindow: 1.0,
-}))
+app.post('/my-stream', (c) => {
+  async function* events() {
+    yield { text: 'Hello' }
+    yield { done: true }
+  }
+  return streamResponse(c, events())
+})
 ```
 
----
+### Tenant Budget Middleware
 
-## Routes
+#### `tenantBudgetMiddleware`
 
-### `createRoutes`
+Enforces per-tenant token and cost budgets using sliding windows. Each tenant is identified from the request context (via `tenantMiddleware`, run first) and tracked independently.
+
+```ts
+function tenantBudgetMiddleware(): (c: Context, next: Next) => Promise<Response | void>
+```
+
+**Responses on failure:**
+- `429` with `{ error: 'Token rate limit exceeded', retryAfterMs: 60_000 }` when the per-minute token budget is exceeded.
+- `429` with `{ error: 'Daily cost limit exceeded' }` when the per-day cost budget is exceeded.
+
+```ts
+import { tenantBudgetMiddleware, tenantMiddleware } from '@elsium-ai/app'
+import { Hono } from 'hono'
+
+const app = new Hono()
+
+app.use('*', tenantMiddleware({ extractTenant: (c) => resolveTenant(c) }))
+app.use('*', tenantBudgetMiddleware())
+```
+
+`tenantMiddleware` and `tenantRateLimitMiddleware` are the companion functions that identify the tenant on each request and enforce a per-tenant requests-per-minute cap, respectively -- see `TenantMiddlewareConfig` for the extraction options.
+
+### Routes
+
+#### `createRoutes`
 
 Creates a Hono sub-application with all built-in API routes: `GET /health`, `GET /metrics`, `POST /chat`, `POST /complete`, and `GET /agents`.
 
@@ -472,7 +604,7 @@ const app = new Hono()
 app.route('/', routes)
 ```
 
-### `RoutesDeps`
+#### `RoutesDeps`
 
 Dependency injection interface for `createRoutes`.
 
@@ -498,11 +630,9 @@ interface RoutesDeps {
 | `version` | `string` | Application version string returned by `/health`. |
 | `providers` | `string[]` | List of configured provider names returned by `/health`. |
 
----
+### RBAC
 
-## RBAC
-
-### `createRBAC`
+#### `createRBAC`
 
 Creates a role-based access control system with permission checking, role inheritance, wildcard matching, and Hono middleware generation. Includes four built-in roles (`admin`, `operator`, `user`, `viewer`) that can be overridden by user-defined roles.
 
@@ -547,7 +677,7 @@ rbac.hasPermission('analyst', 'config:read')            // true (inherited from 
 app.post('/chat', rbac.middleware('model:use'), handler)
 ```
 
-### `Permission`
+#### `Permission`
 
 A union type representing all recognized permissions. Supports resource-specific and wildcard variants.
 
@@ -570,7 +700,7 @@ type Permission =
 
 Wildcard permissions (e.g., `model:use:*`) grant access to all resource-specific permissions under that namespace (e.g., `model:use:gpt-4o`) as well as the base permission (`model:use`).
 
-### `Role`
+#### `Role`
 
 Defines a named role with a set of permissions and optional inheritance from other roles.
 
@@ -582,7 +712,7 @@ interface Role {
 }
 ```
 
-### `RBACConfig`
+#### `RBACConfig`
 
 Configuration for `createRBAC`.
 
@@ -602,7 +732,7 @@ interface RBACConfig {
 | `roleExtractor` | `(c: Context) => string \| undefined` (optional) | Custom function to extract the role name from a Hono request context. |
 | `trustRoleHeader` | `boolean` (optional) | When `true`, reads the role from the `X-Role` request header. **Warning:** only enable this in development or behind a trusted reverse proxy, as any client can self-assign roles. |
 
-### `RBAC`
+#### `RBAC`
 
 The object returned by `createRBAC`.
 

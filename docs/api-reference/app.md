@@ -13,8 +13,8 @@ import { createApp, createRoutes, authMiddleware, createRBAC } from '@elsium-ai/
 | Export | Signature | Description |
 |---|---|---|
 | `createApp` | `createApp(config: AppConfig): ElsiumApp` | Bootstrap a complete HTTP server with gateway, agents, observability, and middleware |
-| `createServer` | `createServer(config?: ServerConfig): ServerAdapter` | Build the default (Hono) server adapter to pass as `config.server` |
-| `isServerAdapter` | `isServerAdapter(value: unknown): value is ServerAdapter` | Type guard distinguishing a `ServerAdapter` from a bare `ServerConfig` |
+| `createServer` | `createServer(config?: HonoServerConfig): ServerAdapter` | Build the default (Hono) server adapter to pass as `config.server` |
+| `isServerAdapter` | `isServerAdapter(value: unknown): value is ServerAdapter` | Type guard distinguishing a `ServerAdapter` from a bare `HonoServerConfig` |
 
 ### ElsiumApp Interface
 
@@ -49,12 +49,12 @@ interface AppConfig {
     costTracking?: boolean
     export?: string
   }
-  server?: ServerAdapter | ServerConfig  // Adapter (createServer({...})) or bare config
+  server?: ServerAdapter | HonoServerConfig  // Adapter (createServer({...})) or bare config
   version?: string
 }
 ```
 
-Pass a server adapter built with `createServer(...)`, or a bare `ServerConfig`
+Pass a server adapter built with `createServer(...)`, or a bare `HonoServerConfig`
 object which is wrapped in the default adapter:
 
 ```ts
@@ -66,10 +66,10 @@ const app = createApp({
 })
 ```
 
-### ServerConfig
+### HonoServerConfig
 
 ```ts
-interface ServerConfig {
+interface HonoServerConfig {
   port?: number                                    // Default: 3000
   hostname?: string                                // Default: '0.0.0.0'
   cors?: boolean | CorsConfig                      // CORS configuration
@@ -416,7 +416,7 @@ app.get('/config', rbac.middleware('config:read'), configHandler)
 | Export | Description |
 |---|---|
 | `AppConfig` | App configuration: `gateway`, `agents?`, `rag?`, `observe?`, `server?`, `version?` |
-| `ServerConfig` | Server options: `port?`, `hostname?`, `cors?`, `auth?`, `rateLimit?`, `gracefulShutdown?` |
+| `HonoServerConfig` | Server options: `port?`, `hostname?`, `cors?`, `auth?`, `rateLimit?`, `gracefulShutdown?` |
 | `CorsConfig` | CORS options: `origin?`, `methods?`, `headers?`, `credentials?` |
 | `AuthConfig` | Auth config: `type: 'bearer'`, `token` |
 | `RateLimitConfig` | Rate limit options: `windowMs`, `maxRequests` |
@@ -428,7 +428,7 @@ app.get('/config', rbac.middleware('config:read'), configHandler)
 | `StreamChatEvent` | SSE event types for chat streaming |
 | `StreamCompleteEvent` | SSE event types for completion streaming |
 | `ElsiumApp` | App instance: `gateway`, `mesh`, `tracer`, `server`, `fetch()`, `listen()` |
-| `ServerAdapter` | Pluggable server adapter contract (`config`, `bind()`) |
+| `ServerAdapter` | Pluggable server adapter contract (`bind()`) |
 | `ServerInstance` | Bound server: `fetch()`, `listen()` |
 | `ServerHandle` | Running server handle: `port`, `stop()` |
 | `AppRuntime` | Framework-neutral runtime passed to `ServerAdapter.bind()` |

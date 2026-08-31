@@ -5,16 +5,17 @@ import { registerProviderFactory } from '@elsium-ai/gateway'
 import { observe } from '@elsium-ai/observe'
 import { Hono } from 'hono'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createServer } from './adapters/hono'
+import type { AppRuntime, ServerAdapter, ServerHandle, ServerInstance } from './adapter'
 import { createApp } from './app'
+import { createServer } from './hono/adapter'
 import {
 	authMiddleware,
 	corsMiddleware,
 	rateLimitMiddleware,
 	requestIdMiddleware,
 	requestLoggerMiddleware,
-} from './middleware'
-import { type RoutesDeps, createRoutes } from './routes'
+} from './hono/middleware'
+import { type RoutesDeps, createRoutes } from './hono/routes'
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -697,6 +698,49 @@ describe('createApp', () => {
 
 		expect(res.status).toBe(404)
 		expect(json.error).toBe('Not found')
+	})
+
+	// Exercises the `isServerAdapter(config.server)` true branch: everything
+	// above passes either a bare HonoServerConfig object or nothing, which
+	// only ever hits the `createServer(...)` fallback branch in app.ts.
+	it('accepts a hand-rolled ServerAdapter instead of the built-in Hono one', async () => {
+		interface CustomServerInstance extends ServerInstance {
+			readonly boundRuntime: AppRuntime
+		}
+
+		let capturedRuntime: AppRuntime | undefined
+		const customAdapter: ServerAdapter<CustomServerInstance> = {
+			bind(runtime: AppRuntime): CustomServerInstance {
+				capturedRuntime = runtime
+				return {
+					boundRuntime: runtime,
+					fetch: async () => new Response('custom adapter response'),
+					listen(port?: number): ServerHandle {
+						return { port: port ?? 9999, stop: async () => {} }
+					},
+				}
+			},
+		}
+
+		const app = createApp({
+			gateway: { providers: { 'mock-app': { apiKey: 'key' } } },
+			server: customAdapter,
+		})
+
+		// The adapter's own bind() ran, with no Hono involved.
+		expect(capturedRuntime).toBeDefined()
+		expect(capturedRuntime?.providers).toContain('mock-app')
+
+		// app.server is the custom instance, typed and accessible without a cast.
+		expect(app.server.boundRuntime).toBe(capturedRuntime)
+
+		// app.fetch/listen delegate to the custom instance, not to Hono.
+		const res = await app.fetch(new Request('http://localhost/anything'))
+		expect(await res.text()).toBe('custom adapter response')
+
+		const handle = app.listen(1234)
+		expect(handle.port).toBe(1234)
+		await handle.stop()
 	})
 })
 

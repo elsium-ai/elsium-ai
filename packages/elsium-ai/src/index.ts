@@ -1042,7 +1042,7 @@ export {
 export type {
 	AppConfig,
 	ElsiumApp,
-	ServerConfig,
+	HonoServerConfig,
 	ServerAdapter,
 	ServerInstance,
 	ServerHandle,

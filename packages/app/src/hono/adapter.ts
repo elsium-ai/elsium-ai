@@ -8,9 +8,9 @@ import {
 	rateLimitMiddleware,
 	requestIdMiddleware,
 	requestLoggerMiddleware,
-} from '../middleware'
-import { createRoutes } from '../routes'
-import type { ServerConfig } from '../types'
+} from './middleware'
+import { createRoutes } from './routes'
+import type { HonoServerConfig } from './types'
 
 /**
  * The Hono adapter's {@link ServerInstance}, additionally exposing the
@@ -22,7 +22,7 @@ export interface HonoServerInstance extends ServerInstance {
 	readonly hono: Hono
 }
 
-function buildHonoApp(config: ServerConfig, runtime: AppRuntime): Hono {
+function buildHonoApp(config: HonoServerConfig, runtime: AppRuntime): Hono {
 	const app = new Hono()
 	const log = runtime.logger
 
@@ -67,12 +67,12 @@ function buildHonoApp(config: ServerConfig, runtime: AppRuntime): Hono {
 	return app
 }
 
-class HonoServerAdapter implements ServerAdapter {
-	constructor(readonly config: ServerConfig) {}
+class HonoServerAdapter implements ServerAdapter<HonoServerInstance> {
+	constructor(private readonly config: HonoServerConfig) {}
 
 	bind(runtime: AppRuntime): HonoServerInstance {
-		const app = buildHonoApp(this.config, runtime)
 		const { config } = this
+		const app = buildHonoApp(config, runtime)
 		const log = runtime.logger
 
 		return {
@@ -124,6 +124,6 @@ class HonoServerAdapter implements ServerAdapter {
  * `@elsium-ai/server-*` package can provide a drop-in replacement that
  * satisfies the same {@link ServerAdapter} contract.
  */
-export function createServer(config: ServerConfig = {}): ServerAdapter {
+export function createServer(config: HonoServerConfig = {}): ServerAdapter<HonoServerInstance> {
 	return new HonoServerAdapter(config)
 }
